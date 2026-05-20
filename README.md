@@ -1,5 +1,4 @@
 # TrueAPI — Product Vision
----
 
 ## 1. One-liner
 
