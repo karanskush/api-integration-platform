@@ -249,8 +249,17 @@ body::before {
 .reveal[data-delay="6"] { transition-delay: 0.48s; }
 
 /* Sections */
-.section { padding: 120px 0; position: relative; }
+.section { padding: 96px 0; position: relative; }
 .section + .section { padding-top: 0; }
+.section + .section::before {
+  content: '';
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-strong) 30%, var(--border-strong) 70%, transparent);
+  max-width: 1080px;
+  margin: 0 auto 84px;
+  opacity: 0.55;
+}
 .section-divider {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
@@ -1298,13 +1307,34 @@ footer {
 .section-head {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  text-align: left;
+  max-width: 780px;
+  margin-bottom: 0;
+  position: relative;
 }
-.section-head .label { margin-bottom: 12px; }
-.section-head .h2 { margin-bottom: 16px; }
-.section-head .sub { margin: 0 auto; }
+.section-head .section-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--emerald);
+  letter-spacing: 0.20em;
+  margin-bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-head .section-num::after {
+  content: '';
+  display: inline-block;
+  width: 36px;
+  height: 1px;
+  background: var(--emerald);
+  opacity: 0.5;
+}
+.section-head .label { margin-bottom: 16px; }
+.section-head .h2 { margin-bottom: 18px; }
+.section-head .sub { margin: 0; max-width: 640px; }
 .lead-left { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
 .lead-left .sub { margin: 0; }
 </style>
@@ -1462,6 +1492,7 @@ footer {
 <section id="drift" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">01</span>
       <span class="label">The drift</span>
       <h2 class="h2">Your docs say one thing.<br/><span class="grad">Your API does another.</span></h2>
       <p class="sub">~75% of production APIs deviate from their own OpenAPI spec. Type drift, undocumented fields, endpoints that 404, webhook delays nobody mentions. TrueAPI catches it and tells the truth.</p>
@@ -1517,6 +1548,7 @@ footer {
 <section id="surfaces" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">02</span>
       <span class="label">Two surfaces · one engine</span>
       <h2 class="h2">Same verified model.<br/><span class="grad">Two purpose-built renderers.</span></h2>
       <p class="sub">The L2 engine learns once. We render its output twice — for the two consumers that integrate with your API.</p>
@@ -1684,6 +1716,7 @@ footer {
 <section id="engine" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">03</span>
       <span class="label">The L2 engine</span>
       <h2 class="h2">Seven knowledge layers.<br/><span class="grad">Not just schemas.</span></h2>
       <p class="sub">OpenAPI describes shapes. The real integration knowledge lives in seven layers around them. Our probe engine learns each one and renders it through both surfaces.</p>
@@ -1788,6 +1821,7 @@ footer {
 <section id="dag" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">04</span>
       <span class="label">Live demo</span>
       <h2 class="h2">Plaid's 4-step token chain,<br/><span class="grad">computed not written.</span></h2>
       <p class="sub">This is how your agent — or your developer — sees Plaid's bank-linking flow inside TrueAPI. Edges show entity flow, not call order. Animated edges mean values we observed flowing in real probes.</p>
@@ -1874,6 +1908,7 @@ footer {
 <section id="failures" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">05</span>
       <span class="label">Real money-losing bugs</span>
       <h2 class="h2">The failures nobody documents.<br/><span class="grad">We catch them before you ship.</span></h2>
       <p class="sub">Every one of these has burned a real team. They're not in the spec, not in the sandbox, not in the docs — and your agent will hallucinate right past them.</p>
@@ -1937,6 +1972,7 @@ footer {
 <section id="comparison" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">06</span>
       <span class="label">Why TrueAPI</span>
       <h2 class="h2">Spec-derived tools encode lies.<br/><span class="grad">We encode truth.</span></h2>
       <p class="sub">Every other tool starts from the OpenAPI spec — and the spec is what's lying. TrueAPI starts from the spec and then verifies it against the actual API. Behavior wins.</p>
@@ -1998,6 +2034,7 @@ footer {
 <section id="pricing" class="section">
   <div class="container">
     <div class="section-head reveal">
+      <span class="section-num">07</span>
       <span class="label">Pricing</span>
       <h2 class="h2">Priced per endpoint.<br/><span class="grad">The honest, scalable unit.</span></h2>
       <p class="sub">"Per API" is fuzzy. Endpoints are unambiguous — they're in your spec, they map directly to our cost, and you already know your count. No per-seat tax, no usage cliffs.</p>
