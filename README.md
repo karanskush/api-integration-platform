@@ -2,7 +2,7 @@
 
 ## 1. One-liner
 
-> **Behavior-verified API integration — visible to your team, callable by your agents.**
+> **Behavior-verified API integration : Visible to your team, Callable by your agents.**
 >
 > A layer on top of your existing API docs that learns how the API **really**
 > behaves, then renders that verified knowledge through two surfaces: an
