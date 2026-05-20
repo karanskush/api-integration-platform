@@ -2,16 +2,19 @@
 
 > **Working name:** "TrueAPI" is a placeholder — rename later.
 > **Status:** Vision / pre-build. No code yet.
-> **Date:** 2026-05-19
+> **Date:** 2026-05-20
 
 ---
 
 ## 1. One-liner
 
+> **Behavior-verified API integration — visible to your team, callable by your agents.**
+>
 > A layer on top of your existing API docs that learns how the API **really**
-> behaves, then serves that verified knowledge to whoever is integrating —
-> increasingly an **AI agent** — so integration takes **days, not weeks** of
-> back-and-forth between two dev teams.
+> behaves, then renders that verified knowledge through two surfaces: an
+> interactive **Behavior Explorer** for the humans integrating, and a hosted
+> **MCP server** for the AI agents helping them. Integration takes **days,
+> not weeks** of back-and-forth between two dev teams.
 
 ---
 
@@ -60,7 +63,7 @@ This is unambiguous and decides the whole go-to-market.
 |-------|-----------|------|
 | **L1 — Static** | The provider's existing OpenAPI spec / Postman collection | We **ingest** it as a seed. We never replace it. |
 | **L2 — Behavioral** | A learned model of how the API *actually* behaves | **The engine. The moat.** |
-| **L3 — Interface** | How integrators consume L2 | Hosted MCP server + web dashboard |
+| **L3 — Surfaces** | How humans and agents consume L2 | Behavior Explorer (web) + Hosted MCP server + Provider Dashboard |
 
 We are a **layer on top of existing docs**, not a replacement. No one has to
 migrate. We enrich what they already have.
@@ -81,11 +84,12 @@ We probe the API (guided exploration)
         ↓
 Build L2: behavioral model + semantic layer + entity graph
         ↓
-Provider reviews & corrects the model in the web dashboard
+Provider reviews & corrects the model in the dashboard
         ↓
-Published as a hosted MCP server
+Published through Behavior Explorer (web) + Hosted MCP server
         ↓
-Consumer's AI agent integrates in one shot — call sequence & failures pre-known
+Humans browse the verified model; agents query it via MCP —
+both get the same call sequence, failure modes, and state machines
 ```
 
 **Why probing over traffic-mirroring:**
@@ -151,22 +155,50 @@ chain. The cross-team back-and-forth never happens, because the sequence was
 
 ---
 
-## 8. Delivery — MCP + web
+## 8. Delivery — explorer + MCP
 
-- **Hosted remote MCP server** (HTTP transport, OAuth) — what the consumer's AI
-  agent connects to. Zero install: point the agent at a URL. The agent queries
-  verified schemas, real failure modes, call sequences, and field meanings.
-- **Web dashboard** — where the *provider* pastes the key + spec, watches the
-  probe run, and **reviews/corrects** the semantic layer and entity graph.
-  Human-in-the-loop here is what makes the output trustworthy.
-- **Web explorer** — the same verified model, browsable by humans without an
-  agent.
+Three surfaces, one engine. Humans and agents are both first-class consumers.
 
-**Why the AI angle matters:** in 2026 most API integration is done with an AI
-coding agent in the loop. Today that agent reads the static spec — which drifts
-and lies — and hallucinates the integration. Incumbents (Stripe and others) are
-shipping MCP servers and "agent-ready" docs, **but those are spec-derived.**
-Ours is **behavior-verified.** That is the wedge.
+- **Behavior Explorer (web)** — the human-facing surface. Not a docs site.
+  An interactive renderer of the L2 model:
+  - **DAG explorer** — click an endpoint, see the full prerequisite chain.
+  - **Failure catalog** — searchable list of every observed error, real
+    trigger condition, retryability, concrete fix.
+  - **State machine viewer** — click an entity, see lifecycle and
+    valid/invalid transitions.
+  - **Sandbox-vs-production diff** — side-by-side behavioral divergence.
+  - **Webhook contract viewer** — timing, retry policy, ordering, idempotency.
+  - **Idempotency cheat sheet** — per-endpoint behavior table.
+
+- **Hosted MCP server** (HTTP transport, OAuth) — the agent-facing surface.
+  Same verified model, agent-callable. Zero install: point Cursor / Claude /
+  Copilot at a URL.
+
+- **Provider Dashboard** — where the provider pastes the key + spec, watches
+  the probe run, and **reviews/corrects** the L2 model. Human-in-the-loop
+  here is what makes the output trustworthy. Not sold separately — required
+  workflow for any published API.
+
+### What this is NOT
+
+We are not a docs CMS. We will not build a markdown editor, themes, custom
+domains, page templates, or page analytics. Providers keep their Mintlify /
+ReadMe / Scalar for marketing docs; TrueAPI sits alongside as the **verified
+behavior layer**. The moat is the data inside the UI, not the UI chrome —
+every screen renders L2 artifacts that only we have.
+
+### Why both surfaces matter
+
+The L2 outputs (entity DAG, failure catalog, state machines, sandbox/prod
+divergence, idempotency maps) are **integration pains** — they hurt humans
+and agents equally:
+
+- A human at 2am wants the DAG to know what to call first.
+- An AI agent in Cursor wants the same DAG to stop hallucinating call orders.
+
+Incumbents (Stripe and others) ship MCP servers and "agent-ready" docs, **but
+those are spec-derived.** Ours is **behavior-verified** — and rendered for
+both audiences. That is the wedge.
 
 ---
 
@@ -191,9 +223,11 @@ previous has a user.
 
 1. **L2 engine** — probe + inference + semantic layer + entity graph.
    *Invisible, but everything depends on it.*
-2. **Hosted MCP verified-context layer** — the **first sellable product.**
-   Rides the agentic-integration tailwind; zero-infra adoption; value compounds.
-3. **Web dashboard** — provider config + human review of the model.
+2. **Behavior Explorer + Hosted MCP server** — the **first sellable surfaces.**
+   Same L2 data, two renderers: interactive explorer for humans, MCP endpoint
+   for agents. Rides the agentic-integration tailwind, but also sellable to
+   providers whose customers aren't agent-ready yet.
+3. **Provider Dashboard** — provider config + human review of the L2 model.
 4. **Onboarding linter** — product #2 (verify a consumer's calls against the
    learned patterns). Higher friction; comes later.
 5. **Q&A** — not a separate product; a query mode of the MCP layer.
@@ -242,11 +276,16 @@ MudraCore (the existing fintech-OS project) stops being "the product" and
 becomes the **dogfood + proof**:
 
 - Run the L2 engine against MudraCore's own backend.
-- Expose MudraCore's payments API as a hosted MCP server.
-- Demo: *an AI agent integrates MudraCore's payments API correctly in one shot*
-  — because it queried verified context instead of guessing from docs.
+- Expose MudraCore's payments API through both surfaces: **Behavior Explorer**
+  (web) and **hosted MCP server**.
+- **Demo 1 (humans):** *a developer opens the explorer, clicks "create a
+  transfer," sees the full prerequisite chain, state machine, and failure
+  modes on one screen — no docs reading required.*
+- **Demo 2 (agents):** *an AI agent integrates MudraCore's payments API
+  correctly in one shot* — because it queried verified context through MCP
+  instead of guessing from docs.
 
-This demo is solo-buildable and proves the entire thesis in ~90 seconds.
+Both demos are solo-buildable and together prove the entire thesis in ~90 seconds.
 
 ---
 
@@ -254,6 +293,7 @@ This demo is solo-buildable and proves the entire thesis in ~90 seconds.
 
 | Date | Decision | Why |
 |------|----------|-----|
+| 2026-05-20 | Positioning: **"Behavior-verified API integration — visible to your team, callable by your agents."** Two first-class surfaces: Behavior Explorer (web, for humans) + Hosted MCP server (for agents). Explicit non-goal: docs CMS. | L2 artifacts (entity DAG, failure catalog, state machines, sandbox/prod divergence, idempotency maps) are integration pains for humans AND agents equally. Agent-only positioning leaves human ARPU on the table; docs-platform positioning collides with Mintlify ($500M val, $10M ARR). Splitting the difference: same L2 engine, two purpose-built renderers, no markdown editor / themes / custom domains. |
 | 2026-05-19 | Product = traffic/behavior-verified API knowledge layer, delivered via MCP | "Docs lie / sandbox is fake" is the validated pain |
 | 2026-05-19 | Onboarding via **active probing**, not traffic-mirroring | Probing is self-serve (PLG); mirroring is a 3-month security sale |
 | 2026-05-19 | Traffic-mirroring **demoted**, not killed — enterprise fidelity tier | MCP-session usage becomes the data flywheel instead |
