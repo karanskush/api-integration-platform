@@ -1,9 +1,4 @@
 # TrueAPI — Product Vision
-
-> **Working name:** "TrueAPI" is a placeholder — rename later.
-> **Status:** Vision / pre-build. No code yet.
-> **Date:** 2026-05-20
-
 ---
 
 ## 1. One-liner
