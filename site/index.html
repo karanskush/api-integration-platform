@@ -3,2169 +3,542 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<meta name="theme-color" content="#0a0a0c" />
+<meta name="theme-color" content="#0b0906" />
 <title>TrueAPI — Behavior-verified API integration</title>
-<meta name="description" content="Behavior-verified API integration — visible to your team, callable by your agents. We learn how APIs actually behave, then render that truth as an interactive explorer for humans and an MCP server for agents." />
+<meta name="description" content="Behavior-verified API integration — visible to your team, callable by your agents. We learn how APIs actually behave, then render that truth as an explorer for people and an MCP server for agents." />
 <meta property="og:title" content="TrueAPI — Behavior-verified API integration" />
 <meta property="og:description" content="Visible to your team, callable by your agents." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
 <style>
-/* =========================================================
-   DESIGN TOKENS
-   ========================================================= */
+/* ============================================================
+   TOKENS
+   ============================================================ */
 :root {
   --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-display: 'Instrument Serif', 'Georgia', 'Times New Roman', serif;
+  --font-display: 'Instrument Serif', 'Georgia', serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-  /* Surfaces — warm near-black */
-  --bg: #0d0b08;
-  --bg-1: #14110c;
-  --bg-2: #1c1812;
-  --bg-3: #25201a;
-  --panel: #16130d;
-  --panel-2: #1d1913;
-  --code-bg: #0a0805;
+  --bg: #0b0906;
+  --bg-soft: #110e09;
+  --panel: #14110b;
 
-  /* Borders — warm cream */
-  --border: rgba(245,236,217,0.06);
-  --border-strong: rgba(245,236,217,0.14);
-  --border-accent: rgba(230,214,168,0.30);
+  --fg: #f3ead7;
+  --fg-dim: #b6a888;
+  --fg-mute: #786c57;
 
-  /* Text — beige scale */
-  --fg: #f5ecd9;
-  --fg-dim: #c9b896;
-  --fg-mute: #7a6f59;
-  --fg-faint: #4d4538;
+  --accent: #e6d6a8;            /* warm beige — primary */
+  --accent-blue: #84a8cf;       /* sparing cool secondary */
+  --accent-red: #d98b7a;        /* failures only */
 
-  /* Accents — beige primary, muted blue secondary */
-  --emerald: #e6d6a8;        /* primary accent: warm cream-gold */
-  --emerald-soft: rgba(230,214,168,0.12);
-  --emerald-glow: rgba(230,214,168,0.22);
-  --violet: #7da3c9;         /* secondary accent: muted denim blue */
-  --violet-soft: rgba(125,163,201,0.14);
-  --rose: #d97070;
-  --rose-soft: rgba(217,112,112,0.10);
-  --amber: #e5b562;
-  --amber-soft: rgba(229,181,98,0.12);
-  --cyan: #7da3c9;           /* alias of blue, same hue */
-  --cyan-soft: rgba(125,163,201,0.10);
+  --hair: rgba(243,234,215,0.09);
+  --hair-soft: rgba(243,234,215,0.05);
 
-  /* Layout */
-  --maxw: 1180px;
-  --maxw-narrow: 880px;
-  --radius: 14px;
-  --radius-sm: 10px;
-  --radius-xs: 6px;
-  --nav-h: 64px;
-
-  /* Easing */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --maxw: 1080px;
+  --measure: 660px;
+  --nav-h: 72px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* =========================================================
-   RESET / BASE
-   ========================================================= */
+/* ============================================================
+   RESET
+   ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 16px; scroll-behavior: smooth; scroll-padding-top: 80px; -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 100px; overflow-x: hidden; }
 body {
   font-family: var(--font-sans);
   background: var(--bg);
   color: var(--fg);
   line-height: 1.6;
-  font-feature-settings: 'cv11','ss01','ss03';
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
-  letter-spacing: -0.01em;
 }
-::selection { background: var(--emerald); color: #1a1410; }
-img, svg { display: block; max-width: 100%; }
-button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 a { color: inherit; text-decoration: none; }
-code, pre { font-family: var(--font-mono); }
+svg { display: block; }
+::selection { background: var(--accent); color: #1a1410; }
 
-/* =========================================================
-   GLOBAL BACKGROUND — intentionally bare (calm, editorial surface)
-   ========================================================= */
-
-/* =========================================================
-   UTILITIES
-   ========================================================= */
-.container { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
-.container-narrow { max-width: var(--maxw-narrow); margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+/* ============================================================
+   PRIMITIVES
+   ============================================================ */
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; }
 
 .eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--emerald-soft);
-  border: 1px solid var(--border-accent);
-  color: var(--emerald);
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-.eyebrow .dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--emerald);
-}
-
-.label {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
   color: var(--fg-mute);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 16px;
 }
 
-.h1 {
+.display {
   font-family: var(--font-display);
-  font-size: clamp(40px, 5.2vw, 68px);
-  line-height: 1.02;
-  letter-spacing: -0.02em;
   font-weight: 400;
-  color: var(--fg);
-}
-.tagline {
-  font-family: var(--font-display);
-  font-size: clamp(24px, 2.8vw, 36px);
-  line-height: 1.2;
   letter-spacing: -0.015em;
-  font-weight: 400;
-  font-style: italic;
-  margin-top: 12px;
-}
-.h2 {
-  font-family: var(--font-display);
-  font-size: clamp(34px, 5.4vw, 58px);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  font-weight: 400;
-  color: var(--fg);
-  margin-bottom: 20px;
-}
-.h2-soft { color: var(--fg-dim); }
-.h3 {
-  font-size: 22px;
-  line-height: 1.3;
-  letter-spacing: -0.015em;
-  font-weight: 600;
+  line-height: 1.04;
   color: var(--fg);
 }
-.sub {
-  font-size: 18px;
-  line-height: 1.65;
+h1.display { font-size: clamp(32px, 7vw, 88px); }
+h2.display { font-size: clamp(28px, 4.4vw, 56px); }
+
+.lead {
+  font-size: clamp(18px, 1.5vw, 21px);
+  line-height: 1.6;
   color: var(--fg-dim);
-  max-width: 640px;
+  max-width: var(--measure);
+  font-weight: 400;
 }
-.grad {
-  background: linear-gradient(120deg, #f4e4b8 0%, #e6d6a8 35%, #b8c7d6 70%, #7da3c9 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+
+.section { padding: 0 0 clamp(92px, 11vw, 144px); }
+.section-label {
+  display: block;
+  margin-bottom: 28px;
 }
-.mono { font-family: var(--font-mono); }
 
 /* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  transition: all 0.18s var(--ease-soft);
-  white-space: nowrap;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
   border: 1px solid transparent;
+  transition: transform 0.2s var(--ease), background 0.2s, border-color 0.2s, color 0.2s;
 }
-.btn-primary {
-  background: var(--emerald);
-  color: #1a1410;
-}
-.btn-primary:hover {
-  background: #f0dfb3;
-  transform: translateY(-1px);
-}
-.btn-ghost {
-  background: var(--panel);
-  color: var(--fg);
-  border-color: var(--border-strong);
-}
-.btn-ghost:hover {
-  background: var(--panel-2);
-  border-color: rgba(255,255,255,0.18);
-  transform: translateY(-1px);
-}
-.btn svg { transition: transform 0.18s var(--ease-soft); }
-.btn:hover svg { transform: translateX(2px); }
+.btn-primary { background: var(--accent); color: #1a1410; }
+.btn-primary:hover { transform: translateY(-1px); background: #f1e3bd; }
+.btn-ghost { color: var(--fg); border-color: var(--hair); }
+.btn-ghost:hover { border-color: var(--fg-mute); }
+.btn .arr { transition: transform 0.2s var(--ease); }
+.btn:hover .arr { transform: translateX(3px); }
 
-/* Reveal-on-scroll */
-.reveal {
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out);
+.link-arrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg);
 }
-.reveal.in {
-  opacity: 1;
-  transform: none;
-}
-.reveal[data-delay="1"] { transition-delay: 0.04s; }
-.reveal[data-delay="2"] { transition-delay: 0.08s; }
-.reveal[data-delay="3"] { transition-delay: 0.12s; }
-.reveal[data-delay="4"] { transition-delay: 0.16s; }
-.reveal[data-delay="5"] { transition-delay: 0.20s; }
-.reveal[data-delay="6"] { transition-delay: 0.24s; }
+.link-arrow .arr { transition: transform 0.2s var(--ease); color: var(--fg-mute); }
+.link-arrow:hover .arr { transform: translateX(3px); }
+
+/* Reveal */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
+  html { scroll-behavior: auto; }
 }
 
-/* Sections */
-.section { padding: 104px 0; position: relative; }
-.section + .section { padding-top: 0; }
-.section + .section::before {
-  content: '';
-  display: block;
-  height: 1px;
-  background: var(--border);
-  max-width: 1080px;
-  margin: 0 auto 80px;
-}
-.section-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
-  max-width: var(--maxw);
-  margin: 0 auto;
-}
-
-/* =========================================================
+/* ============================================================
    NAV
-   ========================================================= */
+   ============================================================ */
 .nav {
-  position: fixed;
-  inset: 0 0 auto 0;
+  position: fixed; top: 0; left: 0; right: 0;
   height: var(--nav-h);
+  display: flex; align-items: center;
   z-index: 100;
-  display: flex;
-  align-items: center;
-  background: transparent;
-  transition: background 0.25s var(--ease-soft), border-bottom-color 0.25s var(--ease-soft);
+  transition: background 0.3s, border-color 0.3s;
   border-bottom: 1px solid transparent;
 }
 .nav.scrolled {
-  background: rgba(10,10,12,0.7);
-  backdrop-filter: saturate(180%) blur(14px);
-  -webkit-backdrop-filter: saturate(180%) blur(14px);
-  border-bottom-color: var(--border);
+  background: rgba(11,9,6,0.72);
+  backdrop-filter: saturate(160%) blur(16px);
+  -webkit-backdrop-filter: saturate(160%) blur(16px);
+  border-bottom-color: var(--hair-soft);
 }
-.nav-inner {
-  width: 100%;
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 0 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.nav-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.02em;
-  color: var(--fg);
-}
-.nav-logo-mark {
-  width: 22px; height: 22px;
-  border-radius: 6px;
-  background: var(--emerald);
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-.nav-logo-mark::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1.5px solid rgba(0,0,0,0.4);
-  border-radius: 3px;
-  border-top-color: transparent;
-  border-left-color: transparent;
-}
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.nav-links a {
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--fg-dim);
-  border-radius: 8px;
-  transition: color 0.15s, background 0.15s;
-}
-.nav-links a:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
-.nav-actions { display: flex; align-items: center; gap: 10px; }
-.nav-action {
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--fg-dim);
-  border-radius: 8px;
-}
-.nav-action:hover { color: var(--fg); }
-.nav-cta {
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  background: var(--fg);
-  color: var(--bg);
-  border-radius: 8px;
-  transition: background 0.15s;
-}
-.nav-cta:hover { background: var(--emerald); color: #1a1410; }
-@media (max-width: 800px) {
-  .nav-links { display: none; }
-}
+.nav-inner { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; }
+.brand-mark { width: 20px; height: 20px; border-radius: 5px; background: var(--accent); }
+.nav-menu { display: flex; align-items: center; gap: 32px; }
+.nav-menu a { font-size: 14.5px; color: var(--fg-dim); transition: color 0.15s; }
+.nav-menu a:hover { color: var(--fg); }
+.nav-cta { font-size: 14.5px; font-weight: 500; color: var(--fg); }
+@media (max-width: 720px) { .nav-menu .nav-link { display: none; } }
 
-/* =========================================================
+/* ============================================================
    HERO
-   ========================================================= */
-.hero {
-  position: relative;
-  padding: calc(var(--nav-h) + 56px) 0 72px;
-  overflow: hidden;
-}
-.hero-grid {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  gap: 56px;
-  align-items: start;
-}
-@media (max-width: 980px) {
-  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
-}
-.hero-copy h1 { margin: 20px 0 0; }
-.hero-copy .tagline { margin-bottom: 28px; }
-.hero-copy .sub { margin-bottom: 32px; font-size: 19px; }
-.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
-
-.hero-trust {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-mute);
-}
-.hero-trust .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-}
-.hero-trust .chip strong { color: var(--fg); font-weight: 600; }
-.hero-trust .chip .ic {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--emerald);
-}
-
-/* Hero visual: dual-surface preview */
-.hero-visual {
-  position: relative;
-  border-radius: 16px;
-  background: linear-gradient(180deg, var(--panel) 0%, var(--bg-1) 100%);
-  border: 1px solid var(--border);
-  padding: 16px;
-  box-shadow:
-    0 24px 60px rgba(0,0,0,0.45),
-    0 0 0 1px rgba(255,255,255,0.02) inset;
-}
-.hero-visual::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 16px;
-  padding: 1px;
-  background: linear-gradient(180deg, rgba(230,214,168,0.22), transparent 40%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-.surface-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  margin-bottom: 12px;
-  position: relative;
-}
-.surface-tab {
-  flex: 1;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-mute);
-  border-radius: 7px;
-  transition: color 0.18s var(--ease-soft);
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.surface-tab[aria-selected="true"] {
-  color: var(--fg);
-  background: var(--panel-2);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 0 0 1px var(--border);
-}
-.surface-tab svg { opacity: 0.7; }
-
-.surface-panel {
-  background: var(--code-bg);
-  border-radius: 8px;
-  padding: 18px 20px;
-  min-height: 380px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
-  position: relative;
-  overflow: hidden;
-}
-.surface-panel[hidden] { display: none; }
-
-/* Explorer surface (humans) */
-.expl-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.expl-crumb {
-  font-size: 12px;
-  color: var(--fg-mute);
-}
-.expl-crumb span { color: var(--fg); }
-.expl-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: var(--emerald-soft);
-  color: var(--emerald);
-  border: 1px solid var(--border-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.expl-section { margin-bottom: 16px; }
-.expl-section-title {
-  font-size: 11px;
-  color: var(--fg-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-.expl-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  margin-bottom: 6px;
-  font-size: 12px;
-  transition: border-color 0.15s, background 0.15s;
-}
-.expl-step:hover { border-color: var(--border-accent); background: var(--bg-2); }
-.expl-step-num {
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: var(--emerald-soft);
-  color: var(--emerald);
-  font-size: 10px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.expl-step-method {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: 700;
-  margin-right: 6px;
-  letter-spacing: 0.05em;
-}
-.expl-step-method.post { background: var(--emerald-soft); color: var(--emerald); }
-.expl-step-method.get  { background: var(--violet-soft); color: var(--violet); }
-.expl-step-method.patch{ background: var(--bg-2); color: var(--fg-dim); }
-.expl-step-path { color: var(--fg); }
-.expl-step-note { color: var(--fg-mute); font-size: 11px; display: block; margin-top: 3px; }
-
-/* MCP surface (agents) */
-.mcp-line { white-space: pre-wrap; word-break: break-word; }
-.mcp-prompt { color: var(--fg-mute); }
-.mcp-key   { color: var(--violet); }
-.mcp-str   { color: var(--emerald); }
-.mcp-num   { color: var(--amber); }
-.mcp-comment { color: var(--fg-faint); font-style: italic; }
-.mcp-tool { color: var(--violet); }
-.mcp-cursor {
-  display: inline-block;
-  width: 7px; height: 14px;
-  background: var(--emerald);
-  vertical-align: text-bottom;
-  margin-left: 2px;
-  animation: blink 1s infinite;
-}
-@keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
-
-/* =========================================================
-   DRIFT SECTION (Section 2)
-   ========================================================= */
-.drift {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-top: 64px;
-}
-@media (max-width: 880px) { .drift { grid-template-columns: 1fr; } }
-.drift-card {
-  position: relative;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  overflow: hidden;
-}
-.drift-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-.drift-card-head h4 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.drift-tag {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-family: var(--font-mono);
-}
-.drift-tag.spec   { background: var(--rose-soft); color: var(--rose); border: 1px solid rgba(244,63,94,0.25); }
-.drift-tag.truth  { background: var(--emerald-soft); color: var(--emerald); border: 1px solid var(--border-accent); }
-.drift-code {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.7;
+   ============================================================ */
+.hero { padding: calc(var(--nav-h) + clamp(24px, 3.6vw, 56px)) 0 clamp(72px, 9vw, 120px); text-align: center; }
+.hero .eyebrow { margin-bottom: 30px; }
+.hero h1 { margin: 0 auto; max-width: 16ch; }
+.hero .tagline {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: clamp(22px, 2.6vw, 34px);
   color: var(--fg-dim);
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  overflow-x: auto;
+  margin-top: 18px;
 }
-.drift-code .k   { color: var(--violet); }
-.drift-code .s   { color: var(--emerald); }
-.drift-code .c   { color: var(--fg-faint); font-style: italic; }
-.drift-code .n   { color: var(--amber); }
-.drift-code .add { background: var(--emerald-soft); color: var(--emerald); padding: 0 4px; border-radius: 3px; }
-.drift-code .rm  { background: rgba(244,63,94,0.10); color: var(--rose); padding: 0 4px; border-radius: 3px; text-decoration: line-through; opacity: 0.85; }
-.drift-summary {
-  font-size: 13px;
-  color: var(--fg-dim);
-}
-.drift-summary strong { color: var(--fg); font-weight: 600; }
-.drift-divider {
-  position: absolute;
-  left: 50%;
-  top: 56px;
-  bottom: 56px;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, var(--border-strong), transparent);
-  transform: translateX(-0.5px);
-  z-index: 2;
-  pointer-events: none;
-}
-@media (max-width: 880px) { .drift-divider { display: none; } }
+.hero .lead { margin: 26px auto 0; text-align: center; }
+.hero-actions { display: flex; gap: 14px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
 
-/* =========================================================
-   TWO SURFACES (Section 3)
-   ========================================================= */
-.surfaces-wrap {
-  margin-top: 64px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+/* Hero proof line */
+.hero-proof {
+  margin-top: 72px;
+  display: flex; justify-content: center; gap: clamp(28px, 6vw, 72px); flex-wrap: wrap;
+  font-size: 14px; color: var(--fg-mute);
 }
-.surfaces-head {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-}
-.surfaces-head button {
-  flex: 1;
-  padding: 18px 22px;
-  text-align: left;
-  border-right: 1px solid var(--border);
-  position: relative;
-  transition: background 0.15s;
-}
-.surfaces-head button:last-child { border-right: none; }
-.surfaces-head button:hover { background: var(--bg-2); }
-.surfaces-head button[aria-selected="true"]::after {
-  content: '';
-  position: absolute;
-  left: 22px; right: 22px; bottom: -1px;
-  height: 2px;
-  background: var(--emerald);
-}
-.surfaces-head .label-small {
-  display: block;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--fg-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
-}
-.surfaces-head .name {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--fg);
-  letter-spacing: -0.01em;
-}
-.surfaces-head button[aria-selected="true"] .name { color: var(--emerald); }
-.surfaces-head .for-who {
-  font-size: 12px;
-  color: var(--fg-mute);
-  margin-top: 4px;
-  font-family: var(--font-mono);
-}
-.surfaces-body {
-  padding: 32px;
-  display: grid;
-  grid-template-columns: 1fr 1.3fr;
-  gap: 32px;
-  align-items: start;
-}
-@media (max-width: 880px) { .surfaces-body { grid-template-columns: 1fr; } }
-.surfaces-body[hidden] { display: none; }
-.surfaces-features { display: flex; flex-direction: column; gap: 16px; }
-.surfaces-feat {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  transition: border-color 0.15s, transform 0.15s var(--ease-soft);
-}
-.surfaces-feat:hover { border-color: var(--border-accent); transform: translateX(2px); }
-.surfaces-feat-ic {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--emerald-soft);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  color: var(--emerald);
-}
-.surfaces-feat-body h5 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg);
-  margin-bottom: 4px;
-}
-.surfaces-feat-body p { font-size: 13px; color: var(--fg-dim); line-height: 1.55; }
+.hero-proof b { color: var(--fg); font-weight: 600; }
 
-/* Mockups inside surfaces */
-.mock {
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  position: relative;
-  min-height: 320px;
-}
-.mock-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: -16px -16px 14px;
-  padding: 10px 14px;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--border);
-  border-radius: 10px 10px 0 0;
-}
-.mock-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
-.mock-bar .dot.r { background: #ff5f57; }
-.mock-bar .dot.y { background: #febc2e; }
-.mock-bar .dot.g { background: #28c840; }
-.mock-bar .title {
-  margin-left: auto;
-  color: var(--fg-mute);
-  font-size: 11px;
-  font-family: var(--font-mono);
-}
+/* ============================================================
+   STATEMENT (the problem)
+   ============================================================ */
+.statement { text-align: center; }
+.statement h2 { max-width: 18ch; margin: 0 auto; }
+.statement .lead { margin: 26px auto 0; text-align: center; }
 
-/* =========================================================
-   L2 ENGINE BENTO (Section 4)
-   ========================================================= */
-.engine-grid {
-  margin-top: 64px;
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 16px;
-}
-@media (max-width: 980px) { .engine-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px) { .engine-grid { grid-template-columns: 1fr; } }
-
-.engine-card {
-  position: relative;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  transition: border-color 0.25s var(--ease-soft), transform 0.25s var(--ease-soft);
-  overflow: hidden;
-  min-height: 220px;
-}
-.engine-card:hover {
-  border-color: var(--border-accent);
-  transform: translateY(-3px);
-}
-.engine-card-num {
+.diff {
+  margin: 56px auto 0;
+  max-width: 720px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-mute);
-  letter-spacing: 0.06em;
-  margin-bottom: 12px;
-}
-.engine-card-ic {
-  width: 36px; height: 36px;
-  border-radius: 9px;
-  background: var(--emerald-soft);
-  color: var(--emerald);
-  display: grid;
-  place-items: center;
-  margin-bottom: 14px;
-}
-.engine-card h4 {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--fg);
-  margin-bottom: 8px;
-  letter-spacing: -0.015em;
-}
-.engine-card p {
   font-size: 13.5px;
-  color: var(--fg-dim);
-  line-height: 1.55;
+  line-height: 2;
+  text-align: left;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  padding: 26px 4px;
 }
-/* spans for bento layout */
-.engine-card.lg { grid-column: span 3; min-height: 280px; }
-.engine-card.md { grid-column: span 3; }
-.engine-card.sm { grid-column: span 2; }
-@media (max-width: 980px) {
-  .engine-card.lg, .engine-card.md { grid-column: span 2; }
-  .engine-card.sm { grid-column: span 1; }
-}
-@media (max-width: 600px) {
-  .engine-card.lg, .engine-card.md, .engine-card.sm { grid-column: span 1; }
-}
+.diff .row { display: flex; gap: 14px; }
+.diff .row + .row { margin-top: 6px; }
+.diff .tag { width: 60px; flex-shrink: 0; color: var(--fg-mute); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 1px; }
+.diff .spec, .diff .truth { min-width: 0; overflow-wrap: anywhere; }
+.diff .spec { color: var(--fg-mute); }
+.diff .spec .strike { text-decoration: line-through; }
+.diff .truth { color: var(--fg-dim); }
+.diff .truth em { color: var(--accent); font-style: normal; }
 
-/* Bento featured card with mini diagram */
-.engine-card-feature {
-  background: linear-gradient(180deg, var(--panel) 0%, var(--emerald-soft) 100%);
-  border-color: var(--border-accent);
-}
-.engine-mini-dag {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 180px;
-  height: 100px;
-  opacity: 0.85;
-}
+/* ============================================================
+   LAYERS (the engine)
+   ============================================================ */
+.split { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: clamp(40px, 7vw, 96px); align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 40px; } }
+.split-head h2 { margin-bottom: 22px; }
 
-/* =========================================================
-   DAG DEMO (Section 5)
-   ========================================================= */
-.dag-stage {
-  margin-top: 64px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 32px;
+.layers { display: flex; flex-direction: column; }
+.layer {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 32px;
-  align-items: center;
+  grid-template-columns: 36px 1fr;
+  gap: 18px;
+  padding: 22px 0;
+  border-top: 1px solid var(--hair-soft);
 }
-@media (max-width: 880px) { .dag-stage { grid-template-columns: 1fr; } }
-.dag-intro { margin-top: 72px; margin-bottom: 24px; max-width: 820px; }
-.dag-intro h3 { margin-bottom: 10px; }
-.dag-intro + .dag-stage { margin-top: 0; }
-.dag-svg-wrap {
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
-}
-.dag-svg { width: 100%; height: auto; display: block; }
-.dag-node {
-  fill: var(--bg-2);
-  stroke: var(--border-strong);
-  stroke-width: 1;
-}
-.dag-node.active { stroke: var(--emerald); stroke-width: 1.5; }
-.dag-node-method {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-.dag-node-method.post { fill: var(--emerald); }
-.dag-node-method.get  { fill: var(--cyan); }
-.dag-node-path {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  fill: var(--fg);
-  font-weight: 500;
-}
-.dag-node-label {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  fill: var(--fg-mute);
-}
-.dag-edge {
-  stroke: var(--border-strong);
-  stroke-width: 1.5;
-  fill: none;
-  marker-end: url(#arrow);
-}
-.dag-edge-flow {
-  stroke: var(--emerald);
-  stroke-width: 1.5;
-  fill: none;
-  stroke-dasharray: 4 4;
-  marker-end: url(#arrow-em);
-  opacity: 0.85;
-}
-.dag-edge-label {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  fill: var(--fg-mute);
-}
-.dag-info h4 {
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--fg);
-  margin-bottom: 8px;
-  letter-spacing: -0.015em;
-}
-.dag-info p {
-  font-size: 14px;
-  color: var(--fg-dim);
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-.dag-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
-.dag-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--fg-dim);
-  font-family: var(--font-mono);
-}
-.dag-list li .ic {
-  width: 18px; height: 18px;
-  border-radius: 4px;
-  background: var(--emerald-soft);
-  color: var(--emerald);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.dag-list li strong { color: var(--fg); font-weight: 600; }
+.layer:first-child { border-top: none; padding-top: 4px; }
+.layer .n { font-family: var(--font-mono); font-size: 13px; color: var(--fg-mute); padding-top: 3px; }
+.layer h3 { font-size: 17px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; margin-bottom: 5px; }
+.layer p { font-size: 14.5px; color: var(--fg-dim); line-height: 1.55; max-width: 52ch; }
 
-/* =========================================================
-   FAILURE CATALOG (Section 6)
-   ========================================================= */
-.fail-rail {
-  margin-top: 64px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-@media (max-width: 880px) { .fail-rail { grid-template-columns: 1fr; } }
-.fail-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
-  transition: border-color 0.2s, transform 0.2s var(--ease-soft);
-}
-.fail-card:hover { border-color: var(--border-accent); transform: translateY(-3px); }
-.fail-cost {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 5px;
-  background: var(--rose-soft);
-  color: var(--rose);
-  border: 1px solid rgba(244,63,94,0.25);
-}
-.fail-card .provider {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: var(--bg-2);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--fg-mute);
-  margin-bottom: 14px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.fail-card h4 {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--fg);
-  margin-bottom: 10px;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-  padding-right: 60px;
-}
-.fail-card .problem {
-  font-size: 13px;
-  color: var(--fg-dim);
-  line-height: 1.55;
-  margin-bottom: 14px;
-}
-.fail-card .problem code {
-  background: var(--code-bg);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 12px;
-  color: var(--amber);
-}
-.fail-fix {
-  border-top: 1px dashed var(--border);
-  padding-top: 12px;
-  font-size: 12.5px;
-  color: var(--fg-dim);
-  line-height: 1.55;
-}
-.fail-fix .fix-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--emerald);
-  margin-right: 6px;
-}
+/* ============================================================
+   SURFACES
+   ============================================================ */
+.surfaces-head { text-align: center; margin-bottom: clamp(48px, 6vw, 72px); }
+.surfaces-head h2 { max-width: 16ch; margin: 0 auto; }
+.surfaces { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 4vw, 56px); }
+@media (max-width: 760px) { .surfaces { grid-template-columns: 1fr; gap: 48px; } }
+.surface { position: relative; padding-left: 22px; }
+.surface::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--accent); }
+.surface.agents::before { background: var(--accent-blue); }
+.surface .who { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-mute); margin-bottom: 14px; }
+.surface h3 { font-family: var(--font-display); font-weight: 400; font-size: clamp(26px, 3vw, 34px); color: var(--fg); margin-bottom: 14px; letter-spacing: -0.01em; }
+.surface p { font-size: 15.5px; color: var(--fg-dim); line-height: 1.62; max-width: 44ch; }
+.surface ul { list-style: none; margin-top: 20px; display: flex; flex-direction: column; gap: 11px; }
+.surface li { display: flex; gap: 11px; font-size: 14.5px; color: var(--fg-dim); }
+.surface li::before { content: '—'; color: var(--fg-mute); flex-shrink: 0; }
 
-/* =========================================================
-   COMPARISON (Section 7)
-   ========================================================= */
-.compare {
-  margin-top: 64px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.compare-row {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  border-bottom: 1px solid var(--border);
-  transition: background 0.15s;
-}
-.compare-row:last-child { border-bottom: none; }
-.compare-row:hover { background: var(--bg-1); }
-.compare-cell { padding: 18px 22px; font-size: 14px; }
-.compare-cell:not(:last-child) { border-right: 1px solid var(--border); }
-.compare-row.head .compare-cell {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--fg-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  background: var(--bg-1);
-}
-.compare-row.head .compare-cell.us { color: var(--emerald); }
-.compare-row .feature {
-  font-weight: 600;
-  color: var(--fg);
-}
-.compare-row .feature small {
-  display: block;
-  font-weight: 400;
-  color: var(--fg-mute);
-  font-size: 12px;
-  margin-top: 3px;
-}
-.compare-row .them { color: var(--fg-dim); }
-.compare-row .us {
-  color: var(--fg);
-  font-weight: 500;
-  background: rgba(230,214,168,0.04);
-}
-.check { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; }
-.check.no { color: var(--fg-mute); }
-.check.yes { color: var(--emerald); }
-@media (max-width: 700px) {
-  .compare-row { grid-template-columns: 1fr; }
-  .compare-cell:not(:last-child) { border-right: none; border-bottom: 1px solid var(--border); }
-  .compare-row.head { display: none; }
-}
-
-/* =========================================================
-   PRICING (Section 8)
-   ========================================================= */
-.pricing {
-  margin-top: 64px;
+/* ============================================================
+   PRICING
+   ============================================================ */
+.pricing-head { text-align: center; margin-bottom: clamp(48px, 6vw, 72px); }
+.pricing-head h2 { max-width: 14ch; margin: 0 auto; }
+.tiers {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-}
-@media (max-width: 1100px) { .pricing { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 720px) { .pricing { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 520px) { .pricing { grid-template-columns: 1fr; } }
-.price-card {
-  position: relative;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px 24px;
-  display: flex;
-  flex-direction: column;
-  transition: border-color 0.2s, transform 0.2s var(--ease-soft);
-}
-.price-card:hover { border-color: var(--border-strong); transform: translateY(-3px); }
-.price-card.featured {
-  border-color: var(--border-accent);
-  background: linear-gradient(180deg, var(--panel) 0%, var(--emerald-soft) 100%);
-}
-.price-card.featured::before {
-  content: 'Most popular';
-  position: absolute;
-  top: -1px;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: var(--emerald);
-  color: #1a1410;
-  padding: 4px 10px;
-  border-radius: 4px;
-}
-.price-tier {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-mute);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 10px;
-}
-.price-amount {
-  font-size: 36px;
-  font-weight: 800;
-  color: var(--fg);
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-.price-amount small { font-size: 14px; font-weight: 500; color: var(--fg-mute); }
-.price-blurb {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--fg-dim);
-  line-height: 1.5;
-}
-.price-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 18px 0;
-}
-.price-features {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--fg-dim);
-}
-.price-features li { display: flex; align-items: flex-start; gap: 8px; line-height: 1.45; }
-.price-features li::before {
-  content: '';
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--emerald);
-  flex-shrink: 0;
-  margin-top: 7px;
-}
-.price-cta {
-  margin-top: auto;
-  padding-top: 22px;
-}
-.price-cta .btn { width: 100%; justify-content: center; }
-
-/* =========================================================
-   CTA FINAL
-   ========================================================= */
-.cta-final {
-  margin-top: 120px;
-  padding: 80px 0;
-  position: relative;
-}
-.cta-card {
-  background: linear-gradient(135deg, var(--panel) 0%, var(--bg-1) 100%);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 64px 48px;
-  text-align: center;
-  position: relative;
+  border: 1px solid var(--hair);
+  border-radius: 14px;
   overflow: hidden;
 }
-.cta-card::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  background: radial-gradient(circle at 50% 0%, var(--emerald-glow), transparent 60%);
-  z-index: 0;
-  pointer-events: none;
-}
-.cta-card > * { position: relative; z-index: 1; }
-.cta-card h2 {
-  font-family: var(--font-display);
-  font-size: clamp(30px, 4.4vw, 50px);
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  margin-bottom: 16px;
-  line-height: 1.05;
-}
-.cta-card p {
-  font-size: 17px;
-  color: var(--fg-dim);
-  margin-bottom: 32px;
-  max-width: 560px;
-  margin-left: auto;
-  margin-right: auto;
-}
-.cta-input {
-  display: flex;
-  gap: 8px;
-  max-width: 520px;
-  margin: 0 auto;
-  padding: 6px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.cta-input:focus-within {
-  border-color: var(--emerald);
-  box-shadow: 0 0 0 4px var(--emerald-soft);
-}
-.cta-input input {
-  flex: 1;
+@media (max-width: 980px) { .tiers { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .tiers { grid-template-columns: 1fr; } }
+.tier {
+  padding: 32px 24px;
+  border-right: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  display: flex; flex-direction: column;
   background: transparent;
-  border: none;
-  outline: none;
-  padding: 10px 14px;
-  font-size: 14px;
-  font-family: var(--font-mono);
-  color: var(--fg);
+  transition: background 0.2s;
 }
-.cta-input input::placeholder { color: var(--fg-mute); }
+.tier:hover { background: var(--bg-soft); }
+.tier.featured { background: var(--bg-soft); }
+.tier .name { font-size: 14px; font-weight: 600; color: var(--fg); }
+.tier .pop { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-left: 8px; }
+.tier .price { font-family: var(--font-display); font-size: 42px; line-height: 1; color: var(--fg); margin: 18px 0 4px; letter-spacing: -0.02em; }
+.tier .price small { font-family: var(--font-sans); font-size: 14px; color: var(--fg-mute); letter-spacing: 0; }
+.tier .blurb { font-size: 13px; color: var(--fg-dim); line-height: 1.5; min-height: 56px; }
+.tier ul { list-style: none; margin: 20px 0 26px; display: flex; flex-direction: column; gap: 9px; }
+.tier li { font-size: 13px; color: var(--fg-dim); line-height: 1.45; }
+.tier li b { color: var(--fg); font-weight: 600; }
+.tier .tier-cta { margin-top: auto; font-size: 14px; font-weight: 500; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
+.tier .tier-cta .arr { color: var(--fg-mute); transition: transform 0.2s var(--ease); }
+.tier:hover .tier-cta .arr { transform: translateX(3px); }
+.pricing-note { text-align: center; margin-top: 26px; font-size: 13.5px; color: var(--fg-mute); }
 
-/* =========================================================
-   FOOTER
-   ========================================================= */
-footer {
-  border-top: 1px solid var(--border);
-  padding: 40px 0 60px;
-  margin-top: 80px;
+/* ============================================================
+   CTA + FOOTER
+   ============================================================ */
+.cta { text-align: center; }
+.cta h2 { max-width: 18ch; margin: 0 auto 30px; }
+.cta-form { display: flex; gap: 10px; max-width: 480px; margin: 0 auto; }
+.cta-form input {
+  flex: 1; height: 48px; padding: 0 16px;
+  background: var(--bg-soft); border: 1px solid var(--hair); border-radius: 8px;
+  color: var(--fg); font-family: var(--font-mono); font-size: 13.5px;
 }
-.footer-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 24px;
-}
-.footer-meta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-mute);
-}
-.footer-meta strong { color: var(--fg); font-weight: 600; }
-.footer-links {
-  display: flex;
-  gap: 20px;
-  font-size: 13px;
-}
+.cta-form input::placeholder { color: var(--fg-mute); }
+.cta-form input:focus { outline: none; border-color: var(--fg-mute); }
+.cta-form button { height: 48px; }
+@media (max-width: 520px) { .cta-form { flex-direction: column; } .cta-form button { width: 100%; justify-content: center; } }
+
+footer { border-top: 1px solid var(--hair-soft); padding: 40px 0; }
+.footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.footer-inner .meta { font-size: 13px; color: var(--fg-mute); }
+.footer-links { display: flex; gap: 24px; font-size: 13.5px; }
 .footer-links a { color: var(--fg-dim); transition: color 0.15s; }
 .footer-links a:hover { color: var(--fg); }
 
-/* =========================================================
-   FLOATING / DECORATION
-   ========================================================= */
-.section-head {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  max-width: 780px;
-  margin-bottom: 0;
-  position: relative;
+/* ============================================================
+   MOBILE
+   ============================================================ */
+@media (max-width: 600px) {
+  .wrap { padding: 0 22px; }
+  .nav-inner { padding: 0 22px; }
+  .hero { padding-top: calc(var(--nav-h) + 52px); }
+  .hero .eyebrow { font-size: 11px; letter-spacing: 0.08em; }
+  .hero h1 { max-width: 100%; }
+  .hero .lead, .statement .lead { font-size: 16px; }
+  .hero-proof { gap: 9px 22px; margin-top: 52px; }
+  .diff { font-size: 12px; line-height: 1.9; }
+  .diff .tag { width: 52px; }
+  .section { padding: 0 0 84px; }
 }
-.section-head .section-num {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--emerald);
-  letter-spacing: 0.20em;
-  margin-bottom: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-}
-.section-head .section-num::after {
-  content: '';
-  display: inline-block;
-  width: 36px;
-  height: 1px;
-  background: var(--emerald);
-  opacity: 0.5;
-}
-.section-head .label { margin-bottom: 16px; }
-.section-head .h2 { margin-bottom: 18px; }
-.section-head .sub { margin: 0; max-width: 640px; }
-.lead-left { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
-.lead-left .sub { margin: 0; }
 </style>
 </head>
-
 <body>
 
-<!-- ========================================================
-     NAV
-     ======================================================== -->
+<!-- NAV -->
 <nav class="nav" id="nav">
   <div class="nav-inner">
-    <a href="#" class="nav-logo">
-      <span class="nav-logo-mark"></span>
-      TrueAPI
-    </a>
-    <div class="nav-links">
-      <a href="#drift">The drift</a>
-      <a href="#surfaces">Surfaces</a>
-      <a href="#engine">L2 engine</a>
-      <a href="#failures">Failures</a>
-      <a href="#pricing">Pricing</a>
-    </div>
-    <div class="nav-actions">
-      <a href="https://github.com/karanskush/api-integration-platform" target="_blank" rel="noopener" class="nav-action">GitHub</a>
-      <a href="#cta" class="nav-cta">Get early access</a>
+    <a href="#top" class="brand"><span class="brand-mark"></span>TrueAPI</a>
+    <div class="nav-menu">
+      <a href="#how" class="nav-link">How it works</a>
+      <a href="#surfaces" class="nav-link">Surfaces</a>
+      <a href="#pricing" class="nav-link">Pricing</a>
+      <a href="#start" class="nav-cta">Get early access →</a>
     </div>
   </div>
 </nav>
 
-<!-- ========================================================
-     HERO
-     ======================================================== -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-grid">
-      <!-- Copy -->
-      <div class="hero-copy reveal">
-        <span class="eyebrow"><span class="dot"></span> v0 · pre-launch</span>
-        <h1 class="h1">Behavior-verified API integration.</h1>
-        <p class="tagline"><span class="grad">Visible to your team, callable by your agents.</span></p>
-        <p class="sub">
-          Your docs say one thing. Your API does another. TrueAPI probes the difference,
-          builds a verified model of how it really behaves, then renders it through
-          two surfaces: an interactive <strong>Behavior Explorer</strong> for your team,
-          and a hosted <strong>MCP server</strong> for the agents shipping with them.
-        </p>
-        <div class="hero-actions">
-          <a href="#cta" class="btn btn-primary">
-            Probe your API
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h10m0 0L9 4m4 4L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </a>
-          <a href="#engine" class="btn btn-ghost">See it on a real API →</a>
-        </div>
-        <div class="hero-trust">
-          <span class="chip"><span class="ic"></span><strong>75%</strong> of APIs drift from spec</span>
-          <span class="chip"><span class="ic"></span><strong>97M</strong> MCP downloads/mo</span>
-          <span class="chip"><span class="ic"></span><strong>$48K</strong> avg / integration / yr</span>
-        </div>
+<!-- HERO -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow reveal">Behavior-verified API integration</span>
+    <h1 class="display reveal">APIs rarely behave the way their docs claim.</h1>
+    <p class="tagline reveal">Visible to your team, callable by your agents.</p>
+    <p class="lead reveal">TrueAPI probes how an API actually behaves, then renders that verified truth two ways — an explorer your team reads, and an MCP server your agents call.</p>
+    <div class="hero-actions reveal">
+      <a href="#start" class="btn btn-primary">Get early access <span class="arr">→</span></a>
+      <a href="#how" class="btn btn-ghost">How it works</a>
+    </div>
+    <div class="hero-proof reveal">
+      <span><b>~75%</b> of APIs drift from their spec</span>
+      <span><b>7</b> verified knowledge layers</span>
+      <span><b>1</b> model, two surfaces</span>
+    </div>
+  </div>
+</header>
+
+<!-- PROBLEM -->
+<section class="section statement" id="problem">
+  <div class="wrap">
+    <h2 class="display reveal">Your docs say one thing. Your API does another.</h2>
+    <p class="lead reveal">Type drift, undocumented fields, endpoints that 404, webhooks that arrive late. The spec is the map; the territory is different — and that gap is where integrations break and agents hallucinate.</p>
+    <div class="diff reveal">
+      <div class="row"><span class="tag">Spec</span><span class="spec"><span class="strike">status: "active" | "closed"</span></span></div>
+      <div class="row"><span class="tag">Reality</span><span class="truth">status: "active" | "closed" | <em>"pending_review"</em> &nbsp;— observed in 3% of responses, undocumented</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS / LAYERS -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="split">
+      <div class="split-head reveal">
+        <span class="eyebrow section-label">How it works</span>
+        <h2 class="display">We learn how your API actually behaves.</h2>
+        <p class="lead">OpenAPI describes shapes. The real integration knowledge lives in seven layers around them — each one probed, verified, and kept current.</p>
       </div>
-
-      <!-- Visual: dual-surface preview -->
-      <div class="hero-visual reveal" data-delay="2">
-        <div class="surface-tabs" role="tablist">
-          <button class="surface-tab" data-target="surf-expl" role="tab" aria-selected="true">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1 8a7 7 0 1014 0A7 7 0 001 8zm7-3v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            For your team — Explorer
-          </button>
-          <button class="surface-tab" data-target="surf-mcp" role="tab" aria-selected="false">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            For your agents — MCP
-          </button>
-        </div>
-
-        <!-- Explorer panel -->
-        <div class="surface-panel" id="surf-expl" role="tabpanel">
-          <div class="expl-head">
-            <div class="expl-crumb">payments · <span>create a transfer</span></div>
-            <span class="expl-badge">verified</span>
-          </div>
-          <div class="expl-section">
-            <div class="expl-section-title">Prerequisite chain (4 steps)</div>
-            <div class="expl-step">
-              <div class="expl-step-num">1</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/users</span>
-                <span class="expl-step-note">→ returns <code>holder_id</code> (permanent)</span>
-              </div>
-            </div>
-            <div class="expl-step">
-              <div class="expl-step-num">2</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/accounts</span>
-                <span class="expl-step-note">requires <code>holder_id</code> → returns <code>account_id</code></span>
-              </div>
-            </div>
-            <div class="expl-step">
-              <div class="expl-step-num">3</div>
-              <div>
-                <span class="expl-step-method patch">PATCH</span><span class="expl-step-path">/accounts/:id</span>
-                <span class="expl-step-note">attach external bank → unlocks <code>payouts_enabled</code></span>
-              </div>
-            </div>
-            <div class="expl-step">
-              <div class="expl-step-num">4</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/transfers</span>
-                <span class="expl-step-note">requires 2× <code>account_id</code> in <code>payouts_enabled</code></span>
-              </div>
-            </div>
-          </div>
-          <div class="expl-section">
-            <div class="expl-section-title">Known failure modes (3)</div>
-            <div class="expl-step">
-              <div class="expl-step-num" style="background:var(--rose-soft);color:var(--rose)">!</div>
-              <div>
-                <span class="expl-step-path">409 ACCOUNT_NOT_VERIFIED</span>
-                <span class="expl-step-note">step 4 before step 3 → retryable after PATCH</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- MCP panel -->
-        <div class="surface-panel" id="surf-mcp" role="tabpanel" hidden>
-          <div class="mcp-line"><span class="mcp-prompt">agent &gt;</span> <span class="mcp-tool">trueapi.get_call_sequence</span>({<span class="mcp-key">"intent"</span>: <span class="mcp-str">"create_transfer"</span>})</div>
-          <div class="mcp-line" style="margin-top:14px"><span class="mcp-comment">// returns verified prerequisite chain, not spec guess</span></div>
-          <div class="mcp-line">{
-  <span class="mcp-key">"steps"</span>: [
-    { <span class="mcp-key">"call"</span>: <span class="mcp-str">"POST /users"</span>,    <span class="mcp-key">"yields"</span>: <span class="mcp-str">"holder_id"</span> },
-    { <span class="mcp-key">"call"</span>: <span class="mcp-str">"POST /accounts"</span>, <span class="mcp-key">"needs"</span>: [<span class="mcp-str">"holder_id"</span>] },
-    { <span class="mcp-key">"call"</span>: <span class="mcp-str">"PATCH /accounts/:id"</span>,
-      <span class="mcp-key">"gate"</span>: <span class="mcp-str">"payouts_enabled"</span> },
-    { <span class="mcp-key">"call"</span>: <span class="mcp-str">"POST /transfers"</span>,
-      <span class="mcp-key">"needs"</span>: [<span class="mcp-str">"from_account_id"</span>, <span class="mcp-str">"to_account_id"</span>] }
-  ],
-  <span class="mcp-key">"failures"</span>: [
-    { <span class="mcp-key">"code"</span>: <span class="mcp-num">409</span>,
-      <span class="mcp-key">"trigger"</span>: <span class="mcp-str">"transfer before payouts_enabled"</span>,
-      <span class="mcp-key">"fix"</span>: <span class="mcp-str">"PATCH /accounts/:id with external_account first"</span> }
-  ],
-  <span class="mcp-key">"confidence"</span>: <span class="mcp-num">0.97</span>,
-  <span class="mcp-key">"verified_against"</span>: <span class="mcp-str">"sandbox + 12,402 probes"</span>
-}<span class="mcp-cursor"></span></div>
-        </div>
+      <div class="layers">
+        <div class="layer reveal"><span class="n">01</span><div><h3>Entity Dependency DAG</h3><p>The verified call sequence — which endpoint produces the ID the next one needs. The getting-started guide nobody writes.</p></div></div>
+        <div class="layer reveal"><span class="n">02</span><div><h3>State Machine Map</h3><p>Every state an entity can occupy, every transition, and which ones are irreversible.</p></div></div>
+        <div class="layer reveal"><span class="n">03</span><div><h3>Failure Catalog</h3><p>Every error, the real condition that triggers it, whether it's retryable, and the concrete fix.</p></div></div>
+        <div class="layer reveal"><span class="n">04</span><div><h3>Sandbox ↔ Prod Diff</h3><p>The errors and async behaviors that never fire in sandbox — caught before they break you live.</p></div></div>
+        <div class="layer reveal"><span class="n">05</span><div><h3>Webhook Contract</h3><p>Delivery latency, retry policy, ordering guarantees, idempotency — the race conditions that cost real money.</p></div></div>
+        <div class="layer reveal"><span class="n">06</span><div><h3>Idempotency &amp; Safety Map</h3><p>Per-endpoint key handling, cache windows, and conflict behavior. Where double-charges live.</p></div></div>
+        <div class="layer reveal"><span class="n">07</span><div><h3>Cross-Provider Correlation</h3><p>The same identity mapped across Plaid, Stripe, and Onfido — so an agent spanning providers never loses the thread.</p></div></div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========================================================
-     THE DRIFT
-     ======================================================== -->
-<section id="drift" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">01</span>
-      <span class="label">The drift</span>
-      <h2 class="h2">Your docs say one thing.<br/><span class="h2-soft">Your API does another.</span></h2>
-      <p class="sub">~75% of production APIs deviate from their own OpenAPI spec. Type drift, undocumented fields, endpoints that 404, webhook delays nobody mentions. TrueAPI catches it and tells the truth.</p>
+<!-- SURFACES -->
+<section class="section" id="surfaces">
+  <div class="wrap">
+    <div class="surfaces-head reveal">
+      <span class="eyebrow section-label">One model, two surfaces</span>
+      <h2 class="display">Built once. Read by people, called by agents.</h2>
     </div>
-
-    <div class="drift">
-      <div class="drift-divider"></div>
-
-      <!-- Spec says -->
-      <div class="drift-card reveal" data-delay="1">
-        <div class="drift-card-head">
-          <h4>What the spec says</h4>
-          <span class="drift-tag spec">openapi.yaml</span>
-        </div>
-        <pre class="drift-code"><span class="c"># GET /accounts/{id}</span>
-<span class="k">responses</span>:
-  <span class="k">200</span>:
-    <span class="k">schema</span>:
-      <span class="k">id</span>: <span class="s">string</span>
-      <span class="k">holder_id</span>: <span class="s">string</span>
-      <span class="k">balance</span>: <span class="s">integer</span>
-      <span class="k">status</span>: <span class="s">enum [active, frozen]</span></pre>
-        <p class="drift-summary">
-          The contract <strong>promises</strong> 4 fields. <code>balance</code> is an <code>integer</code>.
-          <code>status</code> is one of <code>active</code> or <code>frozen</code>. Two states. Simple.
-        </p>
+    <div class="surfaces">
+      <div class="surface reveal">
+        <div class="who">For your team</div>
+        <h3>Behavior Explorer</h3>
+        <p>A clean, hosted view of how the API truly works — the call chain, the real errors, the divergences. The answer to the question your customer was about to file a ticket for.</p>
+        <ul>
+          <li>Verified call sequences, not guesswork</li>
+          <li>Real failure conditions and fixes</li>
+          <li>Always current — re-probed on a schedule</li>
+        </ul>
       </div>
-
-      <!-- API does -->
-      <div class="drift-card reveal" data-delay="2">
-        <div class="drift-card-head">
-          <h4>What the API actually returns</h4>
-          <span class="drift-tag truth">probed · 1,402×</span>
-        </div>
-        <pre class="drift-code"><span class="c"># observed after 1,402 probes against production</span>
-<span class="k">id</span>: <span class="s">"acc_1A9z..."</span>
-<span class="k">holder_id</span>: <span class="s">"usr_4F2..."</span>
-<span class="k">balance</span>: <span class="s">"1245.50"</span>      <span class="rm">// integer</span> <span class="add">// string!</span>
-<span class="k">status</span>: <span class="s">"pending_review"</span>  <span class="add">// undocumented state</span>
-<span class="k">risk_score</span>: <span class="n">87</span>            <span class="add">// undocumented field</span>
-<span class="k">limits</span>: { ... }            <span class="add">// undocumented nested object</span></pre>
-        <p class="drift-summary">
-          <strong>4 drifts caught:</strong> wrong type on <code>balance</code>, two undocumented states (<code>pending_review</code>, <code>locked</code>), two undocumented fields. Your agent would hallucinate every one.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========================================================
-     TWO SURFACES
-     ======================================================== -->
-<section id="surfaces" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">02</span>
-      <span class="label">Two surfaces · one engine</span>
-      <h2 class="h2">Same verified model.<br/><span class="h2-soft">Two purpose-built renderers.</span></h2>
-      <p class="sub">The L2 engine learns once. We render its output twice — for the two consumers that integrate with your API.</p>
-    </div>
-
-    <div class="surfaces-wrap reveal" data-delay="1">
-      <div class="surfaces-head" role="tablist">
-        <button data-target="surf-humans" role="tab" aria-selected="true">
-          <span class="label-small">Surface 1</span>
-          <span class="name">Behavior Explorer</span>
-          <span class="for-who">→ for the humans on the integration call</span>
-        </button>
-        <button data-target="surf-agents" role="tab" aria-selected="false">
-          <span class="label-small">Surface 2</span>
-          <span class="name">Hosted MCP server</span>
-          <span class="for-who">→ for Cursor, Claude, Copilot, agents</span>
-        </button>
-      </div>
-
-      <!-- Humans -->
-      <div class="surfaces-body" id="surf-humans">
-        <div class="surfaces-features">
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="3" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="3" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="13" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 5l2 6m4-6l-2 6" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Interactive DAG</h5>
-              <p>Click any endpoint. See the full prerequisite chain back to "create user." Never wonder where an ID comes from again.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2h12v10H2z M2 6h12 M5 9l1 1 3-3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Failure catalog</h5>
-              <p>Every error, the real condition that triggers it, whether it's retryable, and the concrete fix. Searchable. Not a 400 mystery.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>State machine viewer</h5>
-              <p>Click an entity. See its lifecycle, valid transitions, terminal states. Why is my PaymentIntent stuck? Now visible.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="3" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Sandbox ↔ prod diff</h5>
-              <p>Side-by-side: what behaves differently between dev and live. The errors that "never fire" in sandbox and break you in production.</p>
-            </div>
-          </div>
-        </div>
-        <div class="mock">
-          <div class="mock-bar">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span class="title">behavior-explorer · stripe.com · payments</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr;gap:8px;">
-            <div class="expl-step">
-              <div class="expl-step-num">1</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/v1/customers</span>
-                <span class="expl-step-note">yields <code>customer.id</code></span>
-              </div>
-            </div>
-            <div class="expl-step">
-              <div class="expl-step-num">2</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/v1/payment_methods</span>
-                <span class="expl-step-note">needs <code>customer.id</code>; yields <code>pm.id</code></span>
-              </div>
-            </div>
-            <div class="expl-step">
-              <div class="expl-step-num">3</div>
-              <div>
-                <span class="expl-step-method post">POST</span><span class="expl-step-path">/v1/payment_intents</span>
-                <span class="expl-step-note">needs <code>pm.id</code>; state → <code>requires_action</code></span>
-              </div>
-            </div>
-            <div class="expl-step" style="border-color:var(--border-accent);background:var(--emerald-soft);">
-              <div class="expl-step-num">✓</div>
-              <div>
-                <span class="expl-step-path" style="color:var(--emerald)">All preconditions satisfied</span>
-                <span class="expl-step-note">3DS challenge expected · webhook delay 0.4s–5s in prod</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Agents -->
-      <div class="surfaces-body" id="surf-agents" hidden>
-        <div class="surfaces-features">
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4h10v8H3z M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Tool: get_call_sequence</h5>
-              <p>Agent asks "how do I do X?" → gets the verified ordered list of calls + dependencies + state gates. Zero hallucination.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l7 4v6l-7 4-7-4V5z M8 8l7-4 M8 8L1 4 M8 8v7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Tool: get_failure_modes</h5>
-              <p>Agent gets the full failure catalog: trigger condition, retryability, idempotency, concrete fix. Right before it makes the call.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 4v4l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>Tool: get_webhook_contract</h5>
-              <p>Delivery timing, retry policy, ordering, idempotency field. Agent builds the right handler the first time.</p>
-            </div>
-          </div>
-          <div class="surfaces-feat">
-            <div class="surfaces-feat-ic">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2L2 8l2 6 M12 2l2 6-2 6 M6 14l4-12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-            </div>
-            <div class="surfaces-feat-body">
-              <h5>HTTP transport · OAuth</h5>
-              <p>Point Cursor / Claude / Copilot at one URL. Zero install, zero local server, scoped per workspace.</p>
-            </div>
-          </div>
-        </div>
-        <div class="mock">
-          <div class="mock-bar">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span class="title">cursor · MCP · trueapi/stripe-payments</span>
-          </div>
-          <div class="mcp-line"><span class="mcp-prompt">$</span> connect mcp://trueapi.dev/stripe</div>
-          <div class="mcp-line"><span class="mcp-comment">✓ Connected · 12 tools available</span></div>
-          <div class="mcp-line" style="margin-top:10px"><span class="mcp-prompt">agent &gt;</span> <span class="mcp-tool">get_call_sequence</span>({<span class="mcp-key">intent</span>: <span class="mcp-str">"charge a saved card"</span>})</div>
-          <div class="mcp-line" style="margin-top:10px">{
-  <span class="mcp-key">"steps"</span>: 3,
-  <span class="mcp-key">"calls"</span>: [
-    <span class="mcp-str">"POST /v1/customers"</span>,
-    <span class="mcp-str">"POST /v1/payment_methods/:pm/attach"</span>,
-    <span class="mcp-str">"POST /v1/payment_intents"</span>
-  ],
-  <span class="mcp-key">"state_gates"</span>: [<span class="mcp-str">"requires_action"</span>, <span class="mcp-str">"succeeded"</span>],
-  <span class="mcp-key">"failures_to_handle"</span>: <span class="mcp-num">7</span>
-}<span class="mcp-cursor"></span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========================================================
-     L2 ENGINE BENTO
-     ======================================================== -->
-<section id="engine" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">03</span>
-      <span class="label">The L2 engine</span>
-      <h2 class="h2">Seven knowledge layers.<br/><span class="h2-soft">Not just schemas.</span></h2>
-      <p class="sub">OpenAPI describes shapes. The real integration knowledge lives in seven layers around them. Our probe engine learns each one and renders it through both surfaces.</p>
-    </div>
-
-    <div class="engine-grid" id="engine-grid">
-      <!-- 1 — Entity DAG (featured) -->
-      <div class="engine-card engine-card-feature lg reveal" data-delay="1">
-        <div class="engine-card-num">01 · the foundation</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="4" cy="4" r="2.5" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="4" r="2.5" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="16" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 5l3 9m1-9l-3 9M6.5 4h7" stroke="currentColor" stroke-width="1.5"/></svg>
-        </div>
-        <h4>Entity Dependency DAG</h4>
-        <p>Endpoint A produces <code>account_id</code>; endpoint B needs it. The DAG is the verified call sequence — computed, not written. This is the "getting started" guide nobody writes.</p>
-        <svg class="engine-mini-dag" viewBox="0 0 180 100" fill="none">
-          <line x1="30" y1="20" x2="80" y2="20" stroke="var(--emerald)" stroke-width="1" stroke-dasharray="3 3"/>
-          <line x1="100" y1="20" x2="150" y2="20" stroke="var(--emerald)" stroke-width="1" stroke-dasharray="3 3"/>
-          <line x1="90" y1="35" x2="90" y2="60" stroke="var(--emerald)" stroke-width="1" stroke-dasharray="3 3"/>
-          <line x1="80" y1="78" x2="30" y2="78" stroke="var(--border-strong)" stroke-width="1"/>
-          <line x1="100" y1="78" x2="150" y2="78" stroke="var(--border-strong)" stroke-width="1"/>
-          <rect x="6"   y="10" width="50" height="20" rx="4" fill="var(--bg-2)" stroke="var(--emerald)" stroke-width="1"/>
-          <rect x="76"  y="10" width="50" height="20" rx="4" fill="var(--bg-2)" stroke="var(--emerald)" stroke-width="1"/>
-          <rect x="146" y="10" width="30" height="20" rx="4" fill="var(--bg-2)" stroke="var(--emerald)" stroke-width="1"/>
-          <rect x="76"  y="68" width="50" height="20" rx="4" fill="var(--bg-2)" stroke="var(--border-strong)" stroke-width="1"/>
-          <rect x="6"   y="68" width="50" height="20" rx="4" fill="var(--bg-2)" stroke="var(--border-strong)" stroke-width="1"/>
-          <rect x="146" y="68" width="30" height="20" rx="4" fill="var(--bg-2)" stroke="var(--border-strong)" stroke-width="1"/>
-          <text x="31" y="24" font-family="JetBrains Mono" font-size="8" fill="var(--emerald)" text-anchor="middle">users</text>
-          <text x="101" y="24" font-family="JetBrains Mono" font-size="8" fill="var(--emerald)" text-anchor="middle">accounts</text>
-          <text x="161" y="24" font-family="JetBrains Mono" font-size="8" fill="var(--emerald)" text-anchor="middle">pm</text>
-          <text x="101" y="82" font-family="JetBrains Mono" font-size="8" fill="var(--fg-mute)" text-anchor="middle">transfers</text>
-          <text x="31" y="82" font-family="JetBrains Mono" font-size="8" fill="var(--fg-mute)" text-anchor="middle">refund</text>
-          <text x="161" y="82" font-family="JetBrains Mono" font-size="8" fill="var(--fg-mute)" text-anchor="middle">webhook</text>
-        </svg>
-      </div>
-
-      <!-- 2 — State Machine -->
-      <div class="engine-card md reveal" data-delay="2">
-        <div class="engine-card-num">02</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="5" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 10h4 M10.5 8.5l1.5 1.5-1.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <h4>State Machine Map</h4>
-        <p>Every state an entity can occupy, every transition, which calls trigger them, which are irreversible. Stripe's PaymentIntent has 7 states and <em>no</em> failed state — most devs assume wrong.</p>
-      </div>
-
-      <!-- 3 — Failure Catalog -->
-      <div class="engine-card sm reveal" data-delay="3">
-        <div class="engine-card-num">03</div>
-        <div class="engine-card-ic" style="background:var(--rose-soft);color:var(--rose)">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 6v4m0 4h.01M18 10a8 8 0 11-16 0 8 8 0 0116 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        </div>
-        <h4>Failure Catalog</h4>
-        <p>Every error, the real condition that triggers it (not the docs string), whether it's retryable, and the concrete fix.</p>
-      </div>
-
-      <!-- 4 — Sandbox/Prod -->
-      <div class="engine-card sm reveal" data-delay="4">
-        <div class="engine-card-num">04</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="7" height="12" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="4" width="7" height="12" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
-        </div>
-        <h4>Sandbox ↔ Prod Diff</h4>
-        <p>The errors that never fire in sandbox. The async behaviors. The auth flows that differ per bank. Caught before they break you live.</p>
-      </div>
-
-      <!-- 5 — Webhook -->
-      <div class="engine-card sm reveal" data-delay="5">
-        <div class="engine-card-num">05</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 4v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        </div>
-        <h4>Webhook Contract</h4>
-        <p>Delivery latency. Retry policy. Ordering guarantees. Idempotency field. The race conditions that cost one SaaS $14K/mo.</p>
-      </div>
-
-      <!-- 6 — Idempotency -->
-      <div class="engine-card sm reveal" data-delay="6">
-        <div class="engine-card-num">06</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10a7 7 0 0112-5l2-2v5h-5l2-2a5 5 0 00-9 4 M17 10a7 7 0 01-12 5l-2 2v-5h5l-2 2a5 5 0 009-4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        </div>
-        <h4>Idempotency & Safety Map</h4>
-        <p>Per-endpoint: key header, cache duration, whether failures are cached too, conflict behavior. Double-charges live here.</p>
-      </div>
-
-      <!-- 7 — Cross-provider -->
-      <div class="engine-card md reveal" data-delay="6">
-        <div class="engine-card-num">07</div>
-        <div class="engine-card-ic">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="6" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="14" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 8l4 4" stroke="currentColor" stroke-width="1.5"/></svg>
-        </div>
-        <h4>Cross-Provider Correlation</h4>
-        <p>Plaid's <code>account_id</code> ↔ your Stripe customer ↔ Onfido's verification. Real integrations span 3+ providers; we map the IDs across them so the agent doesn't lose track.</p>
-      </div>
-    </div>
-
-    <div class="dag-intro reveal">
-      <span class="label">Live example · layer 01 rendered</span>
-      <h3 class="h3">Plaid's 4-step token chain, computed not written.</h3>
-      <p class="sub">How your agent — or your developer — sees Plaid's bank-linking flow inside TrueAPI. Edges show entity flow; dashed edges are values we observed flowing in real probes.</p>
-    </div>
-
-    <div class="dag-stage reveal">
-      <div class="dag-svg-wrap">
-        <svg class="dag-svg" viewBox="0 0 520 320" fill="none">
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0L10 5L0 10z" fill="var(--border-strong)"/>
-            </marker>
-            <marker id="arrow-em" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0L10 5L0 10z" fill="var(--emerald)"/>
-            </marker>
-          </defs>
-
-          <!-- Node 1: POST /link/token/create -->
-          <g transform="translate(20,40)">
-            <rect class="dag-node active" width="180" height="64" rx="10"/>
-            <text class="dag-node-method post" x="14" y="22">POST</text>
-            <text class="dag-node-path" x="14" y="40">/link/token/create</text>
-            <text class="dag-node-label" x="14" y="56">→ link_token (4h expiry)</text>
-          </g>
-
-          <!-- Edge 1→2 -->
-          <path class="dag-edge-flow" d="M200 72 C 240 72, 240 72, 280 72"/>
-          <text class="dag-edge-label" x="240" y="62" text-anchor="middle">link_token</text>
-
-          <!-- Node 2: Frontend Link -->
-          <g transform="translate(280,40)">
-            <rect class="dag-node active" width="220" height="64" rx="10"/>
-            <text class="dag-node-method" x="14" y="22" style="fill:var(--violet)">FRONTEND</text>
-            <text class="dag-node-path" x="14" y="40">Plaid Link module</text>
-            <text class="dag-node-label" x="14" y="56">→ public_token (one-time use)</text>
-          </g>
-
-          <!-- Edge 2→3 -->
-          <path class="dag-edge-flow" d="M390 104 C 390 134, 390 134, 390 164"/>
-          <text class="dag-edge-label" x="400" y="138">public_token</text>
-
-          <!-- Node 3: exchange -->
-          <g transform="translate(280,160)">
-            <rect class="dag-node active" width="220" height="64" rx="10"/>
-            <text class="dag-node-method post" x="14" y="22">POST</text>
-            <text class="dag-node-path" x="14" y="40">/item/public_token/exchange</text>
-            <text class="dag-node-label" x="14" y="56">→ access_token (permanent) + item_id</text>
-          </g>
-
-          <!-- Edge 3→4 -->
-          <path class="dag-edge-flow" d="M280 192 C 240 192, 240 252, 200 252"/>
-          <text class="dag-edge-label" x="240" y="222">access_token</text>
-
-          <!-- Node 4: transactions sync -->
-          <g transform="translate(20,220)">
-            <rect class="dag-node active" width="180" height="64" rx="10"/>
-            <text class="dag-node-method post" x="14" y="22">POST</text>
-            <text class="dag-node-path" x="14" y="40">/transactions/sync</text>
-            <text class="dag-node-label" x="14" y="56">→ transactions + next_cursor</text>
-          </g>
-
-          <!-- self-loop on transactions -->
-          <path class="dag-edge" d="M110 285 C 110 310, 60 310, 60 285" stroke-dasharray="2 3"/>
-          <text class="dag-edge-label" x="85" y="312" text-anchor="middle">next_cursor (paginate)</text>
-        </svg>
-      </div>
-      <div class="dag-info">
-        <h4>What this graph tells your agent</h4>
-        <p>This is the verified chain. Each dashed edge is an entity our probe engine observed flowing from one endpoint's response into another's request. None of this lifecycle metadata is in Plaid's OpenAPI spec.</p>
-        <ul class="dag-list">
-          <li><span class="ic">✓</span><span><strong>link_token</strong> expires in 4 hours — surfaced in the explorer, returned via MCP</span></li>
-          <li><span class="ic">✓</span><span><strong>public_token</strong> is one-time-use — retry tested, fail observed, labeled</span></li>
-          <li><span class="ic">✓</span><span><strong>access_token</strong> is permanent — verified by reuse across probes</span></li>
-          <li><span class="ic">✓</span><span><strong>next_cursor</strong> loops back — pagination contract caught automatically</span></li>
+      <div class="surface agents reveal">
+        <div class="who">For your agents</div>
+        <h3>Hosted MCP server</h3>
+        <p>The same verified model, exposed over the Model Context Protocol. Cursor, Claude, and Copilot call it directly — and integrate against how the API behaves, not what the spec claims.</p>
+        <ul>
+          <li>Drop-in MCP endpoint, zero setup</li>
+          <li>Behavior-verified answers, not spec echoes</li>
+          <li>Every call makes the model sharper</li>
         </ul>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========================================================
-     FAILURE CATALOG
-     ======================================================== -->
-<section id="failures" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">04</span>
-      <span class="label">Real money-losing bugs</span>
-      <h2 class="h2">The failures nobody documents.<br/><span class="h2-soft">We catch them before you ship.</span></h2>
-      <p class="sub">Every one of these has burned a real team. They're not in the spec, not in the sandbox, not in the docs — and your agent will hallucinate right past them.</p>
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="pricing-head reveal">
+      <span class="eyebrow section-label">Pricing</span>
+      <h2 class="display">Priced per endpoint. The honest unit.</h2>
     </div>
-
-    <div class="fail-rail">
-      <div class="fail-card reveal" data-delay="1">
-        <div class="fail-cost">$14K/mo</div>
-        <span class="provider">Stripe</span>
-        <h4>Webhook race condition on signup</h4>
-        <p class="problem">Eager sync check ran <em>before</em> the webhook DB commit. Three "fixes" (DB locks, unique constraints, Redis keys) made it worse. <code>customer.subscription.created</code> raced <code>invoice.paid</code> on 1% of signups.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>Single-writer pattern via message queue. TrueAPI's webhook contract flags this exact race in the explorer + warns the agent before the call.</div>
-      </div>
-
-      <div class="fail-card reveal" data-delay="2">
-        <div class="fail-cost">launch-day</div>
-        <span class="provider">Plaid</span>
-        <h4><code>ITEM_LOGIN_REQUIRED</code> never fires in sandbox</h4>
-        <p class="problem">Fires in production when a user changes their bank password, MFA, or OAuth expires. Sandbox doesn't simulate it. Teams ship without a re-auth path and discover it when real users churn.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>Detected by TrueAPI's sandbox/prod divergence map. Build the Link "update mode" handler before launch — not after.</div>
-      </div>
-
-      <div class="fail-card reveal" data-delay="3">
-        <div class="fail-cost">$85M</div>
-        <span class="provider">Synapse / Evolve</span>
-        <h4>Batch reconciliation, not continuous</h4>
-        <p class="problem">Ledger reconciliation in batches instead of continuous → drift between source-of-truth and partner state went unnoticed → $85M of customer funds frozen during the collapse.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>Webhook contract + idempotency map make continuous reconciliation observable. Drift becomes visible the moment it happens.</div>
-      </div>
-
-      <div class="fail-card reveal" data-delay="4">
-        <div class="fail-cost">"hours"</div>
-        <span class="provider">AWS EventBridge</span>
-        <h4>camelCase silently ignored</h4>
-        <p class="problem">EventBridge → Batch requires PascalCase keys (<code>ContainerOverrides</code>). camelCase from the SDK examples is silently dropped. Jobs ran with default config. No error. No warning.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>Case-sensitivity rules in the failure catalog. The agent sees "this provider rejects camelCase silently" as a tool-call note.</div>
-      </div>
-
-      <div class="fail-card reveal" data-delay="5">
-        <div class="fail-cost">double-charges</div>
-        <span class="provider">Stripe</span>
-        <h4>Idempotency-Key caches failures too</h4>
-        <p class="problem">A transient 500 gets "stuck" for 24h if you reuse the key. Same key + different params = 400. Most devs don't know this and rotate the key on retry, defeating idempotency.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>Idempotency map encodes the 24h cache + failure caching behavior. Agent knows when to rotate keys vs. retry with the same one.</div>
-      </div>
-
-      <div class="fail-card reveal" data-delay="6">
-        <div class="fail-cost">200+ orders</div>
-        <span class="provider">Stripe Checkout</span>
-        <h4><code>checkout.session.completed</code> ≠ paid</h4>
-        <p class="problem">Team provisioned digital products on <code>checkout.session.completed</code>. That event fires before payment actually settles for async methods. 200+ orders shipped without payment collected.</p>
-        <div class="fail-fix"><span class="fix-label">Fix</span>State-machine map distinguishes "checkout completed" from "payment captured" — agent gates fulfillment on the right event.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========================================================
-     COMPARISON
-     ======================================================== -->
-<section id="comparison" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">05</span>
-      <span class="label">Why TrueAPI</span>
-      <h2 class="h2">Spec-derived tools encode lies.<br/><span class="h2-soft">We encode truth.</span></h2>
-      <p class="sub">Every other tool starts from the OpenAPI spec — and the spec is what's lying. TrueAPI starts from the spec and then verifies it against the actual API. Behavior wins.</p>
-    </div>
-
-    <div class="compare reveal" data-delay="1">
-      <div class="compare-row head">
-        <div class="compare-cell">Capability</div>
-        <div class="compare-cell">Spec-derived tools</div>
-        <div class="compare-cell us">TrueAPI</div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Schema rendering<small>endpoint signatures, types</small></div>
-        <div class="compare-cell them"><span class="check yes">✓ accurate to spec</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ verified against API</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Call ordering / DAG<small>"what do I call first?"</small></div>
-        <div class="compare-cell them"><span class="check no">✗ not in spec</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ computed from probes</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Real failure conditions<small>what triggers a 409, what's retryable</small></div>
-        <div class="compare-cell them"><span class="check no">✗ generic docs string</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ observed + categorized</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">State machine map<small>entity lifecycle, terminal states</small></div>
-        <div class="compare-cell them"><span class="check no">✗ buried in prose</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ visualized + queryable</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Sandbox ↔ prod divergence<small>errors that only fire in production</small></div>
-        <div class="compare-cell them"><span class="check no">✗ silently ignored</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ flagged per endpoint</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Webhook contract<small>retry, ordering, idempotency</small></div>
-        <div class="compare-cell them"><span class="check no">✗ one-paragraph docs</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ observed timing + retry</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Renders for humans<small>interactive explorer</small></div>
-        <div class="compare-cell them"><span class="check yes">✓ pretty docs page</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ interactive DAG + state viz</span></div>
-      </div>
-      <div class="compare-row">
-        <div class="compare-cell feature">Renders for agents<small>MCP server with verified tools</small></div>
-        <div class="compare-cell them"><span class="check yes">✓ spec → MCP (lies forwarded)</span></div>
-        <div class="compare-cell us"><span class="check yes">✓ behavior → MCP (truth forwarded)</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========================================================
-     PRICING
-     ======================================================== -->
-<section id="pricing" class="section">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="section-num">06</span>
-      <span class="label">Pricing</span>
-      <h2 class="h2">Priced per endpoint.<br/><span class="h2-soft">The honest, scalable unit.</span></h2>
-      <p class="sub">"Per API" is fuzzy. Endpoints are unambiguous — they're in your spec, they map directly to our cost, and you already know your count. No per-seat tax, no usage cliffs.</p>
-    </div>
-
-    <div class="pricing">
-      <div class="price-card reveal" data-delay="1">
-        <div class="price-tier">Free</div>
-        <div class="price-amount">$0<small>/mo</small></div>
-        <p class="price-blurb">Free forever for open-source &amp; public APIs.</p>
-        <div class="price-divider"></div>
-        <ul class="price-features">
-          <li>Up to 25 endpoints</li>
-          <li>All 7 L2 knowledge layers</li>
-          <li>Behavior Explorer (public)</li>
-          <li>Hosted MCP (25K req/day)</li>
+    <div class="tiers reveal">
+      <div class="tier">
+        <div class="name">Free</div>
+        <div class="price">$0<small>/mo</small></div>
+        <p class="blurb">Free forever for open-source &amp; public APIs.</p>
+        <ul>
+          <li>Up to <b>25 endpoints</b></li>
+          <li>All 7 knowledge layers</li>
+          <li>Hosted MCP, 25K req/day</li>
           <li>Monthly re-probing</li>
         </ul>
-        <div class="price-cta"><a href="#cta" class="btn btn-ghost">Start free</a></div>
+        <a href="#start" class="tier-cta">Start free <span class="arr">→</span></a>
       </div>
-
-      <div class="price-card reveal" data-delay="2">
-        <div class="price-tier">Starter</div>
-        <div class="price-amount">$25<small>/mo</small></div>
-        <p class="price-blurb">For indie devs shipping a real API. Self-serve.</p>
-        <div class="price-divider"></div>
-        <ul class="price-features">
-          <li>Up to 50 endpoints</li>
-          <li>100K MCP requests/day</li>
+      <div class="tier">
+        <div class="name">Starter</div>
+        <div class="price">$25<small>/mo</small></div>
+        <p class="blurb">For indie devs shipping a real API.</p>
+        <ul>
+          <li>Up to <b>50 endpoints</b></li>
+          <li>100K MCP req/day</li>
           <li>Weekly re-probing</li>
-          <li>Drift alerts (email)</li>
-          <li>Community support</li>
+          <li>Drift alerts</li>
         </ul>
-        <div class="price-cta"><a href="#cta" class="btn btn-ghost">Get Starter</a></div>
+        <a href="#start" class="tier-cta">Get Starter <span class="arr">→</span></a>
       </div>
-
-      <div class="price-card featured reveal" data-delay="3">
-        <div class="price-tier">Pro</div>
-        <div class="price-amount">$49<small>/mo</small></div>
-        <p class="price-blurb">Cheaper than the support ticket your customer files this week.</p>
-        <div class="price-divider"></div>
-        <ul class="price-features">
-          <li>Up to 150 endpoints</li>
-          <li>250K MCP requests/day</li>
-          <li>Weekly re-probing</li>
-          <li>Drift alerts + Provider Dashboard</li>
+      <div class="tier featured">
+        <div class="name">Pro <span class="pop">Popular</span></div>
+        <div class="price">$49<small>/mo</small></div>
+        <p class="blurb">Cheaper than the support ticket filed this week.</p>
+        <ul>
+          <li>Up to <b>150 endpoints</b></li>
+          <li>250K MCP req/day</li>
+          <li>Provider Dashboard</li>
           <li>Email support</li>
         </ul>
-        <div class="price-cta"><a href="#cta" class="btn btn-primary">Start Pro</a></div>
+        <a href="#start" class="tier-cta">Start Pro <span class="arr">→</span></a>
       </div>
-
-      <div class="price-card reveal" data-delay="4">
-        <div class="price-tier">Team</div>
-        <div class="price-amount">$149<small>/mo</small></div>
-        <p class="price-blurb">Less than one day of an SE's time. Covers the whole API.</p>
-        <div class="price-divider"></div>
-        <ul class="price-features">
-          <li>Up to 400 endpoints</li>
-          <li>1M MCP requests/day</li>
+      <div class="tier">
+        <div class="name">Team</div>
+        <div class="price">$149<small>/mo</small></div>
+        <p class="blurb">Less than one day of an SE's time.</p>
+        <ul>
+          <li>Up to <b>400 endpoints</b></li>
+          <li>1M MCP req/day</li>
           <li>Daily re-probing</li>
-          <li>Sandbox/prod divergence map</li>
-          <li>Slack support</li>
+          <li>Sandbox/prod divergence</li>
         </ul>
-        <div class="price-cta"><a href="#cta" class="btn btn-ghost">Start Team</a></div>
+        <a href="#start" class="tier-cta">Start Team <span class="arr">→</span></a>
       </div>
-
-      <div class="price-card reveal" data-delay="5">
-        <div class="price-tier">Business</div>
-        <div class="price-amount">$399<small>/mo</small></div>
-        <p class="price-blurb">97% cheaper than the SE hire you're about to make.</p>
-        <div class="price-divider"></div>
-        <ul class="price-features">
-          <li>Up to 1,000 endpoints</li>
-          <li>Fair-use MCP (5M/day)</li>
+      <div class="tier">
+        <div class="name">Business</div>
+        <div class="price">$399<small>/mo</small></div>
+        <p class="blurb">97% cheaper than the SE hire you're sizing up.</p>
+        <ul>
+          <li>Up to <b>1,000 endpoints</b></li>
+          <li>Fair-use MCP, 5M/day</li>
           <li>Hourly re-probing</li>
-          <li>Cross-provider correlation</li>
           <li>SSO + priority support</li>
         </ul>
-        <div class="price-cta"><a href="#cta" class="btn btn-ghost">Start Business</a></div>
+        <a href="#start" class="tier-cta">Start Business <span class="arr">→</span></a>
       </div>
     </div>
+    <p class="pricing-note">No per-seat tax. No usage cliffs. Every MCP request makes the model better.</p>
   </div>
 </section>
 
-<!-- ========================================================
-     CTA FINAL
-     ======================================================== -->
-<section id="cta" class="cta-final">
-  <div class="container">
-    <div class="cta-card reveal">
-      <h2>Stop guessing how your API behaves.</h2>
-      <p>Drop your OpenAPI URL. We'll probe it, build the L2 model, and email you the explorer + MCP endpoint when it's ready. Free for the first 25 endpoints. No card.</p>
-      <form class="cta-input" onsubmit="event.preventDefault(); alert('Thanks — you\'re on the list.');">
-        <input type="url" placeholder="https://api.your-company.com/openapi.json" required />
-        <button type="submit" class="btn btn-primary">Probe my API</button>
-      </form>
-    </div>
+<!-- CTA -->
+<section class="section cta" id="start">
+  <div class="wrap">
+    <h2 class="display reveal">Stop guessing how your API behaves.</h2>
+    <form class="cta-form reveal" onsubmit="event.preventDefault(); this.querySelector('input').value=''; this.querySelector('input').placeholder='Thanks — you\'re on the list.';">
+      <input type="url" placeholder="https://api.your-company.com/openapi.json" required />
+      <button type="submit" class="btn btn-primary">Probe my API <span class="arr">→</span></button>
+    </form>
   </div>
 </section>
 
-<!-- ========================================================
-     FOOTER
-     ======================================================== -->
+<!-- FOOTER -->
 <footer>
-  <div class="container">
-    <div class="footer-inner">
-      <div class="footer-meta">
-        <strong>TrueAPI</strong> · behavior-verified API integration · pre-launch v0
-      </div>
-      <div class="footer-links">
-        <a href="https://github.com/karanskush/api-integration-platform" target="_blank" rel="noopener">GitHub</a>
-        <a href="#engine">L2 engine</a>
-        <a href="#pricing">Pricing</a>
-        <a href="mailto:hello@trueapi.dev">Contact</a>
-      </div>
+  <div class="wrap footer-inner">
+    <div class="meta">TrueAPI · behavior-verified API integration · pre-launch</div>
+    <div class="footer-links">
+      <a href="https://github.com/karanskush/api-integration-platform" target="_blank" rel="noopener">GitHub</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="mailto:hello@trueapi.dev">Contact</a>
     </div>
   </div>
 </footer>
 
-<!-- ========================================================
-     SCRIPTS
-     ======================================================== -->
 <script>
 (function () {
-  /* ---------- Nav scroll state ---------- */
-  const nav = document.getElementById('nav');
-  const setNav = () => {
-    if (window.scrollY > 24) nav.classList.add('scrolled');
-    else nav.classList.remove('scrolled');
-  };
-  setNav();
-  window.addEventListener('scroll', setNav, { passive: true });
+  var nav = document.getElementById('nav');
+  var onScroll = function () { nav.classList.toggle('scrolled', window.scrollY > 16); };
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
 
-  /* ---------- Intersection Observer reveals ---------- */
-  const io = new IntersectionObserver(
-    entries => entries.forEach(e => {
-      if (e.isIntersecting) {
-        e.target.classList.add('in');
-        io.unobserve(e.target);
-      }
-    }),
-    { rootMargin: '0px 0px -10% 0px', threshold: 0.1 }
-  );
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-
-  /* ---------- Tab swap (generic) ---------- */
-  function bindTabs(container) {
-    const tabs = container.querySelectorAll('[role="tab"]');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const targetId = tab.dataset.target;
-        tabs.forEach(t => t.setAttribute('aria-selected', t === tab ? 'true' : 'false'));
-        // Find sibling panels by data-target id pattern
-        tabs.forEach(t => {
-          const panel = document.getElementById(t.dataset.target);
-          if (panel) panel.hidden = t !== tab;
-        });
-      });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
     });
-  }
-  // Hero tabs
-  document.querySelectorAll('.surface-tabs').forEach(bindTabs);
-  // Surfaces section tabs
-  document.querySelectorAll('.surfaces-head').forEach(bindTabs);
-
-  /* ---------- Smooth anchor scroll (native via CSS) is fine ---------- */
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
 })();
 </script>
-
 </body>
 </html>
