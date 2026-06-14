@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#0b0906" />
+<title>TrueAPI — Behavior-verified API integration</title>
+<meta name="description" content="Behavior-verified API integration — visible to your team, callable by your agents. We learn how APIs actually behave, then render that truth as an explorer for people and an MCP server for agents." />
+<meta property="og:title" content="TrueAPI — Behavior-verified API integration" />
+<meta property="og:description" content="Visible to your team, callable by your agents." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0906'/%3E%3Crect x='8' y='8' width='16' height='16' rx='4' fill='%23e6d6a8'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- scroll progress -->
+<div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#top" class="brand" data-magnetic><span class="brand-mark"></span>TrueAPI</a>
+    <div class="nav-menu">
+      <a href="#how" class="nav-link">How it works</a>
+      <a href="#surfaces" class="nav-link">Surfaces</a>
+      <a href="#proof" class="nav-link">Proof</a>
+      <a href="#pricing" class="nav-link">Pricing</a>
+      <a href="#start" class="nav-cta" data-magnetic>Get early access →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero" id="top">
+  <canvas class="hero-canvas" id="dag-canvas" aria-hidden="true"></canvas>
+  <div class="hero-labels" id="dag-labels" aria-hidden="true"></div>
+  <div class="hero-vignette" aria-hidden="true"></div>
+  <div class="wrap hero-content">
+    <span class="eyebrow hero-eyebrow">Behavior-verified API integration</span>
+    <h1 class="display hero-title">APIs rarely behave the way their docs claim.</h1>
+    <p class="tagline hero-tagline">Visible to your team, callable by your agents.</p>
+    <p class="lead hero-lead">TrueAPI probes how an API actually behaves, then renders that verified truth two ways — an explorer your team reads, and an MCP server your agents call.</p>
+    <div class="hero-actions">
+      <a href="#start" class="btn btn-primary" data-magnetic>Get early access <span class="arr">→</span></a>
+      <a href="#how" class="btn btn-ghost">How it works</a>
+    </div>
+    <div class="hero-proof">
+      <span><b data-count="75" data-suffix="%" data-prefix="~">~75%</b> of APIs drift from their spec</span>
+      <span><b data-count="7">7</b> verified knowledge layers</span>
+      <span><b data-count="1">1</b> model, two surfaces</span>
+    </div>
+  </div>
+  <div class="hero-scrollcue" aria-hidden="true"><span></span></div>
+</header>
+
+<!-- PROBLEM -->
+<section class="section statement" id="problem">
+  <canvas class="ambient-canvas" id="drift-canvas" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <h2 class="display reveal">Your docs say one thing. Your API does another.</h2>
+    <p class="lead reveal">Type drift, undocumented fields, endpoints that 404, webhooks that arrive late. The spec is the map; the territory is different — and that gap is where integrations break and agents hallucinate.</p>
+    <div class="drift-evidence" id="drift-evidence">
+      <article class="ev-card">
+        <div class="ev-top"><span class="ev-kind">Type drift</span><span class="ev-flag">3% of responses</span></div>
+        <div class="ev-line spec"><span class="ev-tag">spec</span><span class="strike">status: "active" | "closed"</span></div>
+        <div class="ev-line truth"><span class="ev-tag">real</span>status: "active" | "closed" | <em>"pending_review"</em></div>
+      </article>
+      <article class="ev-card">
+        <div class="ev-top"><span class="ev-kind">Undocumented field</span><span class="ev-flag">not in schema</span></div>
+        <div class="ev-line spec"><span class="ev-tag">spec</span><span class="strike">{ id, amount, currency }</span></div>
+        <div class="ev-line truth"><span class="ev-tag">real</span>{ id, amount, currency, <em>settled_at</em> }</div>
+      </article>
+      <article class="ev-card">
+        <div class="ev-top"><span class="ev-kind">Phantom endpoint</span><span class="ev-flag">404 in prod</span></div>
+        <div class="ev-line spec"><span class="ev-tag">spec</span><span class="strike">GET /v1/refunds/:id → 200</span></div>
+        <div class="ev-line truth"><span class="ev-tag">real</span>→ <em>404 Not Found</em> · documented, never shipped</div>
+      </article>
+      <article class="ev-card">
+        <div class="ev-top"><span class="ev-kind">Webhook timing</span><span class="ev-flag">p99 latency</span></div>
+        <div class="ev-line spec"><span class="ev-tag">spec</span><span class="strike">delivered &lt; 5s</span></div>
+        <div class="ev-line truth"><span class="ev-tag">real</span>delivered in <em>p99 8.2s</em> · after the redirect fires</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS / LAYERS (pinned, scroll-driven) -->
+<section class="section layers-section" id="how">
+  <div class="layers-pin" id="layers-pin">
+    <canvas class="layers-canvas" id="layers-canvas" aria-hidden="true"></canvas>
+    <div class="wrap layers-grid">
+      <div class="layers-head">
+        <span class="eyebrow section-label">How it works</span>
+        <h2 class="display">We learn how your API actually behaves.</h2>
+        <p class="lead">OpenAPI describes shapes. The real integration knowledge lives in seven layers around them — each one probed, verified, and kept current.</p>
+        <div class="layers-progress" id="layers-progress" aria-hidden="true">
+          <span class="lp-current">01</span><span class="lp-sep">/</span><span class="lp-total">07</span>
+        </div>
+      </div>
+      <div class="layers-stage" id="layers-stage">
+        <article class="layer-card" data-layer="0"><span class="n">01</span><div><h3>Entity Dependency DAG</h3><p>The verified call sequence — which endpoint produces the ID the next one needs. The getting-started guide nobody writes.</p></div></article>
+        <article class="layer-card" data-layer="1"><span class="n">02</span><div><h3>State Machine Map</h3><p>Every state an entity can occupy, every transition, and which ones are irreversible.</p></div></article>
+        <article class="layer-card" data-layer="2"><span class="n">03</span><div><h3>Failure Catalog</h3><p>Every error, the real condition that triggers it, whether it's retryable, and the concrete fix.</p></div></article>
+        <article class="layer-card" data-layer="3"><span class="n">04</span><div><h3>Sandbox ↔ Prod Diff</h3><p>The errors and async behaviors that never fire in sandbox — caught before they break you live.</p></div></article>
+        <article class="layer-card" data-layer="4"><span class="n">05</span><div><h3>Webhook Contract</h3><p>Delivery latency, retry policy, ordering guarantees, idempotency — the race conditions that cost real money.</p></div></article>
+        <article class="layer-card" data-layer="5"><span class="n">06</span><div><h3>Idempotency &amp; Safety Map</h3><p>Per-endpoint key handling, cache windows, and conflict behavior. Where double-charges live.</p></div></article>
+        <article class="layer-card" data-layer="6"><span class="n">07</span><div><h3>Cross-Provider Correlation</h3><p>The same identity mapped across Plaid, Stripe, and Onfido — so an agent spanning providers never loses the thread.</p></div></article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SURFACES -->
+<section class="section" id="surfaces">
+  <div class="wrap">
+    <div class="surfaces-head reveal">
+      <span class="eyebrow section-label">One model, two surfaces</span>
+      <h2 class="display">Built once. Read by people, called by agents.</h2>
+    </div>
+    <div class="surfaces" id="surfaces-grid">
+      <div class="surface-beam" aria-hidden="true"></div>
+      <article class="surface tilt reveal">
+        <div class="who">For your team</div>
+        <h3>Behavior Explorer</h3>
+        <p>A clean, hosted view of how the API truly works — the call chain, the real errors, the divergences. The answer to the question your customer was about to file a ticket for.</p>
+        <ul>
+          <li>Verified call sequences, not guesswork</li>
+          <li>Real failure conditions and fixes</li>
+          <li>Always current — re-probed on a schedule</li>
+        </ul>
+      </article>
+      <article class="surface agents tilt reveal">
+        <div class="who">For your agents</div>
+        <h3>Hosted MCP server</h3>
+        <p>The same verified model, exposed over the Model Context Protocol. Cursor, Claude, and Copilot call it directly — and integrate against how the API behaves, not what the spec claims.</p>
+        <ul>
+          <li>Drop-in MCP endpoint, zero setup</li>
+          <li>Behavior-verified answers, not spec echoes</li>
+          <li>Every call makes the model sharper</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- PROOF -->
+<section class="section proof" id="proof">
+  <div class="wrap">
+    <div class="proof-head reveal">
+      <span class="eyebrow section-label">Proof</span>
+      <h2 class="display">Your agent integrates it right — the first time.</h2>
+      <p class="lead">No reverse-engineering the call order. No undocumented error in production at 2am. The verified model hands your agent the exact sequence, schema, and safety rules — in a single call.</p>
+    </div>
+
+    <div class="proof-stage">
+      <div class="terminal reveal" id="terminal">
+        <div class="term-bar">
+          <span class="term-dots"><i></i><i></i><i></i></span>
+          <span class="term-title">agent ↔ trueapi · model context protocol</span>
+          <span class="term-live"><i></i>live</span>
+        </div>
+        <div class="term-body">
+          <div class="term-line"><span class="who q">agent</span><span class="caret-q">›</span><span class="type">how do I create a transfer?</span></div>
+          <div class="term-line"><span class="who r">trueapi</span> verified call sequence —</div>
+          <div class="term-line step"><span class="n">01</span> <span class="m">POST /users</span> <span class="ret">→ user_id</span></div>
+          <div class="term-line step"><span class="n">02</span> <span class="m">POST /accounts</span> <span class="x">×2</span> <span class="ret">→ account_id</span> <span class="note">· requires user_id</span></div>
+          <div class="term-line step"><span class="n">03</span> <span class="m">POST /transfer</span> <span class="ret">→ requires 2 account_ids</span></div>
+          <div class="term-line warn">! Idempotency-Key required · cached 24h · 402 if source unfunded (retryable)</div>
+          <div class="term-line ok"><span class="who b">agent</span><span class="caret-q">›</span> <span class="okmark">✓</span> <span class="type">shipped — 0 failed calls, integrated in one pass</span><span class="caret">▋</span></div>
+        </div>
+      </div>
+
+      <aside class="proof-aside reveal">
+        <p class="pa-quote">“It read the API the way a senior engineer who'd already shipped against it would — call order, the idempotency key, the funding edge case. We didn't open the docs once.”</p>
+        <p class="pa-by">Integration lead · design-partner fintech</p>
+      </aside>
+    </div>
+
+    <div class="outcomes">
+      <div class="outcome reveal">
+        <div class="o-fig">Days<span>not weeks</span></div>
+        <p>Time to first successful integration collapses. Your customers ship against your API in an afternoon — not a quarter of back-and-forth.</p>
+      </div>
+      <div class="outcome reveal">
+        <div class="o-fig">First try</div>
+        <p>No trial-and-error in production. Agents integrate against verified behavior, so the edge cases are handled before they ever fire.</p>
+      </div>
+      <div class="outcome reveal">
+        <div class="o-fig"><span data-count="97" data-suffix="%">97%</span><span>cheaper</span></div>
+        <p>Than the Solutions Engineer hire you're sizing up to answer the same integration questions, ticket after ticket, all day.</p>
+      </div>
+    </div>
+
+    <p class="proof-foot reveal">Postman renders the spec. Stripe's MCP echoes the spec. Optic flags the drift. <em>TrueAPI replaces the wrong answer with the verified one.</em></p>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="pricing-head reveal">
+      <span class="eyebrow section-label">Pricing</span>
+      <h2 class="display">Priced per endpoint. The honest unit.</h2>
+    </div>
+    <div class="tiers" id="tiers">
+      <div class="tier">
+        <div class="name">Free</div>
+        <div class="price"><span class="price-cur">$</span><span data-count="0">0</span><small>/mo</small></div>
+        <p class="blurb">Free forever for open-source &amp; public APIs.</p>
+        <ul>
+          <li>Up to <b>25 endpoints</b></li>
+          <li>All 7 knowledge layers</li>
+          <li>Hosted MCP, 25K req/day</li>
+          <li>Monthly re-probing</li>
+        </ul>
+        <a href="#start" class="tier-cta">Start free <span class="arr">→</span></a>
+      </div>
+      <div class="tier">
+        <div class="name">Starter</div>
+        <div class="price"><span class="price-cur">$</span><span data-count="25">25</span><small>/mo</small></div>
+        <p class="blurb">For indie devs shipping a real API.</p>
+        <ul>
+          <li>Up to <b>50 endpoints</b></li>
+          <li>100K MCP req/day</li>
+          <li>Weekly re-probing</li>
+          <li>Drift alerts</li>
+        </ul>
+        <a href="#start" class="tier-cta">Get Starter <span class="arr">→</span></a>
+      </div>
+      <div class="tier featured">
+        <div class="name">Pro <span class="pop">Popular</span></div>
+        <div class="price"><span class="price-cur">$</span><span data-count="49">49</span><small>/mo</small></div>
+        <p class="blurb">Cheaper than the support ticket filed this week.</p>
+        <ul>
+          <li>Up to <b>150 endpoints</b></li>
+          <li>250K MCP req/day</li>
+          <li>Provider Dashboard</li>
+          <li>Email support</li>
+        </ul>
+        <a href="#start" class="tier-cta">Start Pro <span class="arr">→</span></a>
+      </div>
+      <div class="tier">
+        <div class="name">Team</div>
+        <div class="price"><span class="price-cur">$</span><span data-count="149">149</span><small>/mo</small></div>
+        <p class="blurb">Less than one day of an SE's time.</p>
+        <ul>
+          <li>Up to <b>400 endpoints</b></li>
+          <li>1M MCP req/day</li>
+          <li>Daily re-probing</li>
+          <li>Sandbox/prod divergence</li>
+        </ul>
+        <a href="#start" class="tier-cta">Start Team <span class="arr">→</span></a>
+      </div>
+      <div class="tier">
+        <div class="name">Business</div>
+        <div class="price"><span class="price-cur">$</span><span data-count="399">399</span><small>/mo</small></div>
+        <p class="blurb">97% cheaper than the SE hire you're sizing up.</p>
+        <ul>
+          <li>Up to <b>1,000 endpoints</b></li>
+          <li>Fair-use MCP, 5M/day</li>
+          <li>Hourly re-probing</li>
+          <li>SSO + priority support</li>
+        </ul>
+        <a href="#start" class="tier-cta">Start Business <span class="arr">→</span></a>
+      </div>
+    </div>
+    <p class="pricing-note reveal">No per-seat tax. No usage cliffs. Every MCP request makes the model better.</p>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section cta" id="start">
+  <canvas class="ambient-canvas cta-canvas" id="cta-canvas" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <h2 class="display reveal">Stop guessing how your API behaves.</h2>
+    <form class="cta-form reveal" id="cta-form">
+      <input type="url" placeholder="https://api.your-company.com/openapi.json" required />
+      <button type="submit" class="btn btn-primary" data-magnetic>Probe my API <span class="arr">→</span></button>
+    </form>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap footer-inner">
+    <div class="meta">TrueAPI · behavior-verified API integration · pre-launch</div>
+    <div class="footer-links">
+      <a href="https://github.com/karanskush/api-integration-platform" target="_blank" rel="noopener">GitHub</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="mailto:hello@trueapi.dev">Contact</a>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

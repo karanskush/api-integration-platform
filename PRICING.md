@@ -1,7 +1,7 @@
 # TrueAPI — Pricing & Cost Analysis
 
-> **Status:** Pre-launch pricing model
-> **Date:** 2026-05-19
+> **Status:** Live pricing (matches `site/index.html`)
+> **Date:** 2026-05-22
 > **Pricing unit:** Endpoints (the honest, scalable unit)
 
 ---
@@ -9,116 +9,151 @@
 ## 1. Why endpoints as the pricing unit
 
 "Per API" is fuzzy — is Stripe Payments one API or fifty? Endpoints are
-unambiguous: they're in the OpenAPI spec, they map directly to our cost
-(more endpoints = more probes = more compute + LLM inference), and the
-provider already knows their count.
+unambiguous: they're in the OpenAPI spec, the provider already knows their count,
+and there's no per-seat tax or usage cliff to reason about.
+
+One nuance (see §2): endpoints are the *billing* unit, but they are a packaging
+proxy, not our true cost driver. We bill on endpoints because it's legible;
+our cost is actually set by re-modeling events and MCP request volume — which is
+exactly what the tiers gate.
 
 ---
 
 ## 2. Our cost to serve
 
-### Per-endpoint economics
+### The two real cost drivers
 
-| Cost Component | Per Endpoint/Month | Notes |
-|----------------|-------------------|-------|
-| Probing compute (Cloudflare Workers) | ~$0.05 | ~10K probe requests/endpoint/month |
-| LLM semantic layer (Haiku 4.5 batch) | ~$0.01 | ~1K tokens/endpoint, amortized |
-| Model storage (Cloudflare R2/D1) | ~$0.01 | <10KB per endpoint behavioral model |
-| MCP serving (CF Workers) | ~$0.03/10K requests | Scales with consumer usage |
-| **Total marginal cost per endpoint** | **~$0.10/month** | At moderate usage |
+Endpoint count loosely correlates with onboarding cost (more endpoints = more to
+probe + more tokens to model), but ongoing cost is dominated by two things:
 
-### Fixed infrastructure costs
+1. **Re-modeling events (probe + LLM analysis).** Front-loaded at onboarding: one
+   full probe across all endpoints plus a batched Claude Haiku semantic pass.
+   Re-probing afterward is a cheap *structural diff* — the expensive LLM pass only
+   re-runs on the endpoints that actually drifted. So cost is large once, small
+   forever after.
+2. **MCP request volume (serving).** Pure denormalized DB reads — no LLM in the
+   request path (see `ARCHITECTURE_2026-05-20.md` decision 6b). Fractions of a cent
+   per thousand requests on Vercel + Neon.
+
+The tiers gate **re-probe cadence** and **MCP volume** because those are what cost
+us — not the raw endpoint number.
+
+### Marginal cost per customer
+
+| Component | Cost | Notes |
+|-----------|------|-------|
+| Onboarding (one-time) | ~$0.50–1.00 | Haiku batch over the spec + initial probe compute |
+| Ongoing (per month) | ~$1–3 | Re-probe diffs + occasional drift LLM + MCP serving |
+
+### Fixed infrastructure costs (current stack)
 
 | Component | Monthly Cost | Notes |
 |-----------|-------------|-------|
-| Cloudflare Workers paid plan | $5 | Base fee, covers 10M requests |
-| Fly.io (dashboard + probe orchestrator) | $8 | Shared-cpu VM |
-| Domain + DNS | $2 | Cloudflare |
-| Monitoring / logging | $0 | Free tiers (Grafana Cloud, etc.) |
-| **Total fixed cost** | **~$15/month** | Stays flat until significant scale |
+| Vercel (Fluid Compute, Pro) | ~$20 | Dashboard + MCP endpoints + probe orchestration |
+| Neon Postgres (always-on) | ~$19 | Always-on compute keeps MCP reads <200ms p95 |
+| Domain + DNS | ~$2 | — |
+| Clerk auth | $0 | Free tier at this scale |
+| **Total fixed cost** | **~$40/month** | Flat until meaningful scale |
 
-### Cost at scale
+### Gross margin
 
-| Scenario | Endpoints | Monthly Infra Cost | Notes |
-|----------|-----------|-------------------|-------|
-| 10 customers, ~200 endpoints | 200 | ~$35 | Mostly fixed costs |
-| 50 customers, ~1,500 endpoints | 1,500 | ~$165 | Marginal cost dominates |
-| 200 customers, ~8,000 endpoints | 8,000 | ~$815 | Still under $1K |
-| 500 customers, ~25,000 endpoints | 25,000 | ~$2,515 | CF Workers scales linearly |
+A $49 Pro customer costs us ~$3–4/month all-in → **~92% gross margin.** Margin
+*improves* with scale as the ~$40 fixed base amortizes across more customers. The
+binding constraint at our scale is **support headcount, not infrastructure** —
+which is why onboarding stays self-serve and the model self-corrects via the
+flywheel.
 
 ---
 
 ## 3. Pricing tiers
 
-### Free — $0/month (forever)
+Five self-serve tiers + Enterprise. Endpoint caps are the billing unit; re-probe
+cadence and MCP volume are what scale with the price.
 
-- Up to **10 endpoints**
-- L2 behavioral model (all 7 knowledge layers)
-- Hosted MCP server (10K requests/day)
-- Web explorer (read-only, for consumers)
+### Free — $0/month (forever for open-source & public APIs)
+
+- Up to **25 endpoints**
+- **All 7 knowledge layers**
+- Hosted MCP server (**25K requests/day**)
 - Monthly re-probing
 - Community support
 
-**Why free:** This IS the distribution strategy. A developer onboards their
-small API, sees the behavioral model catch things their docs missed, shows
-their team. Costs us ~$1/month per free user. The MCP server generates
-flywheel data. Free users build the moat.
+**Why free:** This IS the distribution strategy. A developer onboards their API,
+sees the behavioral model catch what their docs missed, shows their team. Costs us
+~$1/month. Every free MCP server is a consumer telling the next provider "why don't
+you have this?" Free users build the moat.
 
-**Who it's for:** Solo devs, side-project APIs, internal tools with a few
-endpoints, anyone evaluating TrueAPI before committing.
+**Who it's for:** Open-source maintainers, public APIs, solo devs, anyone
+evaluating TrueAPI before committing.
 
 ---
 
-### Pro — $49/month
+### Starter — $25/month
 
 - Up to **50 endpoints**
-- 100K MCP requests/day
+- **100K MCP requests/day**
 - Weekly re-probing
-- Drift alerts (email)
-- Dashboard for provider review & correction
+- Drift alerts
 - Email support
 
-**Why $49:** Cheaper than a team lunch. A typical early-stage fintech API
-has 15–40 endpoints — fits perfectly. If it saves ONE support ticket per
-week (2 hours of SE time = $130), that's 2.6x ROI immediately. A developer
-can expense this without asking their manager.
+**Why $25:** Less than a coffee a week. Removes the jump from $0 to $49 so an indie
+dev shipping a real API has an obvious next step. Pure adoption tier — at ~$2/month
+cost to serve, it's still ~92% margin.
 
-**Who it's for:** Startup with one focused API product. Series A fintech
-with a payments or data API.
+**Who it's for:** Indie devs and side projects that have outgrown the Free endpoint
+cap but aren't a funded startup yet.
+
+---
+
+### Pro — $49/month  *(most popular)*
+
+- Up to **150 endpoints**
+- **250K MCP requests/day**
+- Weekly re-probing + drift alerts
+- **Provider Dashboard** (review & correct the L2 model)
+- Email support
+
+**Why $49:** Cheaper than a team lunch. A typical early-stage fintech API has
+15–40 endpoints — fits with headroom. If it saves ONE support ticket per week
+(~2 hours of SE time ≈ $130), that's immediate ROI. A developer can expense this
+without asking their manager.
+
+**Who it's for:** Startup with one focused API product. Series A fintech with a
+payments or data API.
 
 ---
 
 ### Team — $149/month
 
-- Up to **150 endpoints**
-- 500K MCP requests/day
+- Up to **400 endpoints**
+- **1M MCP requests/day**
 - Daily re-probing + drift alerts
 - Sandbox–production divergence map
 - Webhook contract monitoring
 - Slack support
 
-**Why $149:** Less than one day of a Solutions Engineer's time ($650/day).
-Covers a growing API platform with multiple resource types. The divergence
-map alone prevents production launch-day surprises worth thousands.
+**Why $149:** Less than one day of a Solutions Engineer's time (~$650/day). Covers
+a growing API platform with multiple resource types. The divergence map alone
+prevents production launch-day surprises worth thousands.
 
-**Who it's for:** Growing API companies with multiple products or resource
-domains. Series B fintech scaling their integration partner base.
+**Who it's for:** Growing API companies with multiple products or resource domains.
+Series B fintech scaling their integration partner base.
 
 ---
 
 ### Business — $399/month
 
-- Up to **500 endpoints**
-- Unlimited MCP requests
+- Up to **1,000 endpoints**
+- **Fair-use MCP (5M requests/day)**
 - Hourly re-probing + real-time drift alerts
 - Cross-provider correlation maps
 - Integration analytics (which consumers hit which errors)
-- Priority support + dedicated Slack channel
-- SSO
+- **SSO** + priority support (dedicated Slack channel)
 
-**Why $399:** A mid-market API company paying $399/month instead of hiring
-a $13,500/month Solutions Engineer is getting a 97% discount on the same
-outcome. Even at 500 endpoints, our cost is ~$65/month — healthy margins.
+**Why $399:** A mid-market API company paying $399/month instead of hiring a
+~$13,500/month Solutions Engineer is getting a ~97% discount on the same outcome.
+Even at 1,000 endpoints and 5M MCP requests/day, our cost is a few dollars/month —
+healthy margins.
 
 **Who it's for:** Multi-product API platforms. Payment orchestrators.
 Banking-as-a-service providers with broad endpoint surface.
@@ -135,12 +170,11 @@ Banking-as-a-service providers with broad endpoint surface.
 - Audit logs, RBAC
 - Dedicated support engineer
 
-**Why custom:** Only for companies that need compliance, security, or
-on-prem requirements. Don't overcomplicate — most revenue comes from
-Pro and Team.
+**Why custom:** Only for companies that need compliance, security, or on-prem
+requirements. Don't overcomplicate — most revenue comes from Pro and Team.
 
-**Who it's for:** Large fintech platforms, banks, regulated industries
-where data residency and audit trails are non-negotiable.
+**Who it's for:** Large fintech platforms, banks, regulated industries where data
+residency and audit trails are non-negotiable.
 
 ---
 
@@ -150,28 +184,29 @@ where data residency and audit trails are non-negotiable.
 
 | Tier | Customers | MRR |
 |------|-----------|-----|
-| Free | 200 | $0 |
+| Free | 300 | $0 |
+| Starter ($25) | 120 | $3,000 |
 | Pro ($49) | 80 | $3,920 |
 | Team ($149) | 25 | $3,725 |
 | Business ($399) | 8 | $3,192 |
 | Enterprise (~$999) | 2 | $1,998 |
-| **Total** | **315** | **$12,835** |
+| **Total** | **535** | **$15,835** |
 
-### Costs at that scale (~4,500 paid endpoints)
+### Costs at that scale
 
 | Cost | Monthly |
 |------|---------|
-| Cloudflare (Workers + R2 + D1) | ~$200 |
-| LLM inference (Haiku batch) | ~$50 |
-| Fly.io (dashboard + orchestrator) | ~$30 |
-| Domain + misc | ~$20 |
-| **Total infra** | **~$300** |
+| Fixed infra (Vercel + Neon + domain) | ~$40 |
+| Marginal — paid customers (~235 × ~$2.5) | ~$590 |
+| Marginal — free users (300 × ~$1) | ~$300 |
+| **Total infra** | **~$950** |
 
-**Monthly profit: ~$12,500. Annual: ~$150,000.**
-**Gross margin: 97.7%.**
+**Monthly profit: ~$14,900. Annual: ~$179,000.**
+**Gross margin: ~94%.**
 
-Infrastructure cost barely scales — going from 315 to 1,000 customers
-roughly doubles infra to ~$600/month while tripling+ revenue.
+Infrastructure barely scales — going from 535 to ~1,500 customers roughly doubles
+infra while tripling+ revenue. The real cost of growth is **support headcount**, not
+servers, which is why the self-serve + flywheel model matters.
 
 ---
 
@@ -187,8 +222,8 @@ roughly doubles infra to ~$600/month while tripling+ revenue.
 | Technical Support Engineers | 2 | $268,000 |
 | **Total** | **6 people** | **$860,000/year** |
 
-Mid-market providers with 10–15 people across these roles spend
-$1.5M–$2.5M/year on integration support.
+Mid-market providers with 10–15 people across these roles spend $1.5M–$2.5M/year on
+integration support.
 
 ### Their customer's integration cost
 
@@ -212,7 +247,8 @@ $1.5M–$2.5M/year on integration support.
 
 | Product | Price | What You Get |
 |---------|-------|-------------|
-| **TrueAPI Pro** | $49/mo | Behavior-verified model, 50 endpoints, hosted MCP |
+| **TrueAPI Pro** | $49/mo | Behavior-verified model, 150 endpoints, hosted MCP |
+| **TrueAPI Starter** | $25/mo | Behavior-verified model, 50 endpoints, hosted MCP |
 | Postman Team | $19/user/mo ($57 for 3) | Static spec viewer, no behavioral verification |
 | ReadMe Pro | $250/mo | Pretty docs, still just the spec |
 | Speakeasy | $720/mo/language | SDK generation from spec (encodes spec bugs into code) |
@@ -226,10 +262,11 @@ $1.5M–$2.5M/year on integration support.
 
 ## 7. The ROI one-liner for each tier
 
-- **Free:** "See what your docs are getting wrong. Costs nothing."
+- **Free:** "See what your docs are getting wrong. Free forever for open-source."
+- **Starter ($25):** "Less than a coffee a week to know how your API really behaves."
 - **Pro ($49):** "Cheaper than the support ticket your customer files this week."
-- **Team ($149):** "Less than one day of your Solutions Engineer's time. Covers the whole API."
-- **Business ($399):** "97% cheaper than the SE hire you're about to make."
+- **Team ($149):** "Less than one day of your Solutions Engineer's time."
+- **Business ($399):** "97% cheaper than the SE hire you're sizing up."
 
 ---
 
@@ -237,37 +274,41 @@ $1.5M–$2.5M/year on integration support.
 
 | Add-On | Price | Value |
 |--------|-------|-------|
-| Drift monitoring (real-time behavioral change detection) | $29/mo | Alert before customers notice |
-| Integration analytics (consumer error patterns) | $49/mo | Product insight for providers |
 | Onboarding linter (verify consumer calls against L2) | $79/mo | Proactive error prevention |
 | Custom probe sets (specific scenarios to verify) | $19/probe-set | On-demand QA |
+| Cross-provider correlation packs | Enterprise | Multi-API identity mapping |
+| Traffic-mirroring fidelity feed | Enterprise | Production-grade failure data |
 
-Keep add-ons cheap. They're expansion revenue, not the core business.
+Drift alerts and sandbox/prod divergence are **bundled into the tiers** (Starter+
+and Team+ respectively), not add-ons. Keep any future add-ons cheap — they're
+expansion revenue, not the core business.
 
 ---
 
 ## 9. Pricing principles (for future decisions)
 
-1. **A developer should be able to pay without asking their manager.** Pro at
-   $49 clears this bar at every company.
+1. **A developer should be able to pay without asking their manager.** Pro at $49
+   clears this bar at every company; Starter at $25 clears it for indies.
 2. **Anchor against headcount, not software.** We're replacing hours of human
    back-and-forth, not competing with other dev tools.
-3. **Free tier is not charity — it's distribution.** Every free MCP server is
-   a consumer telling the next provider "why don't you have this?"
-4. **Endpoints are the honest unit.** They map to our cost, the provider
-   knows their count, and there's no ambiguity.
-5. **Don't punish usage.** MCP request limits should be generous. Every
-   request makes L2 better (flywheel). Restricting usage restricts learning.
-6. **Keep it simple.** Four tiers + enterprise. No per-seat multipliers, no
-   overage calculators, no "contact us for pricing" on the main tiers.
+3. **Free tier is not charity — it's distribution.** Every free MCP server is a
+   consumer telling the next provider "why don't you have this?"
+4. **Endpoints are the billing unit; re-modeling events + MCP volume are the true
+   cost drivers.** Tiers gate cadence and volume because that's what actually costs
+   us — endpoint count is just the legible packaging proxy.
+5. **Don't punish usage.** MCP request limits should be generous. Every request
+   makes L2 better (flywheel). Restricting usage restricts learning.
+6. **The binding constraint is support headcount, not infra.** Keep onboarding
+   self-serve and the model self-correcting so growth doesn't require hiring.
+7. **Keep it simple.** Five tiers + Enterprise. No per-seat multipliers, no overage
+   calculators, no "contact us" on the main tiers.
 
 ---
 
 ## Sources
 
-- Cloudflare Workers pricing (2026)
-- AWS Lambda pricing (2026)
-- Fly.io pricing (2026)
+- Vercel Fluid Compute pricing (2026)
+- Neon Postgres pricing (2026)
 - Anthropic Claude API pricing (Haiku 4.5, Sonnet 4.6, Opus 4.7)
 - Postman pricing page (2026)
 - Speakeasy pricing page (2026)

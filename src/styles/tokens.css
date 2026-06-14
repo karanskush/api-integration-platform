@@ -1,0 +1,34 @@
+/* ============================================================
+   TOKENS — palette, type, rhythm
+   Black / beige / blue. Instrument Serif + Geist + JetBrains Mono.
+   ============================================================ */
+:root {
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: 'Instrument Serif', 'Georgia', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --bg: #0b0906;
+  --bg-soft: #110e09;
+  --panel: #14110b;
+
+  --fg: #f3ead7;
+  --fg-dim: #b6a888;
+  --fg-mute: #786c57;
+
+  --accent: #e6d6a8;            /* warm beige — primary */
+  --accent-soft: #f1e3bd;
+  --accent-blue: #84a8cf;       /* cool secondary — the agent path */
+  --accent-red: #d98b7a;        /* failures only */
+
+  --glow-beige: rgba(230, 214, 168, 0.5);
+  --glow-blue: rgba(132, 168, 207, 0.5);
+
+  --hair: rgba(243, 234, 215, 0.09);
+  --hair-soft: rgba(243, 234, 215, 0.05);
+
+  --maxw: 1120px;
+  --measure: 660px;
+  --nav-h: 72px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}

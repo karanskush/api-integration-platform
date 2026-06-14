@@ -1,0 +1,99 @@
+/* ============================================================
+   RESET + PRIMITIVES
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 100px;
+  overflow-x: hidden;
+}
+/* Lenis drives scroll; native smooth would fight it. Re-enabled for reduced-motion. */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+canvas { display: block; }
+svg { display: block; }
+::selection { background: var(--accent); color: #1a1410; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; position: relative; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.04;
+  color: var(--fg);
+}
+h1.display { font-size: clamp(34px, 7vw, 92px); }
+h2.display { font-size: clamp(28px, 4.6vw, 58px); }
+
+.lead {
+  font-size: clamp(18px, 1.5vw, 21px);
+  line-height: 1.6;
+  color: var(--fg-dim);
+  max-width: var(--measure);
+  font-weight: 400;
+}
+
+.section { padding: 0 0 clamp(92px, 11vw, 160px); position: relative; }
+.section-label { display: block; margin-bottom: 28px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 24px;
+  border-radius: 9px;
+  font-size: 15px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: transform 0.25s var(--ease), background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.3s;
+  will-change: transform;
+}
+.btn-primary { background: var(--accent); color: #1a1410; box-shadow: 0 0 0 0 var(--glow-beige); }
+.btn-primary:hover { background: var(--accent-soft); box-shadow: 0 12px 40px -12px var(--glow-beige); }
+.btn-ghost { color: var(--fg); border-color: var(--hair); }
+.btn-ghost:hover { border-color: var(--fg-mute); }
+.btn .arr, .link-arrow .arr, .tier-cta .arr { transition: transform 0.2s var(--ease); }
+.btn:hover .arr { transform: translateX(3px); }
+
+/* Reveal (GSAP toggles .in; CSS is the fallback baseline) */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* Scroll progress bar */
+.scroll-progress {
+  position: fixed; top: 0; left: 0; height: 2px; width: 100%;
+  transform: scaleX(0); transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-blue));
+  z-index: 200; pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: smooth; }
+  .reveal, .tier { opacity: 1 !important; transform: none !important; }
+  .scroll-progress { display: none; }
+  .hero-scrollcue, .brand-mark { animation: none; }
+}

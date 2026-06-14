@@ -1,7 +1,8 @@
 # TrueAPI — Architecture & Build Plan
 
 > **Date:** 2026-05-20
-> **Status:** Approved architecture, ready to build
+> **Status:** Approved architecture — canonical reference for stack, structure, schema & design decisions
+> **Build sequencing:** see `BUILD_PLAN.md` (re-sequenced around the two MudraCore demos)
 > **Depends on:** README.md (Vision), L2_ENGINE_SPEC.md (Engine Spec), PRICING.md (Pricing)
 
 ---
@@ -28,8 +29,13 @@ one shot.
 | **Probe Orchestration** | Vercel Workflow (WDK) | Durable, step-based execution — probes can take 30+ min with rate limiting |
 | **UI Components** | shadcn/ui + Tailwind | Production-grade components, consistent design |
 | **Graph Visualization** | React Flow | DAG and state machine visualization in dashboard |
-| **LLM (Semantic Layer)** | Claude Haiku via Anthropic SDK | Batch/offline during probing, never in the MCP serving path |
+| **LLM (Semantic Layer)** | Claude Haiku via Vercel AI Gateway | Batch/offline during probing, never in the MCP serving path; AI Gateway adds zero-data-retention + provider fallbacks |
 | **Monorepo** | Turborepo | Independent packages, single deploy pipeline |
+
+> **2026 platform updates** (see `BUILD_PLAN.md` §3): config via `vercel.ts`
+> (not `vercel.json`); LLM through Vercel AI Gateway (zero-data-retention, critical
+> for fintech API responses); Vercel Queues for webhook-probe ingestion (L5);
+> Vercel BotID on the public explorer + MCP endpoints.
 
 ---
 
@@ -154,6 +160,11 @@ correlation add depth over time.
 
 ## 7. Build Phases
 
+> **Re-sequenced in `BUILD_PLAN.md`.** Those milestones reorganize these phases
+> around the two MudraCore demos and pull a thin slice of the explorer + review UI
+> forward (required by the `L2_ENGINE_SPEC.md` §14 quality gate — no MCP publishes
+> without a human approve step). The phases below remain useful for scope detail.
+
 ### Phase 0: Bootstrap (Days 1–2)
 
 - Turborepo monorepo with `apps/web` + `packages/*`
@@ -225,7 +236,7 @@ correlation add depth over time.
 
 ### Phase 6: PLG Infrastructure (Days 66–80)
 
-- Stripe billing (4 tiers per PRICING.md)
+- Stripe billing (5 tiers per PRICING.md: Free, Starter, Pro, Team, Business + Enterprise)
 - Usage metering (MCP requests, endpoints, probe runs)
 - Self-serve onboarding flow
 - Marketing pages (migrate landing page to Next.js)
