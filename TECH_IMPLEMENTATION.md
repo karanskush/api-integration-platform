@@ -38,18 +38,42 @@ Adoption physics the architecture must serve:
 
 ## 3. Core modules
 
-All modules consume/produce one shared IR — get this right first:
+All modules consume/produce one shared model — get this right first. Phase 0 can store this as one Redis blob, but the shape should already match the future Postgres model: a versioned API model plus action-level facts. That prevents the instant generator from becoming a throwaway transpiler.
 
 ```ts
-// The normalized IR. Everything downstream reads this, nothing else.
+// The normalized API model. Everything downstream reads this, nothing else.
+type ApiModel = {
+  id: string;
+  slug: string;
+  name: string;
+  source: 'openapi' | 'swagger' | 'postman' | 'curl';
+  sourceUrl?: string;
+  specVersionId: string;
+  baseUrls: string[];        // SSRF-validated allowlist
+  dominantAuth: AuthScheme;
+  authPlacement?: AuthPlacement;
+  actions: Action[];
+  evidenceSummary?: EvidenceSummary;
+  scorePreview?: ScorePreview; // cheap static checks before full probes exist
+}
+
 type Action = {
   id: string; apiId: string;
   name: string;              // create_payment
   description: string;       // cleaned, agent-legible
   method: string; path: string;
   paramsSchema: JSONSchema;  // typed inputs incl. auth placement
-  auth: 'none' | 'apiKey' | 'bearer' | 'basic' | 'oauth2';
+  responseSchemas?: Record<string, JSONSchema>;
+  errorSchemas?: Record<string, JSONSchema>;
+  auth: AuthScheme;
+  authPlacement?: AuthPlacement;
   safety: 'read' | 'write' | 'destructive';  // gates MCP exposure defaults
+  resourceName?: string;      // payment, customer, account, etc.
+  operationStability?: 'documented' | 'inferred' | 'observed' | 'drifted';
+  idempotency?: 'unknown' | 'safe' | 'requires_key' | 'unsafe';
+  requiresConfirmation?: boolean;
+  provenance: Provenance[];   // spec, probe, correction, CI sync
+  confidence: number;         // 0..1, never hide low-confidence guesses
   examples: Example[];
 }
 ```
