@@ -147,13 +147,20 @@ waitlist       id, email, source, created_at
 
 ## 6. Phased build
 
-**Phase 0 — Instant generator (the magic moment).** Anonymous paste → ephemeral page + playground + temp MCP URL (24&nbsp;h TTL, Redis-backed, no accounts). This replaces the landing page's simulated `#demo` with the real thing. Ship: importer, normalizer, page renderer (ephemeral variant), BYOK playground, MCP handler (BYOK auth only). *Gate: 20 real users try it; 5 say useful.*
+**Phase 0 — Instant generator (the magic moment).** Anonymous paste → ephemeral page + playground + temp MCP URL (24&nbsp;h TTL, Redis-backed, no accounts). This replaces the landing page's simulated `#demo` with the real thing. Ship: importer, normalizer, page renderer (ephemeral variant), BYOK playground, MCP handler (BYOK auth only), and static `scorePreview` so users immediately see what makes their API agent-ready or brittle. *Gate: 20 real users try it; 5 say useful; 3 share the generated page or MCP URL with someone else.*
 
-**Phase 1 — Persistence + revenue.** Accounts/orgs, persistent public pages with slugs, hosted MCP with credit metering, Stripe billing (Launch $29 / Pro $79), waitlist → onboarding emails. *Gate: first paying users.*
+**Phase 1 — Persistence + revenue.** Accounts/orgs, persistent public pages with slugs, hosted MCP with credit metering, Stripe billing (Launch $29 / Pro $79), waitlist → onboarding emails. Persist the versioned API model and evidence graph, even if most evidence is still static/parser-derived. *Gate: first paying users.*
 
-**Phase 2 — Proof + spread.** Score engine v1 (read-safe probes), badge endpoint, claim flow, seed 500–1000 unofficial pages for popular public APIs, "claim your page" outbound. *Gate: pages get external traffic; claims convert.*
+**Phase 2 — Proof + spread.** Score engine v1 (read-safe probes), badge endpoint, claim flow, seed a controlled set of unofficial pages for popular public APIs, "claim your page" outbound. Unclaimed pages are docs-derived only: clearly unofficial, no verified score verdict, no vaulted credentials, no live MCP execution unless a user brings their own key for an ephemeral session, and instant takedown. *Gate: pages get external traffic; claims convert; takedown/support burden stays near zero.*
 
-**Phase 3 — Retention + Team/Business.** GitHub Action, scheduled re-verification, private pages, credential vault, custom domains, analytics dashboard, SLA (Team $199 / Business $499). *Gate: $199+ plans selling.*
+**Phase 3 — Retention + Team/Business.** GitHub Action, scheduled re-verification, private pages, credential vault, custom domains, analytics dashboard, SLA (Team $199 / Business $499). Add integration traces as a redacted flywheel: playground/MCP failures can become repros, docs patches, contract tests, and future score evidence. *Gate: $199+ plans selling.*
+
+### Release gates
+
+- **Phase 0:** generated page and MCP URL work from a pasted spec without account creation; destructive actions are hidden; SSRF tests pass; BYOK secrets are absent from logs.
+- **Phase 1:** persistent models are versioned by spec hash; every user-visible score/preview item points to a source fact.
+- **Phase 2:** verified badges require live evidence; unclaimed pages cannot imply provider endorsement.
+- **Phase 3:** vaulted credentials require audit logs, per-environment scoping, and redacted trace storage before launch.
 
 ## 7. Landing demo → real product mapping
 
