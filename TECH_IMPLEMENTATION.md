@@ -1,6 +1,6 @@
 # Spotcheck — Technical Implementation Plan
 
-> **Scope.** This document specifies the **product platform** — the thing the landing page sells. This repo currently ships only the static marketing site (Vite + Three.js). The platform described here is a separate app (recommended: new `app/` workspace or sibling repo).
+> **Scope.** This document specifies the **product platform** — the thing the landing page sells. The repo now contains both the static marketing site (Vite + Three.js) and a Phase 0-style Next.js app workspace under `app/` with importer, playground, MCP, SSRF guard, and ephemeral storage primitives. Treat this document as the architecture roadmap that keeps the current `app/` slice pointed at the larger product.
 >
 > **Historical docs.** `README.md`, `L2_ENGINE_SPEC.md`, `PRICING.md`, `ARCHITECTURE_2026-05-20.md`, and `BUILD_PLAN.md` describe the earlier "behavior-verified integration layer" framing. They remain as reference — the **Agent-Ready Score engine directly inherits the L2 probe/verification ideas**, repackaged as a shareable score instead of a hidden knowledge graph.
 
@@ -19,7 +19,7 @@ Adoption physics the architecture must serve:
 
 1. **No signup before the magic moment** — paste → working page + MCP in <60s, anonymously.
 2. **Every artifact is a distribution object** — public pages (SEO: "{API} MCP server"), badges, claim flow, CI checks.
-3. **Credential fear solved by architecture** — BYOK by default (keys never touch our servers); vaulted credentials are a paid Team feature.
+3. **Credential fear solved by architecture** — BYOK by default (keys are pass-through only: never stored, logged, replayed, or reused); vaulted credentials are a paid Team feature.
 
 ## 2. Stack
 
@@ -57,8 +57,8 @@ type Action = {
 1. **Importer/parser** — OpenAPI 3.x + Swagger 2 (via `@readme/openapi-parser`), Postman collections, cURL paste (heuristic parse). Fetch runs in a queue job with SSRF guards (§5). Output: `spec_versions` row (blob ref + content hash) → normalizer.
 2. **Action normalizer** — endpoints → `Action[]`: snake_case tool names from `operationId`/path, description cleanup (optional LLM pass, credit-metered), safety classification (GET=read; DELETE/prod-money-movement=destructive, excluded from MCP by default until owner opts in).
 3. **Integration page renderer** — `spotcheck.dev/{slug}`, ISR with tag revalidation on re-import. Sections: overview, auth guide, action list with schemas + snippets (curl/TS/Python), playground, score panel, "claim this page" banner on unclaimed pages, Spotcheck badge watermark on Free.
-4. **BYOK playground** — client component. Key lives in memory/`sessionStorage` only. Calls go through a thin CORS proxy (`/api/proxy`) that streams request/response, **injects nothing, persists nothing** — the visitor's key rides a pass-through header. Proxy allowlists the API's registered base URLs only.
-5. **Hosted MCP server** — `mcp.spotcheck.dev/{slug}`: `tools/list` from `Action[]` (safety-filtered), `tools/call` executes against the upstream API. Auth resolution order: caller-supplied header (BYOK) → org vaulted credential (Team+, if the caller is authorized) → unauthenticated. Per-call credit metering in Redis (`INCR` + plan ceilings), per-IP and per-slug rate limits.
+4. **BYOK playground** — client component. Key lives in memory/`sessionStorage` only. Calls go through a thin CORS proxy (`/api/proxy`) that streams request/response, **injects nothing, persists nothing** — the visitor's key rides a pass-through header. Proxy allowlists the API's registered base URLs only. When CORS permits, direct browser-to-upstream mode is preferred so the key never traverses Spotcheck infrastructure at all.
+5. **Hosted MCP server** — `mcp.spotcheck.dev/{slug}`: `tools/list` from `Action[]` (safety-filtered), `tools/call` executes against the upstream API. Auth resolution order: caller-supplied header (BYOK pass-through) → org vaulted credential (Team+, if the caller is authorized) → unauthenticated. Per-call credit metering in Redis (`INCR` + plan ceilings), per-IP and per-slug rate limits.
 6. **Agent-Ready Score engine** *(inherits L2 spec ideas)* — a probe run executes a sampled subset of read-safe actions (writes only in sandbox or with owner opt-in) and grades four sub-scores, weighted to 0–100: **Auth clarity** (is auth discoverable/satisfiable from the spec alone?), **Error quality** (do 4xx bodies explain themselves?), **Doc drift** (response shape vs spec, field-by-field), **Idempotency** (retry safety on writes, sandbox only). Scores cached in `scores`; re-run on schedule (plan-gated cadence), CI trigger, or manual.
 7. **Claim flow** — prove ownership of an unclaimed public page via DNS TXT record, `<meta>` tag on the API's docs domain, or matching email domain. Claim converts the page to owner-managed and starts the upgrade funnel.
 8. **Badge** — `spotcheck.dev/badge/{slug}.svg`, edge-rendered from the cached score, cache-tagged and revalidated on score change. The badge links to the page: every README that embeds it is inbound distribution.
@@ -89,7 +89,7 @@ waitlist       id, email, source, created_at
 
 - **Vaulted credentials:** KMS envelope encryption, per-org data keys, decrypt only inside the MCP/probe execution path, audit-logged on every use. Never in application logs (redaction at the logger, not call sites).
 - **SSRF guards on all spec/URL fetches:** resolve DNS first, deny private/link-local ranges, cap size (5&nbsp;MB) and time (10&nbsp;s), no redirects across hosts.
-- **Playground proxy:** allowlisted to the API's registered base URLs; strips cookies; no persistence of bodies or auth headers.
+- **Playground proxy:** allowlisted to the API's registered base URLs; strips cookies; no persistence of bodies or auth headers; direct browser mode when upstream CORS allows it.
 - **MCP execution:** destructive actions off by default; per-key + per-IP rate limits; credit ceilings per plan; timeouts and response-size caps.
 - **Probes:** read-only against production; writes only in sandbox environments or with explicit owner opt-in.
 - **Unclaimed pages:** clearly labeled "unofficial"; instant claim-or-takedown; robots-friendly.
