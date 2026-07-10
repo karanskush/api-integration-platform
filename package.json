@@ -1,9 +1,9 @@
 {
-  "name": "trueapi-site",
+  "name": "spotcheck-site",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "TrueAPI — behavior-verified API integration. Marketing site.",
+  "description": "Spotcheck — behavior-verified API integration. Marketing site.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
