@@ -22,34 +22,43 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
+/* faint monochrome noise kills banding under the WebGL scenes */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 300; pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 a { color: inherit; text-decoration: none; }
 canvas { display: block; }
 svg { display: block; }
-::selection { background: var(--accent); color: #1a1410; }
+::selection { background: var(--selection-bg); color: var(--fg); }
+
+:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: 2px; }
 
 .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; position: relative; }
 
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--fg-mute);
 }
 
 .display {
   font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.04;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
   color: var(--fg);
 }
-h1.display { font-size: clamp(34px, 7vw, 92px); }
-h2.display { font-size: clamp(28px, 4.6vw, 58px); }
+h1.display { font-size: clamp(38px, 5.8vw, 72px); line-height: 1.04; }
+h2.display { font-size: clamp(28px, 3.6vw, 44px); }
 
 .lead {
-  font-size: clamp(18px, 1.5vw, 21px);
-  line-height: 1.6;
+  font-size: clamp(17px, 1.4vw, 20px);
+  line-height: 1.65;
   color: var(--fg-dim);
   max-width: var(--measure);
   font-weight: 400;
@@ -58,36 +67,62 @@ h2.display { font-size: clamp(28px, 4.6vw, 58px); }
 .section { padding: 0 0 clamp(92px, 11vw, 160px); position: relative; }
 .section-label { display: block; margin-bottom: 28px; }
 
-/* Buttons */
+/* numerals sit like instrument readouts */
+b, .price, [data-count] { font-variant-numeric: tabular-nums; }
+
+/* Buttons — state changes, not transforms; no glow */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 48px;
   padding: 0 24px;
-  border-radius: 9px;
+  border-radius: 6px;
   font-size: 15px;
   font-weight: 500;
   border: 1px solid transparent;
-  transition: transform 0.25s var(--ease), background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.3s;
-  will-change: transform;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  cursor: pointer;
 }
-.btn-primary { background: var(--accent); color: #1a1410; box-shadow: 0 0 0 0 var(--glow-beige); }
-.btn-primary:hover { background: var(--accent-soft); box-shadow: 0 12px 40px -12px var(--glow-beige); }
+.btn-primary { background: var(--accent); color: var(--bg); font-weight: 600; }
+.btn-primary:hover { background: var(--accent-soft); }
 .btn-ghost { color: var(--fg); border-color: var(--hair); }
-.btn-ghost:hover { border-color: var(--fg-mute); }
-.btn .arr, .link-arrow .arr, .tier-cta .arr { transition: transform 0.2s var(--ease); }
+.btn-ghost:hover { border-color: rgba(79, 200, 232, 0.4); }
+.btn .arr, .link-arrow .arr, .tier-cta .arr { transition: transform 0.15s var(--ease); }
 .btn:hover .arr { transform: translateX(3px); }
 
+/* Panel finish: hairline + inset top highlight + colorless ambient shadow */
+.panel-edge {
+  border: 1px solid var(--hair);
+  box-shadow: inset 0 1px 0 var(--edge-light), 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Calibration ruler — the signature device */
+.cal-ruler {
+  position: relative;
+  height: 26px;
+  background:
+    repeating-linear-gradient(to right, var(--hair) 0 1px, transparent 1px 12px) left top / 100% 6px no-repeat,
+    repeating-linear-gradient(to right, rgba(214, 228, 240, 0.16) 0 1px, transparent 1px 25%) left top / calc(100% + 1px) 10px no-repeat;
+}
+.cal-ruler span {
+  position: absolute; top: 12px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; color: var(--fg-mute);
+  transform: translateX(-50%);
+}
+.cal-ruler span:first-child { left: 0; transform: none; }
+.cal-ruler span:last-child { transform: translateX(-100%); }
+
 /* Reveal (GSAP toggles .in; CSS is the fallback baseline) */
-.reveal { opacity: 0; transform: translateY(18px); }
+.reveal { opacity: 0; transform: translateY(12px); }
 .reveal.in { opacity: 1; transform: none; }
 
-/* Scroll progress bar */
+/* Scroll progress bar — flat cyan hairline */
 .scroll-progress {
   position: fixed; top: 0; left: 0; height: 2px; width: 100%;
   transform: scaleX(0); transform-origin: 0 50%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-blue));
+  background: var(--accent);
   z-index: 200; pointer-events: none;
 }
 
@@ -95,5 +130,4 @@ h2.display { font-size: clamp(28px, 4.6vw, 58px); }
   html { scroll-behavior: smooth; }
   .reveal, .tier { opacity: 1 !important; transform: none !important; }
   .scroll-progress { display: none; }
-  .hero-scrollcue, .brand-mark { animation: none; }
 }

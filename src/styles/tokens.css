@@ -1,30 +1,50 @@
 /* ============================================================
    TOKENS — palette, type, rhythm
-   Black / beige / blue. Instrument Serif + Geist + JetBrains Mono.
+   "CALIBRATED": gunmetal + calibration cyan; green is earned.
+   Instrument Sans + Geist + JetBrains Mono.
    ============================================================ */
 :root {
   --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-display: 'Instrument Serif', 'Georgia', serif;
+  --font-display: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --bg: #0b0906;
-  --bg-soft: #110e09;
-  --panel: #14110b;
+  /* surfaces — cool gunmetal */
+  --bg: #05080a;
+  --bg-soft: #0a0f13;
+  --panel: #0d1319;
 
-  --fg: #f3ead7;
-  --fg-dim: #b6a888;
-  --fg-mute: #786c57;
+  /* ink — porcelain on graphite */
+  --fg: #efeee9;        /* 17.3:1 on bg */
+  --fg-dim: #9aa7b4;    /* 8.2:1 on bg — body copy */
+  --fg-mute: #6c7987;   /* 4.5:1 on bg — mono labels/timings/indices only */
 
-  --accent: #e6d6a8;            /* warm beige — primary */
-  --accent-soft: #f1e3bd;
-  --accent-blue: #84a8cf;       /* cool secondary — the agent path */
-  --accent-red: #d98b7a;        /* failures only */
+  /* signal channels */
+  --accent: #4fc8e8;        /* calibration cyan — the instrument channel */
+  --accent-soft: #72d3ec;   /* solid hover for primary buttons */
+  --accent-blue: #8fb6c9;   /* agent-channel steel */
+  --accent-red: #f2685c;    /* fail / DELETE only */
 
-  --glow-beige: rgba(230, 214, 168, 0.5);
-  --glow-blue: rgba(132, 168, 207, 0.5);
+  /* semantic state — green is earned, never decorative */
+  --ok: #43d9a3;
+  --warn: #e0a83e;
+  --accent-fill: rgba(79, 200, 232, 0.12);
+  --ok-fill: rgba(67, 217, 163, 0.12);
+  --warn-fill: rgba(224, 168, 62, 0.12);
+  --danger-fill: rgba(242, 104, 92, 0.12);
 
-  --hair: rgba(243, 234, 215, 0.09);
-  --hair-soft: rgba(243, 234, 215, 0.05);
+  /* glow budget: needle halo + transient verified bloom, nothing else */
+  --glow-accent: rgba(79, 200, 232, 0.16);
+  --glow-blue: rgba(143, 182, 201, 0.14);
+  --glow-ok: rgba(67, 217, 163, 0.18);
+
+  /* hairlines — cooled */
+  --hair: rgba(214, 228, 240, 0.08);
+  --hair-soft: rgba(214, 228, 240, 0.045);
+  --edge-light: rgba(233, 238, 242, 0.05);   /* inset top highlight for panels */
+
+  /* focus + selection */
+  --focus-ring: #4fc8e8;
+  --selection-bg: rgba(79, 200, 232, 0.24);
 
   --maxw: 1120px;
   --measure: 660px;
