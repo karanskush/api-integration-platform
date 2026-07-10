@@ -176,3 +176,26 @@ waitlist       id, email, source, created_at
 | "Get early access" waitlist | `waitlist` table — set `data-endpoint` on `#cta-form` in `index.html`; the handler in `src/main.js` already POSTs `{email}` as JSON | 1 |
 
 When Phase 0 ships, the hero import bar (`#hero-import`) stops scrolling to the simulation and POSTs to the real generator — the landing page is already structured for that swap.
+
+## 8. Crazier roadmap bets
+
+These are not Phase 0 requirements, but the architecture should leave clean hooks for them.
+
+1. **Agent Gauntlet** — run a real agent task against the generated MCP server and score whether it can complete a goal without hallucinated call order, missing auth, or unsafe writes. This turns "agent-ready" from a static claim into an eval.
+2. **Behavioral MCP compiler** — synthesize compound tools like `create_customer_and_charge_card` from the discovered dependency DAG, instead of exposing only raw endpoint tools.
+3. **Integration flight recorder** — redacted playground/MCP traces become repros, docs patches, contract tests, score evidence, and outreach emails.
+4. **Mock sandbox twin** — generate a realistic mock server from observed schemas, errors, state transitions, and timing so teams can test without a broken provider sandbox.
+5. **OpenAPI repair bot** — CI opens a PR that fixes missing fields, wrong response types, undocumented errors, and idempotency metadata.
+6. **Signed Agent-Ready attestation** — badges link to a versioned evidence bundle: spec hash, probe date, score explanation, CI status, and verification scope.
+
+## 9. Implementation log
+
+### 2026-07-10
+
+- Updated the plan scope to reflect that this repo now includes a Phase 0-style Next.js `app/` workspace, not only the static marketing site.
+- Tightened BYOK language: credentials are pass-through only unless explicitly vaulted, and direct browser-to-upstream mode is preferred when CORS allows it.
+- Expanded the shared model from action-only IR into a versioned API model with response schemas, error schemas, provenance, confidence, idempotency, and static score preview support.
+- Added an append-only evidence graph beneath the Agent-Ready Score so score outputs can be explained, replayed, and audited.
+- Split MCP strategy into endpoint execution tools and safer advisor tools such as `get_call_sequence`, `explain_error`, `get_score_explanation`, and `generate_contract_test`.
+- Tightened rollout gates, especially for Phase 0 proof signals and Phase 2 unclaimed-page trust boundaries.
+- Added the crazier roadmap bets that the architecture should preserve hooks for: Agent Gauntlet, behavioral MCP compiler, flight recorder, mock sandbox twin, OpenAPI repair bot, and signed attestations.
