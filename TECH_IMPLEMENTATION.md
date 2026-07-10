@@ -83,11 +83,12 @@ type Action = {
 3. **Integration page renderer** — `spotcheck.dev/{slug}`, ISR with tag revalidation on re-import. Sections: overview, auth guide, action list with schemas + snippets (curl/TS/Python), playground, score panel, "claim this page" banner on unclaimed pages, Spotcheck badge watermark on Free.
 4. **BYOK playground** — client component. Key lives in memory/`sessionStorage` only. Calls go through a thin CORS proxy (`/api/proxy`) that streams request/response, **injects nothing, persists nothing** — the visitor's key rides a pass-through header. Proxy allowlists the API's registered base URLs only. When CORS permits, direct browser-to-upstream mode is preferred so the key never traverses Spotcheck infrastructure at all.
 5. **Hosted MCP server** — `mcp.spotcheck.dev/{slug}`: `tools/list` from `Action[]` (safety-filtered), `tools/call` executes against the upstream API. Auth resolution order: caller-supplied header (BYOK pass-through) → org vaulted credential (Team+, if the caller is authorized) → unauthenticated. Per-call credit metering in Redis (`INCR` + plan ceilings), per-IP and per-slug rate limits.
-6. **Agent-Ready Score engine** *(inherits L2 spec ideas)* — a probe run executes a sampled subset of read-safe actions (writes only in sandbox or with owner opt-in) and grades four sub-scores, weighted to 0–100: **Auth clarity** (is auth discoverable/satisfiable from the spec alone?), **Error quality** (do 4xx bodies explain themselves?), **Doc drift** (response shape vs spec, field-by-field), **Idempotency** (retry safety on writes, sandbox only). Scores cached in `scores`; re-run on schedule (plan-gated cadence), CI trigger, or manual.
-7. **Claim flow** — prove ownership of an unclaimed public page via DNS TXT record, `<meta>` tag on the API's docs domain, or matching email domain. Claim converts the page to owner-managed and starts the upgrade funnel.
-8. **Badge** — `spotcheck.dev/badge/{slug}.svg`, edge-rendered from the cached score, cache-tagged and revalidated on score change. The badge links to the page: every README that embeds it is inbound distribution.
-9. **GitHub Action** — `spotcheck/sync@v1`: on push to the spec path, POST signed payload to `/api/ci/sync` → re-import, re-verify, re-render, badge revalidate. Optional `fail-below: 80` turns the score into a CI gate.
-10. **Analytics** — per-action call counts (human vs agent), failure classes, drift events, page traffic. Pro+ dashboard; also powers the "agents fumble X" claim-outreach emails.
+6. **Evidence graph** — append-only facts that explain why Spotcheck believes something: static spec facts, parser warnings, live probe observations, schema diffs, error observations, auth findings, human corrections, and CI sync deltas. Every fact carries source, environment, timestamp, confidence, and redaction status. Scores and MCP advisor tools read this graph; they do not invent conclusions directly from raw logs.
+7. **Agent-Ready Score engine** *(inherits L2 spec ideas)* — a probe run executes a sampled subset of read-safe actions (writes only in sandbox or with owner opt-in) and grades four sub-scores, weighted to 0–100: **Auth clarity** (is auth discoverable/satisfiable from the spec alone?), **Error quality** (do 4xx bodies explain themselves?), **Doc drift** (response shape vs spec, field-by-field), **Idempotency** (retry safety on writes, sandbox only). Scores cached in `scores`; each score stores an explanation bundle pointing to the evidence that moved it. Re-run on schedule (plan-gated cadence), CI trigger, or manual.
+8. **Claim flow** — prove ownership of an unclaimed public page via DNS TXT record, `<meta>` tag on the API's docs domain, or matching email domain. Claim converts the page to owner-managed and starts the upgrade funnel.
+9. **Badge** — `spotcheck.dev/badge/{slug}.svg`, edge-rendered from the cached score, cache-tagged and revalidated on score change. The badge links to the page and its score explanation: every README that embeds it is inbound distribution plus audit trail.
+10. **GitHub Action** — `spotcheck/sync@v1`: on push to the spec path, POST signed payload to `/api/ci/sync` → re-import, re-verify, re-render, badge revalidate. Optional `fail-below: 80` turns the score into a CI gate.
+11. **Analytics** — per-action call counts (human vs agent), failure classes, drift events, page traffic. Pro+ dashboard; also powers the "agents fumble X" claim-outreach emails.
 
 ## 4. Data model sketch
 
@@ -99,9 +100,20 @@ apis           id, org_id?, slug, name, base_urls[], visibility(public|private),
                claim_status(unclaimed|pending|claimed), created_by?
 spec_versions  id, api_id, source(openapi|postman|curl), blob_ref, content_hash, parse_status
 actions        id, api_id, spec_version_id, name, method, path, params_schema,
-               auth, safety, enabled_for_mcp
+               response_schemas, error_schemas, auth, safety, resource_name,
+               idempotency, confidence, enabled_for_mcp
+evidence_facts id, api_id, action_id?, kind, source, environment, confidence,
+               redaction_status, payload jsonb, observed_at
+schema_diffs   id, evidence_fact_id, action_id, status_code, field_path,
+               expected jsonb, observed jsonb, severity
+error_findings id, evidence_fact_id, action_id, status_code, trigger,
+               retryable, fix_hint
+auth_findings  id, evidence_fact_id, action_id?, scheme, placement,
+               satisfiable_from_spec, notes
+human_corrections id, api_id, user_id, target_type, target_id, before jsonb,
+               after jsonb, created_at
 scores         id, api_id, total, auth_clarity, error_quality, doc_drift,
-               idempotency, verified_at
+               idempotency, explanation jsonb, verified_at
 score_runs     id, api_id, status, probes_run, findings jsonb, started_at
 credentials    id, org_id, api_id, environment, encrypted_key, kms_key_id   -- Team+
 mcp_calls      id, api_id, tool, status, latency_ms, credits, caller_hash, ts
