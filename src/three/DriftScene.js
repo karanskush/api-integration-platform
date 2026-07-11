@@ -112,7 +112,7 @@ export function createDriftScene(canvas) {
   const lineGeo = new THREE.BufferGeometry();
   const lPos = new Float32Array(links.length * 2 * 3);
   lineGeo.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
-  const lineMat = new THREE.LineBasicMaterial({ color: COLORS.beigeDim, transparent: true, opacity: 0, depthWrite: false });
+  const lineMat = new THREE.LineBasicMaterial({ color: COLORS.primaryDim, transparent: true, opacity: 0, depthWrite: false });
   const lineSeg = new THREE.LineSegments(lineGeo, lineMat);
   lineSeg.frustumCulled = false;
   group.add(lineSeg);
@@ -130,7 +130,7 @@ export function createDriftScene(canvas) {
   const setProgress = (p) => { progress = Math.max(0, Math.min(1, p)); };
 
   const { composer } = makeBloomComposer(renderer, scene, camera, canvas, {
-    strength: isMobile ? 0.32 : 0.42, radius: 0.34, threshold: 0.5,
+    strength: isMobile ? 0.26 : 0.32, radius: 0.34, threshold: 0.5,
   });
   fitToCanvas(renderer, camera, canvas, (w, h) => composer.setSize(w, h));
 
@@ -161,23 +161,23 @@ export function createDriftScene(canvas) {
         // beige → red as the map drifts, with a hot blink
         const blink = 0.6 + 0.4 * Math.sin(time * 5 + i);
         const heat = Math.min(1, 0.25 + drift * 1.1);
-        const cr = THREE.MathUtils.lerp(COLORS.beige.r, COLORS.red.r, heat);
-        const cg = THREE.MathUtils.lerp(COLORS.beige.g, COLORS.red.g, heat);
-        const cb = THREE.MathUtils.lerp(COLORS.beige.b, COLORS.red.b, heat);
+        const cr = THREE.MathUtils.lerp(COLORS.primary.r, COLORS.danger.r, heat);
+        const cg = THREE.MathUtils.lerp(COLORS.primary.g, COLORS.danger.g, heat);
+        const cb = THREE.MathUtils.lerp(COLORS.primary.b, COLORS.danger.b, heat);
         nCol[i * 3] = cr; nCol[i * 3 + 1] = cg; nCol[i * 3 + 2] = cb;
         nSize[i] = 0.6 + drift * 0.5;
         // additive flare pass
         ePos[ePtr * 3] = cur[i].x; ePos[ePtr * 3 + 1] = cur[i].y; ePos[ePtr * 3 + 2] = cur[i].z;
         const f = (0.2 + drift) * blink;
-        eCol[ePtr * 3] = COLORS.red.r * f; eCol[ePtr * 3 + 1] = COLORS.red.g * f; eCol[ePtr * 3 + 2] = COLORS.red.b * f;
+        eCol[ePtr * 3] = COLORS.danger.r * f; eCol[ePtr * 3 + 1] = COLORS.danger.g * f; eCol[ePtr * 3 + 2] = COLORS.danger.b * f;
         eSize[ePtr] = 1.1 + drift * 0.9;
         ePtr++;
       } else {
         // ordered nodes dim slightly as structure is lost
         const lum = 0.85 - drift * 0.35;
-        nCol[i * 3] = COLORS.beige.r * lum;
-        nCol[i * 3 + 1] = COLORS.beige.g * lum;
-        nCol[i * 3 + 2] = COLORS.beige.b * lum;
+        nCol[i * 3] = COLORS.primary.r * lum;
+        nCol[i * 3 + 1] = COLORS.primary.g * lum;
+        nCol[i * 3 + 2] = COLORS.primary.b * lum;
         nSize[i] = 0.42;
       }
     }

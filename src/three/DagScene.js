@@ -24,7 +24,7 @@ export function createDagScene(canvas, labelLayer) {
   const base = NODES.map((n) => new THREE.Vector3(...n.pos));
   const cur = base.map((v) => v.clone());
   const glow = new Float32Array(N);           // 0..1, decays each frame
-  const baseColor = NODES.map((n) => (n.kind === 'agent' ? COLORS.blue : COLORS.beige));
+  const baseColor = NODES.map((n) => (n.kind === 'agent' ? COLORS.secondary : COLORS.primary));
   const baseSize = NODES.map((n) => (n.kind === 'agent' ? 0.62 : 0.5));
 
   const tex = dotTexture();
@@ -88,9 +88,10 @@ export function createDagScene(canvas, labelLayer) {
   pulses.frustumCulled = false;
   group.add(pulses);
 
+  // packets are verification probes — green is earned by traffic that lands
   const packets = CHAINS.map((chain, i) => ({
     chain, seg: 0, t: i * 0.33, speed: 0.5 + i * 0.06, wait: 0,
-    color: i === 2 ? COLORS.blue : COLORS.beige,
+    color: COLORS.ok,
   }));
 
   // ---- HTML labels for key nodes ----
@@ -121,7 +122,7 @@ export function createDagScene(canvas, labelLayer) {
   const _ndc = new THREE.Vector3();
   let w = 1, h = 1;
   const { composer } = makeBloomComposer(renderer, scene, camera, canvas, {
-    strength: isMobile ? 0.45 : 0.6, radius: 0.5, threshold: 0.5,
+    strength: isMobile ? 0.36 : 0.48, radius: 0.5, threshold: 0.5,
   });
   fitToCanvas(renderer, camera, canvas, (ww, hh) => { w = ww; h = hh; composer.setSize(ww, hh); });
 
@@ -165,9 +166,9 @@ export function createDagScene(canvas, labelLayer) {
       const g = glow[i];
       const c = baseColor[i];
       const lit = g * 1.4;
-      nCol[i * 3] = Math.min(1, c.r * (0.78 + lit));
-      nCol[i * 3 + 1] = Math.min(1, c.g * (0.78 + lit));
-      nCol[i * 3 + 2] = Math.min(1, c.b * (0.78 + lit));
+      nCol[i * 3] = Math.min(1, c.r * (0.86 + lit));
+      nCol[i * 3 + 1] = Math.min(1, c.g * (0.86 + lit));
+      nCol[i * 3 + 2] = Math.min(1, c.b * (0.86 + lit));
       nSize[i] = baseSize[i] * (1 + g * 1.2);
     }
     nodeGeo.attributes.position.needsUpdate = true;
@@ -181,11 +182,11 @@ export function createDagScene(canvas, labelLayer) {
       ePos[o] = cur[a].x; ePos[o + 1] = cur[a].y; ePos[o + 2] = cur[a].z;
       ePos[o + 3] = cur[b].x; ePos[o + 4] = cur[b].y; ePos[o + 5] = cur[b].z;
       const ea = Math.max(glow[a], glow[b]);
-      const col = COLORS.beigeDim;
+      const col = COLORS.primaryDim;
       for (const k of [0, 3]) {
-        eCol[o + k] = col.r * (0.32 + ea * 1.0);
-        eCol[o + k + 1] = col.g * (0.32 + ea * 1.0);
-        eCol[o + k + 2] = col.b * (0.32 + ea * 1.0);
+        eCol[o + k] = col.r * (0.45 + ea * 1.0);
+        eCol[o + k + 1] = col.g * (0.45 + ea * 1.0);
+        eCol[o + k + 2] = col.b * (0.45 + ea * 1.0);
       }
     }
     edgeGeo.attributes.position.needsUpdate = true;
@@ -212,7 +213,7 @@ export function createDagScene(canvas, labelLayer) {
     const r = reveal;
     nodeMat.uniforms.uOpacity.value = r;
     pulseMat.uniforms.uOpacity.value = r;
-    edgeMat.opacity = r * 0.4;
+    edgeMat.opacity = r * 0.42;
     group.scale.setScalar(0.92 + r * 0.08);
 
     composer.render();

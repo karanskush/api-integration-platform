@@ -8,12 +8,15 @@ export const DPR = Math.min(window.devicePixelRatio || 1, 2);
 export const isMobile = window.matchMedia('(max-width: 760px)').matches;
 export const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// CALIBRATED palette: cyan is the instrument channel, steel is the agent
+// channel, green appears only as verification traffic, red only as failure.
 export const COLORS = {
-  bg: new THREE.Color('#0b0906'),
-  beige: new THREE.Color('#e6d6a8'),
-  beigeDim: new THREE.Color('#8c7e5e'),
-  blue: new THREE.Color('#84a8cf'),
-  red: new THREE.Color('#d98b7a'),
+  bg: new THREE.Color('#05080a'),
+  primary: new THREE.Color('#4fc8e8'),
+  primaryDim: new THREE.Color('#2e6e80'),
+  secondary: new THREE.Color('#8fb6c9'),
+  ok: new THREE.Color('#43d9a3'),
+  danger: new THREE.Color('#f2685c'),
 };
 
 export function supportsWebGL() {

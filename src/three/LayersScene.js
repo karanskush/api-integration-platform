@@ -29,13 +29,13 @@ export function createLayersScene(canvas) {
 
   const nodeGeo = new THREE.BufferGeometry().setAttribute('position',
     new THREE.BufferAttribute(new Float32Array(P.flatMap((v) => [v.x, v.y, v.z])), 3));
-  const nodeMat = new THREE.PointsMaterial({ size: 0.42, map: tex, color: COLORS.beige, transparent: true, opacity: 0, depthWrite: false });
+  const nodeMat = new THREE.PointsMaterial({ size: 0.42, map: tex, color: COLORS.primary, transparent: true, opacity: 0, depthWrite: false });
   root.add(new THREE.Points(nodeGeo, nodeMat));
 
   const eArr = [];
   E.forEach(([a, b]) => { eArr.push(P[a].x, P[a].y, P[a].z, P[b].x, P[b].y, P[b].z); });
   const edgeGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(eArr), 3));
-  const edgeMat = new THREE.LineBasicMaterial({ color: COLORS.beigeDim, transparent: true, opacity: 0, depthWrite: false });
+  const edgeMat = new THREE.LineBasicMaterial({ color: COLORS.primaryDim, transparent: true, opacity: 0, depthWrite: false });
   root.add(new THREE.LineSegments(edgeGeo, edgeMat));
 
   // helper to make a circle line
@@ -52,9 +52,9 @@ export function createLayersScene(canvas) {
 
   // 1. state ring around node 7 (the hub)
   const stateGroup = new THREE.Group();
-  const sr = ring(1.1, 48, COLORS.beige); stateGroup.add(sr);
+  const sr = ring(1.1, 48, COLORS.primary); stateGroup.add(sr);
   const orbGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(5 * 3), 3));
-  const orbMat = new THREE.PointsMaterial({ size: 0.28, map: tex, color: COLORS.beige, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const orbMat = new THREE.PointsMaterial({ size: 0.28, map: tex, color: COLORS.primary, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   const orbPoints = new THREE.Points(orbGeo, orbMat);
   stateGroup.add(orbPoints);
   stateGroup.position.copy(P[7]);
@@ -63,42 +63,42 @@ export function createLayersScene(canvas) {
   // 2. failure markers (red points on a few nodes)
   const failIdx = [2, 4, 6];
   const failGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(failIdx.flatMap((i) => [P[i].x, P[i].y, P[i].z])), 3));
-  const failMat = new THREE.PointsMaterial({ size: 0.7, map: tex, color: COLORS.red, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const failMat = new THREE.PointsMaterial({ size: 0.7, map: tex, color: COLORS.danger, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   failMat.userData.blink = true;
   addFeature(new THREE.Points(failGeo, failMat), [0.28, 0.42]);
 
   // 3. sandbox/prod ghost fork (dim duplicate offset)
   const ghost = new THREE.Group();
-  ghost.add(new THREE.Points(nodeGeo, new THREE.PointsMaterial({ size: 0.4, map: tex, color: COLORS.blue, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })));
-  ghost.add(new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })));
+  ghost.add(new THREE.Points(nodeGeo, new THREE.PointsMaterial({ size: 0.4, map: tex, color: COLORS.secondary, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })));
+  ghost.add(new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: COLORS.secondary, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })));
   ghost.position.set(0.8, -0.5, -2.2); ghost.scale.setScalar(0.92);
   addFeature(ghost, [0.42, 0.56]);
 
   // 4. webhook arcs (expanding rings near node 3)
   const arcs = new THREE.Group();
-  [0.7, 1.1, 1.5].forEach((r) => arcs.add(ring(r, 40, COLORS.beige)));
+  [0.7, 1.1, 1.5].forEach((r) => arcs.add(ring(r, 40, COLORS.primary)));
   arcs.position.copy(P[3]);
   addFeature(arcs, [0.56, 0.7]);
 
   // 5. idempotency shields (rings around two nodes)
   const shields = new THREE.Group();
-  [0, 5].forEach((i) => { const r = ring(0.85, 6, COLORS.beige); r.position.copy(P[i]); shields.add(r); });
+  [0, 5].forEach((i) => { const r = ring(0.85, 6, COLORS.primary); r.position.copy(P[i]); shields.add(r); });
   addFeature(shields, [0.7, 0.84]);
 
   // 6. cross-provider links (blue nodes + connectors)
   const cross = new THREE.Group();
   const xpos = [new THREE.Vector3(5.2, 1.6, -1), new THREE.Vector3(5.6, -1.2, 0.6), new THREE.Vector3(-5.2, -1.8, -0.8)];
   cross.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(xpos.flatMap((v) => [v.x, v.y, v.z])), 3)),
-    new THREE.PointsMaterial({ size: 0.45, map: tex, color: COLORS.blue, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })));
+    new THREE.PointsMaterial({ size: 0.45, map: tex, color: COLORS.secondary, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })));
   const xl = []; xl.push(P[3].x, P[3].y, P[3].z, xpos[0].x, xpos[0].y, xpos[0].z); xl.push(P[4].x, P[4].y, P[4].z, xpos[1].x, xpos[1].y, xpos[1].z); xl.push(P[6].x, P[6].y, P[6].z, xpos[2].x, xpos[2].y, xpos[2].z);
   cross.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(xl), 3)),
-    new THREE.LineBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })));
+    new THREE.LineBasicMaterial({ color: COLORS.secondary, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })));
   addFeature(cross, [0.84, 0.98]);
 
   let progress = 0;
   const setProgress = (p) => { progress = Math.max(0, Math.min(1, p)); };
 
-  const { composer } = makeBloomComposer(renderer, scene, camera, canvas, { strength: isMobile ? 0.34 : 0.42, radius: 0.28, threshold: 0.52 });
+  const { composer } = makeBloomComposer(renderer, scene, camera, canvas, { strength: isMobile ? 0.26 : 0.32, radius: 0.28, threshold: 0.52 });
   fitToCanvas(renderer, camera, canvas, (w, h) => composer.setSize(w, h));
 
   const clampRamp = (p, s, e) => Math.max(0, Math.min(1, (p - s) / (e - s)));

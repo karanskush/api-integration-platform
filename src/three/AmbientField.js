@@ -44,7 +44,7 @@ export function createAmbientField(canvas, { mode = 'drift', color = 'beige' } =
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 
-  const c = color === 'blue' ? COLORS.blue : COLORS.beige;
+  const c = color === 'blue' ? COLORS.secondary : COLORS.primary;
   const mat = new THREE.PointsMaterial({
     size: isMobile ? 0.07 : 0.06,
     map: dotTexture(),
@@ -75,7 +75,7 @@ export function createAmbientField(canvas, { mode = 'drift', color = 'beige' } =
     }
     geo.attributes.position.needsUpdate = true;
     points.rotation.y = time * 0.02;
-    const targetOpacity = mode === 'converge' ? 0.25 + progress * 0.5 : 0.45;
+    const targetOpacity = mode === 'converge' ? 0.2 + progress * 0.4 : 0.35;
     mat.opacity = shown * targetOpacity;
     renderer.render(scene, camera);
   }
