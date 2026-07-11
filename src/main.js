@@ -6,9 +6,13 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { supportsWebGL, prefersReducedMotion } from './three/renderer.js';
 import { initSmoothScroll } from './motion/smoothScroll.js';
-import { initReveals, initCounters, initMagnetic, initTilt, initChrome } from './motion/reveals.js';
+import { initReveals, initCounters, initChrome } from './motion/reveals.js';
 import { playHeroIntro, showHeroStatic } from './motion/heroTimeline.js';
 import { initLayersScroll, initLayersStatic } from './motion/layersScroll.js';
+import { initImportDemo } from './motion/importDemo.js';
+import { initImportHero } from './motion/importHero.js';
+import { initScoreGauge } from './motion/scoreGauge.js';
+import { APP_ORIGIN } from './config.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -18,23 +22,45 @@ const reduced = prefersReducedMotion;
 async function boot() {
   if (!webgl) document.body.classList.add('no-webgl');
 
-  // form handler
+  // waitlist form — POSTs to the Spotcheck app unless index.html overrides it
   const form = document.getElementById('cta-form');
   if (form) {
-    form.addEventListener('submit', (e) => {
+    if (!form.dataset.endpoint) form.dataset.endpoint = `${APP_ORIGIN}/api/waitlist`;
+    const status = document.getElementById('form-status');
+    const say = (msg) => { if (status) status.textContent = msg; };
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const input = form.querySelector('input');
-      input.value = '';
-      input.placeholder = "Thanks — you're on the list.";
+      if (form.querySelector('.hp-field')?.value) return; // honeypot
+      const email = form.querySelector('input[type="email"]');
+      const endpoint = form.dataset.endpoint;
+      if (!endpoint) {
+        email.value = '';
+        say("Thanks — you're on the list. We'll email your import link.");
+        return;
+      }
+      try {
+        say('…');
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value }),
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        email.value = '';
+        say("Thanks — you're on the list. We'll email your import link.");
+      } catch {
+        say("Something went wrong — email hello@spotcheck.dev and we'll add you.");
+      }
     });
   }
 
   // chrome + non-3D motion (works in every mode)
   initChrome();
   initCounters();
-  initMagnetic();
-  initTilt();
   initReveals();
+  const demo = initImportDemo();
+  initImportHero({ demoPlay: demo?.play ?? null });
+  initScoreGauge();
 
   if (!reduced) initSmoothScroll();
 
@@ -71,14 +97,14 @@ async function boot() {
     initLayersStatic();
   }
 
-  // ---- PROBLEM: cinematic drift field ----
+  // ---- THE QUESTION: drift field resolves chaos → order as you read ----
   if (webgl && !reduced) {
     pending.push(import('./three/DriftScene.js').then(({ createDriftScene }) => {
       const drift = createDriftScene(document.getElementById('drift-canvas'));
       drift.start();
       ScrollTrigger.create({
-        trigger: '#problem', start: 'top bottom', end: 'bottom top', scrub: true,
-        onUpdate: (s) => drift.setProgress(s.progress),
+        trigger: '#anxiety', start: 'top bottom', end: 'bottom top', scrub: true,
+        onUpdate: (s) => drift.setProgress(1 - s.progress),
       });
     }));
   }
