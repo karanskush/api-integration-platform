@@ -1,0 +1,333 @@
+/* Token-aligned with the landing site (src/styles/tokens.css):
+   "CALIBRATED" — gunmetal + calibration cyan; green is earned.
+   Instrument Sans (display) + Geist (UI) + JetBrains Mono (labels/code). */
+:root {
+  --font-sans: var(--font-geist, 'Geist'), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: var(--font-instrument-sans, 'Instrument Sans'), 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), ui-monospace, SFMono-Regular, monospace;
+
+  /* surfaces — cool gunmetal */
+  --bg: #05080a;
+  --bg-soft: #0a0f13;
+  --panel: #0d1319;
+
+  /* ink — porcelain on graphite */
+  --fg: #efeee9;
+  --fg-dim: #9aa7b4;
+  --fg-mute: #6c7987;
+
+  /* signal channels */
+  --accent: #4fc8e8;        /* calibration cyan */
+  --accent-soft: #72d3ec;   /* solid hover for primary buttons */
+  --accent-blue: #8fb6c9;   /* agent-channel steel */
+  --accent-red: #f2685c;    /* fail / DELETE only */
+  --accent-green: #43d9a3;  /* earned: success / verified only */
+  --warn: #e0a83e;
+
+  /* fills */
+  --accent-fill: rgba(79, 200, 232, 0.12);
+  --danger-fill: rgba(242, 104, 92, 0.12);
+
+  /* hairlines */
+  --hair: rgba(214, 228, 240, 0.08);
+  --hair-soft: rgba(214, 228, 240, 0.045);
+  --edge-light: rgba(233, 238, 242, 0.05); /* inset top highlight on panels */
+
+  /* focus + selection */
+  --focus-ring: #4fc8e8;
+  --selection-bg: rgba(79, 200, 232, 0.24);
+
+  --maxw: 980px;
+  --maxw-nav: 1120px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { color-scheme: dark; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: var(--accent-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+::selection { background: var(--selection-bg); color: var(--fg); }
+
+:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: 2px; }
+
+code, pre, .mono { font-family: var(--font-mono); font-size: 0.85em; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+.site-main { flex: 1; width: 100%; padding-top: 40px; padding-bottom: 80px; }
+
+/* ============================================================
+   HEADER — sticky, blurred, hairline; mirrors the landing nav
+   ============================================================ */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 64px;
+  background: rgba(5, 8, 10, 0.72);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid var(--hair);
+}
+.header-inner {
+  max-width: var(--maxw-nav);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.brand:hover { text-decoration: none; }
+.brand-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid var(--accent);
+  position: relative;
+  flex-shrink: 0;
+}
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 1.5px;
+  background: var(--accent);
+}
+.site-nav { display: flex; align-items: center; gap: 32px; }
+.site-nav a { font-size: 14px; }
+.site-nav a:hover { text-decoration: none; }
+.site-nav .nav-link { color: var(--fg-dim); transition: color 0.15s; }
+.site-nav .nav-link:hover { color: var(--fg); }
+.site-nav .nav-cta { font-weight: 500; color: var(--fg); }
+@media (max-width: 720px) {
+  .site-nav { gap: 20px; }
+  .site-nav .nav-link { display: none; }
+}
+@media (max-width: 600px) {
+  .header-inner, .footer-inner { padding-left: 22px; padding-right: 22px; }
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.site-footer { border-top: 1px solid var(--hair); }
+.footer-inner {
+  max-width: var(--maxw-nav);
+  margin: 0 auto;
+  padding: 18px 32px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-mute);
+}
+.footer-links { display: flex; gap: 18px; }
+.footer-inner a { color: var(--fg-mute); transition: color 0.15s; }
+.footer-inner a:hover { color: var(--fg); text-decoration: none; }
+
+/* ============================================================
+   TYPE PRIMITIVES — mirror the landing's voice
+   ============================================================ */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--fg);
+}
+.lead { color: var(--fg-dim); max-width: 560px; }
+
+/* home (dev fallback hero) */
+.home { display: grid; gap: 28px; }
+.home-head { display: grid; gap: 14px; }
+.home-head h1 { font-size: clamp(30px, 5vw, 40px); }
+
+/* ============================================================
+   PANELS
+   ============================================================ */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+
+/* ============================================================
+   CHIPS — semantic hues; green stays earned (success only)
+   ============================================================ */
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.chip.read { color: var(--accent-blue); border-color: rgba(143, 182, 201, 0.3); }
+.chip.write { color: var(--warn); border-color: rgba(224, 168, 62, 0.3); }
+.chip.destructive { color: var(--accent-red); border-color: rgba(242, 104, 92, 0.35); }
+
+.chip.get { color: var(--accent-blue); border-color: rgba(143, 182, 201, 0.3); }
+.chip.post { color: var(--fg); border-color: var(--hair); }
+.chip.put, .chip.patch { color: var(--warn); border-color: rgba(224, 168, 62, 0.3); }
+.chip.delete { color: var(--accent-red); border-color: rgba(242, 104, 92, 0.35); }
+
+/* ============================================================
+   BUTTONS — state changes, not transforms; no glow
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn:hover { border-color: rgba(79, 200, 232, 0.4); }
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #05080a;
+  font-weight: 600;
+}
+.btn.primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn-block { width: 100%; }
+
+/* ============================================================
+   FORMS — mono inputs, cyan focus ring (the glow budget)
+   ============================================================ */
+input[type='text'], input[type='url'], input[type='password'], input[type='email'],
+input[type='number'], select, textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  background: var(--bg-soft);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: rgba(79, 200, 232, 0.4);
+  box-shadow: 0 0 0 3px var(--accent-fill);
+}
+label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  margin-bottom: 6px;
+}
+
+/* import form (dev fallback + reusable) */
+.import-panel {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+  padding: 22px;
+  border-radius: 14px;
+}
+.or-divider {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  text-align: center;
+}
+.form-error {
+  background: var(--danger-fill);
+  border-left: 2px solid var(--accent-red);
+  border-radius: 0 6px 6px 0;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+/* ============================================================
+   CODE + TABLES
+   ============================================================ */
+pre.codeblock {
+  background: var(--bg-soft);
+  border: 1px solid var(--hair-soft);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+table.params { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.params th, table.params td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hair-soft);
+  vertical-align: top;
+}
+table.params th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-mute);
+  font-weight: 500;
+}
+table.params td.name { font-family: var(--font-mono); color: var(--accent); white-space: nowrap; }
+table.params td.type { font-family: var(--font-mono); color: var(--accent-blue); white-space: nowrap; }
+table.params td.desc { color: var(--fg-dim); }
