@@ -9,7 +9,7 @@ export function initReveals() {
   ScrollTrigger.batch('.reveal', {
     start: 'top 86%',
     once: true,
-    onEnter: (els) => gsap.to(els, { opacity: 1, y: 0, duration: 0.8, stagger: 0.09, ease: EASE }),
+    onEnter: (els) => gsap.to(els, { opacity: 1, y: 0, duration: 0.5, stagger: 0.04, ease: EASE }),
   });
 
   // pricing tiers: staggered
@@ -24,22 +24,7 @@ export function initReveals() {
   // class-toggle reveals that drive CSS keyed animations
   toggleOnEnter('#surfaces-grid', '#surfaces-grid', 'in');
 
-  initDriftEvidence();
   initProofDemo();
-}
-
-// Stagger the four drift-evidence cards in; CSS drives each card's strike + highlight.
-function initDriftEvidence() {
-  const cards = gsap.utils.toArray('#drift-evidence .ev-card');
-  if (!cards.length) return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    cards.forEach((c) => c.classList.add('in'));
-    return;
-  }
-  ScrollTrigger.create({
-    trigger: '#drift-evidence', start: 'top 82%', once: true,
-    onEnter: () => cards.forEach((c, i) => gsap.delayedCall(i * 0.12, () => c.classList.add('in'))),
-  });
 }
 
 // Build the MCP terminal like a live session: type the agent lines, sequence the rest.
@@ -71,13 +56,12 @@ function initProofDemo() {
     trigger: term, start: 'top 78%', once: true,
     onEnter: () => {
       const tl = gsap.timeline();
-      tl.to(lines[0], { opacity: 1, y: 0, duration: 0.25 })
-        .add(typeLine(typed[0], 0.85))
-        .to(lines[1], { opacity: 1, y: 0, duration: 0.3 }, '+=0.2')
-        .to([lines[2], lines[3], lines[4]], { opacity: 1, y: 0, duration: 0.35, stagger: 0.2 }, '+=0.05')
-        .to(lines[5], { opacity: 1, y: 0, duration: 0.3 }, '+=0.12')
-        .to(lines[6], { opacity: 1, y: 0, duration: 0.25 }, '+=0.3');
-      if (typed[1]) tl.add(typeLine(typed[1], 0.7));
+      lines.forEach((line, i) => {
+        const isBeat = line.classList.contains('warn') || line.classList.contains('ok');
+        tl.to(line, { opacity: 1, y: 0, duration: 0.3 }, i === 0 ? undefined : isBeat ? '+=0.3' : '+=0.12');
+        const t = typed.find((x) => line.contains(x.el));
+        if (t) tl.add(typeLine(t, Math.min(1, t.full.length * 0.028)));
+      });
       if (caret) tl.to(caret, { opacity: 1, duration: 0.15 }, '-=0.1');
     },
   });
@@ -89,8 +73,10 @@ function toggleOnEnter(triggerSel, targetSel, cls) {
   ScrollTrigger.create({ trigger: triggerSel, start: 'top 80%', once: true, onEnter: () => el.classList.add(cls) });
 }
 
-// Animated number counters for [data-count]
+// Animated number counters for [data-count]. Markup ships final values, so
+// reduced-motion readers simply keep them.
 export function initCounters() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   gsap.utils.toArray('[data-count]').forEach((el) => {
     const target = parseFloat(el.dataset.count);
     const prefix = el.dataset.prefix || '';
@@ -103,38 +89,6 @@ export function initCounters() {
         onUpdate: () => { el.textContent = prefix + Math.round(obj.v).toLocaleString() + suffix; },
       }),
     });
-  });
-}
-
-// Magnetic hover for [data-magnetic]
-export function initMagnetic() {
-  if (window.matchMedia('(hover: none)').matches) return;
-  gsap.utils.toArray('[data-magnetic]').forEach((el) => {
-    const xTo = gsap.quickTo(el, 'x', { duration: 0.4, ease: 'power3.out' });
-    const yTo = gsap.quickTo(el, 'y', { duration: 0.4, ease: 'power3.out' });
-    el.addEventListener('pointermove', (e) => {
-      const r = el.getBoundingClientRect();
-      xTo((e.clientX - (r.left + r.width / 2)) * 0.35);
-      yTo((e.clientY - (r.top + r.height / 2)) * 0.45);
-    });
-    el.addEventListener('pointerleave', () => { xTo(0); yTo(0); });
-  });
-}
-
-// 3D tilt for .tilt cards
-export function initTilt() {
-  if (window.matchMedia('(hover: none)').matches) return;
-  gsap.utils.toArray('.tilt').forEach((el) => {
-    const rxTo = gsap.quickTo(el, 'rotationX', { duration: 0.5, ease: 'power3.out' });
-    const ryTo = gsap.quickTo(el, 'rotationY', { duration: 0.5, ease: 'power3.out' });
-    gsap.set(el, { transformPerspective: 800, transformOrigin: 'center' });
-    el.addEventListener('pointermove', (e) => {
-      const r = el.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width - 0.5;
-      const py = (e.clientY - r.top) / r.height - 0.5;
-      ryTo(px * 8); rxTo(-py * 8);
-    });
-    el.addEventListener('pointerleave', () => { rxTo(0); ryTo(0); });
   });
 }
 

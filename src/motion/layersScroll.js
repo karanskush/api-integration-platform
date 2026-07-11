@@ -3,11 +3,11 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 gsap.registerPlugin(ScrollTrigger);
 
-const TOTAL = 7;
+const TOTAL = 6;
 
 /**
- * Pins the How-it-works section and scrubs through 7 layers, driving both the
- * 3D model (scene.setProgress) and the active card / progress counter.
+ * Pins the What-you-get section and scrubs through the 6 surfaces one import
+ * produces, driving both the 3D model (scene.setProgress) and the active card.
  */
 export function initLayersScroll(scene) {
   const pin = document.getElementById('layers-pin');

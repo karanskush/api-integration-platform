@@ -25,15 +25,15 @@ export function playHeroIntro(onReveal) {
   const words = title ? splitWords(title) : [];
 
   const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
-  gsap.set('.hero-eyebrow, .hero-tagline, .hero-lead, .hero-actions, .hero-proof', { opacity: 0, y: 22 });
+  gsap.set('.hero-eyebrow, .hero-tagline, .hero-lead, .import-bar, .hero-sub, .hero-proof', { opacity: 0, y: 14 });
   gsap.set(words, { yPercent: 110 });
 
   tl.to('.hero-eyebrow', { opacity: 1, y: 0, duration: 0.6 }, 0.1)
     .to(words, { yPercent: 0, duration: 1.0, stagger: 0.05 }, 0.2)
     .to('.hero-tagline', { opacity: 1, y: 0, duration: 0.7 }, 0.7)
     .to('.hero-lead', { opacity: 1, y: 0, duration: 0.7 }, 0.85)
-    .to('.hero-actions', { opacity: 1, y: 0, duration: 0.7 }, 1.0)
-    .to('.hero-proof', { opacity: 1, y: 0, duration: 0.7 }, 1.15);
+    .to('.import-bar', { opacity: 1, y: 0, duration: 0.7 }, 1.0)
+    .to('.hero-sub, .hero-proof', { opacity: 1, y: 0, duration: 0.7 }, 1.15);
 
   if (onReveal) {
     tl.to({ v: 0 }, { v: 1, duration: 1.6, ease: 'power2.out', onUpdate() { onReveal(this.targets()[0].v); } }, 0.3);
@@ -43,6 +43,6 @@ export function playHeroIntro(onReveal) {
 
 // Static reveal (reduced motion) — no DAG fade choreography needed.
 export function showHeroStatic(onReveal) {
-  gsap.set('.hero-eyebrow, .hero-tagline, .hero-lead, .hero-actions, .hero-proof', { opacity: 1, y: 0 });
+  gsap.set('.hero-eyebrow, .hero-tagline, .hero-lead, .import-bar, .hero-sub, .hero-proof', { opacity: 1, y: 0 });
   if (onReveal) onReveal(1);
 }
