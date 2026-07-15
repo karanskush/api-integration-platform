@@ -1,5 +1,10 @@
-.vercel
-node_modules
-dist
+node_modules/
+.next/
+.vercel/
+dist/
+.env
+.env.*
+!.env.example
 *.local
+*.tsbuildinfo
 .DS_Store
