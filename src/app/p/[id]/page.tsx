@@ -58,7 +58,7 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
   const mcpUrl = `${appOrigin()}/mcp/${record.id}`;
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
+    <div className="product-page wrap" style={{ display: 'grid', gap: 20 }}>
       <TtlNotice expiresAt={record.expiresAt} />
 
       <header>

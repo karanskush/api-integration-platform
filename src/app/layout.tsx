@@ -35,10 +35,6 @@ export const viewport: Viewport = {
   themeColor: '#05080a',
 };
 
-// Landing-site origin. When set, nav links point at the landing sections;
-// when unset (local dev) they degrade to same-page anchors.
-const SITE = (process.env.NEXT_PUBLIC_SITE_ORIGIN ?? '').replace(/\/$/, '');
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -48,33 +44,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="site-header">
           <div className="header-inner">
-            <a className="brand" href={SITE || '/'}>
+            <a className="brand" href="/">
               <span className="brand-mark" aria-hidden="true" />
               Spotcheck
             </a>
             <nav className="site-nav" aria-label="Primary">
-              <a className="nav-link" href={`${SITE}/#demo`}>
+              <a className="nav-link" href="/#demo">
                 Demo
               </a>
-              <a className="nav-link" href={`${SITE}/#how`}>
+              <a className="nav-link" href="/#how">
                 What you get
               </a>
-              <a className="nav-link" href={`${SITE}/#score`}>
+              <a className="nav-link" href="/#score">
                 Score
               </a>
-              <a className="nav-link" href={`${SITE}/#pricing`}>
+              <a className="nav-link" href="/#pricing">
                 Pricing
               </a>
-              <a className="nav-cta" href={SITE || '/'}>
-                Import an API →
+              <a className="nav-link nav-app" href="/app">
+                App
+              </a>
+              <a className="nav-cta" href="/app">
+                Open app <span aria-hidden="true">→</span>
               </a>
             </nav>
           </div>
         </header>
-        <main className="wrap site-main">{children}</main>
+        <main className="site-main">{children}</main>
         <footer className="site-footer">
           <div className="footer-inner">
-            <span>Spotcheck · agent-ready APIs · pages expire in 24h</span>
+            <span>Spotcheck · behavior-verified API integration</span>
             <span className="footer-links">
               <a href="https://github.com/karanskush/api-integration-platform">GitHub</a>
               <a href="mailto:hello@spotcheck.dev">Contact</a>
