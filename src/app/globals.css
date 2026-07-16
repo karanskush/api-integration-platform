@@ -315,7 +315,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .panel {
   background: var(--panel);
   border: 1px solid var(--hair);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: inset 0 1px 0 var(--edge-light);
 }
 
@@ -402,13 +402,53 @@ label {
   margin-bottom: 6px;
 }
 
-/* import form (dev fallback + reusable) */
+/* import workbench */
 .import-panel {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   max-width: 640px;
-  padding: 22px;
-  border-radius: 14px;
+  padding: 20px;
+}
+.import-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--hair);
+}
+.import-tabs button {
+  min-width: 0;
+  padding: 9px 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.import-tabs button[aria-selected='true'] { border-bottom-color: var(--accent); color: var(--fg); }
+.import-field { min-height: 78px; }
+.import-field textarea { resize: vertical; min-height: 148px; }
+.import-examples { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; color: var(--fg-mute); font-size: 11px; }
+.import-examples button {
+  padding: 3px 8px;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-blue);
+  font: inherit;
+  cursor: pointer;
+}
+.import-examples button:hover { border-color: rgba(79, 200, 232, 0.4); color: var(--fg); }
+.import-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; }
+.import-progress span { color: var(--fg-mute); font-family: var(--font-mono); font-size: 10.5px; }
+.import-progress span[data-state='active'] { color: var(--accent); }
+.import-progress span[data-state='done'] { color: var(--accent-green); }
+.import-progress + .btn { margin-top: 2px; }
+.import-tabs button:disabled,
+.import-examples button:disabled { cursor: default; opacity: 0.5; }
+@media (max-width: 480px) {
+  .import-panel { padding: 16px; }
+  .import-progress { grid-template-columns: 1fr; }
 }
 .or-divider {
   font-family: var(--font-mono);
