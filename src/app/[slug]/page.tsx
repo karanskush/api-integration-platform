@@ -1,16 +1,28 @@
+import { auth } from '@clerk/nextjs/server';
+import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ActionCard from '@/components/ActionCard';
 import AuthGuide from '@/components/AuthGuide';
+import ClaimOwnershipForm from '@/components/ClaimOwnershipForm';
 import McpBlock from '@/components/McpBlock';
 import Playground from '@/components/Playground';
+import RunVerificationButton from '@/components/RunVerificationButton';
 import ScorePreviewPanel from '@/components/ScorePreviewPanel';
-import { loadPersistentRecord } from '@/lib/persistentApi';
+import VerifiedScorePanel from '@/components/VerifiedScorePanel';
+import { getDb } from '@/lib/db';
+import { orgMembers, users } from '@/lib/db/schema';
+import { loadApiVerificationState, loadPersistentRecord } from '@/lib/persistentApi';
 
 // Time-based ISR for now — Phase 1 has no "re-import into an existing
 // persistent api" path yet, so there's nothing to on-demand revalidateTag()
 // against. Add tag-based revalidation once that write path exists (Phase 2+).
 export const revalidate = 3600;
+
+// Same xReady() gate the rest of the codebase uses for claim/auth UI (see
+// dashboard/page.tsx, p/[id]/page.tsx) — without Clerk configured, the page
+// still renders, just without the claim/verify affordances.
+const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const SOURCE_LABEL: Record<string, string> = {
   openapi: 'OpenAPI 3.x',
@@ -23,6 +35,17 @@ function appOrigin(): string {
   return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
 }
 
+// Best-effort hostname for pre-filling the claim form — mirrors claim/verify
+// route's own apiDomain() derivation.
+function baseUrlHostname(baseUrls: string[]): string {
+  if (!baseUrls.length) return '';
+  try {
+    return new URL(baseUrls[0]).hostname;
+  } catch {
+    return '';
+  }
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const record = await loadPersistentRecord(slug);
@@ -33,6 +56,21 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
   const { slug } = await params;
   const record = await loadPersistentRecord(slug);
   if (!record) notFound();
+
+  const verification = await loadApiVerificationState(slug);
+  const { userId } = clerkReady ? await auth() : { userId: null };
+
+  let canVerify = false;
+  if (userId && verification?.claimStatus === 'claimed') {
+    const db = getDb();
+    const membership = await db
+      .select({ userId: users.id })
+      .from(users)
+      .innerJoin(orgMembers, eq(orgMembers.userId, users.id))
+      .where(and(eq(users.clerkUserId, userId), eq(orgMembers.orgId, verification.orgId)))
+      .limit(1);
+    canVerify = membership.length > 0;
+  }
 
   const mcpUrl = `${appOrigin()}/mcp/${record.id}`;
 
@@ -56,8 +94,34 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
         )}
       </header>
 
+      {verification?.claimStatus === 'unclaimed' && (
+        <section className="panel" style={{ padding: 20 }}>
+          <h2 style={{ fontSize: 15, marginBottom: 6 }}>
+            Unofficial <span className="chip" style={{ marginLeft: 8 }}>not verified by the provider</span>
+          </h2>
+          <p style={{ color: 'var(--fg-dim)', fontSize: 13.5, marginBottom: 14 }}>
+            This page was generated from a public spec — nobody has claimed ownership of it yet. If
+            you run this API, verify your domain to take it over and unlock live verification.
+          </p>
+          {clerkReady ? (
+            userId ? (
+              <ClaimOwnershipForm slug={slug} defaultDomain={baseUrlHostname(record.baseUrls)} />
+            ) : (
+              <a className="btn primary" href="/sign-in">
+                Sign in to claim this API
+              </a>
+            )
+          ) : (
+            <p style={{ color: 'var(--fg-mute)', fontSize: 12.5 }}>
+              Claiming isn&apos;t configured on this deployment yet.
+            </p>
+          )}
+        </section>
+      )}
+
       <AuthGuide record={record} />
-      <ScorePreviewPanel record={record} />
+      {verification?.scores ? <VerifiedScorePanel scores={verification.scores} /> : <ScorePreviewPanel record={record} />}
+      {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
       <McpBlock record={record} mcpUrl={mcpUrl} />
 
       {record.baseUrls.length > 0 && (

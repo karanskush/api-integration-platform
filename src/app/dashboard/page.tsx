@@ -8,6 +8,7 @@ import OrgBadge from '@/components/OrgBadge';
 import { dbReady, getDb } from '@/lib/db';
 import { apis } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
+import { loadVerifiedApiIds } from '@/lib/persistentApi';
 import { limitsFor } from '@/lib/plans';
 
 export const metadata: Metadata = { title: 'Dashboard — Spotcheck' };
@@ -41,6 +42,7 @@ export default async function DashboardPage() {
   const { org } = await getOrCreateOrgForUser(db, userId, email);
   const myApis = await db.select().from(apis).where(eq(apis.orgId, org.id));
   const limit = limitsFor(org.plan).maxPersistentApis;
+  const verifiedIds = await loadVerifiedApiIds(myApis.map((a) => a.id));
 
   return (
     <div className="wrap" style={{ padding: '40px 0', display: 'grid', gap: 24 }}>
@@ -81,7 +83,16 @@ export default async function DashboardPage() {
                 style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}
               >
                 <div>
-                  <div style={{ fontWeight: 600 }}>{api.name}</div>
+                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {api.name}
+                    {verifiedIds.has(api.id) ? (
+                      <span className="chip" style={{ color: 'var(--accent-green)', borderColor: 'rgba(67, 217, 163, 0.3)' }}>
+                        Verified ✓
+                      </span>
+                    ) : (
+                      <span className="chip">Not yet verified</span>
+                    )}
+                  </div>
                   <code className="mono" style={{ color: 'var(--fg-mute)', fontSize: 12 }}>/{api.slug}</code>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
