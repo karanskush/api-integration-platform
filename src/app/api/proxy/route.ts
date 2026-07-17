@@ -1,6 +1,7 @@
 import { isValidId } from '@/lib/ids';
 import { clientIp } from '@/lib/ip';
 import { kv } from '@/lib/kv';
+import { loadPersistentRecord } from '@/lib/persistentApi';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { safeFetch, SsrfError, UpstreamError } from '@/lib/ssrf';
 import { buildUpstreamRequest, UpstreamBuildError } from '@/lib/upstream';
@@ -29,9 +30,16 @@ export async function POST(req: Request) {
   }
 
   const id = typeof payload.id === 'string' ? payload.id : '';
-  if (!isValidId(id)) return Response.json({ error: 'Unknown import' }, { status: 404 });
+  if (!id) return Response.json({ error: 'Unknown import' }, { status: 404 });
 
-  const record = await kv().getImport(id);
+  // Ephemeral ids (Redis-backed) are a fixed 10-char shape; anything else is
+  // treated as a persistent api slug (Postgres-backed) — same two storage
+  // tiers /p/[id] vs /[slug] and /mcp/[id] vs /mcp/[slug] already split on.
+  // A slug can rarely happen to have the same 10-char shape as an ephemeral
+  // id, so an id-shaped miss in Redis still falls back to Postgres.
+  const record = isValidId(id)
+    ? ((await kv().getImport(id)) ?? (await loadPersistentRecord(id)))
+    : await loadPersistentRecord(id);
   if (!record || record.expiresAt <= Date.now()) {
     return Response.json({ error: 'Import expired' }, { status: 404 });
   }

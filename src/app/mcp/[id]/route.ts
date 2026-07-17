@@ -3,14 +3,18 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createMcpHandler } from 'mcp-handler';
+import { after } from 'next/server';
+import { creditLimiter, getOrgPlanForSlug } from '@/lib/credits';
+import { dbReady, getDb } from '@/lib/db';
+import { mcpCalls } from '@/lib/db/schema';
 import { isValidId } from '@/lib/ids';
 import { clientIp } from '@/lib/ip';
 import { mcpExposedActions } from '@/lib/ir';
 import { kv } from '@/lib/kv';
+import { buildToolList, callActionTool, toolText } from '@/lib/mcpTools';
+import { loadPersistentRecord } from '@/lib/persistentApi';
+import { limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
-import { safeFetch, SsrfError, UpstreamError } from '@/lib/ssrf';
-import { buildUpstreamRequest, UpstreamBuildError } from '@/lib/upstream';
-import { validateParams } from '@/lib/validate';
 
 export const maxDuration = 60;
 
@@ -18,6 +22,16 @@ export const maxDuration = 60;
 // constructed per request with the tools resolved from the stored import.
 // Tool schemas are the stored JSON Schema verbatim — no zod round-trip —
 // and tools/call args are validated with the same Ajv the proxy uses.
+//
+// Single route for BOTH ephemeral (Redis) and persistent (Postgres) APIs —
+// Next.js doesn't allow two differently-named dynamic segments at the same
+// path depth (`/mcp/[id]` and `/mcp/[slug]` both match `/mcp/*` and are
+// rejected as ambiguous at build time), so this dispatches on lookup instead
+// of on route. MCP auth stays bearer/API-key BYOK only for Phase 1, per
+// ARCHITECTURE_2026-05-20.md's decision to add OAuth 2.1 later. Persistent
+// (org-backed) APIs additionally get an org-scoped daily credit ceiling on
+// top of the flat per-IP rate limit below; ephemeral APIs keep only the flat
+// limit — there's no org/plan to meter against.
 
 function jsonRpcError(status: number, message: string): Response {
   return Response.json(
@@ -26,21 +40,25 @@ function jsonRpcError(status: number, message: string): Response {
   );
 }
 
-function toolText(text: string, isError = false) {
-  return { content: [{ type: 'text' as const, text }], isError };
+function appOrigin(req: Request): string {
+  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
 }
 
 async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  if (!isValidId(id)) return jsonRpcError(404, 'Unknown or expired Spotcheck id');
 
   const rl = await getLimiter('mcp', { limit: 60, windowSec: 60 }).limit(clientIp(req));
   if (!rl.success) return tooMany(rl.reset);
 
-  const record = await kv().getImport(id);
+  // An id-shaped slug is possible (rare) if a persistent api's slug happens
+  // to be 10 plain alnum chars — an id-shaped Redis miss still falls back
+  // to Postgres.
+  const ephemeralRecord = isValidId(id) ? await kv().getImport(id) : null;
+  const record = ephemeralRecord ?? (await loadPersistentRecord(id));
   if (!record || record.expiresAt <= Date.now()) {
     return jsonRpcError(404, 'Unknown or expired Spotcheck id — re-import the spec to mint a new server');
   }
+  const orgPlan = !ephemeralRecord && dbReady() ? await getOrgPlanForSlug(getDb(), id) : null;
 
   // BYOK: upstream credential rides a documented header (preferred) or ?key=
   const upstreamKey =
@@ -54,56 +72,51 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
     (server) => {
       const low = server.server;
       low.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: exposed.map((a) => ({
-          name: a.name,
-          description: a.description,
-          inputSchema: a.paramsSchema as { type: 'object'; [k: string]: unknown },
-          annotations: {
-            title: `${a.method} ${a.path}`,
-            readOnlyHint: a.safety === 'read',
-            destructiveHint: false,
-            openWorldHint: true,
-          },
-        })),
+        tools: buildToolList(exposed),
       }));
 
       low.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
         const action = exposed.find((a) => a.name === params.name);
         if (!action) return toolText(`Unknown tool: ${params.name}`, true);
 
-        const baseUrl = record.baseUrls[0];
-        if (!baseUrl) {
-          return toolText('This API declared no public base URL — calls are disabled.', true);
+        if (orgPlan) {
+          const ceiling = limitsFor(orgPlan.plan).mcpCallsPerDay;
+          const credit = await creditLimiter(orgPlan.orgId, ceiling).limit(orgPlan.orgId);
+          if (!credit.success) {
+            return toolText(
+              `Daily MCP call limit reached for this plan. Upgrade at ${appOrigin(req)}/pricing for more credits.`,
+              true,
+            );
+          }
         }
 
         const args = (params.arguments ?? {}) as Record<string, unknown>;
-        const invalid = validateParams(action, args);
-        if (invalid) return toolText(`Invalid arguments: ${invalid}`, true);
-
-        if (action.auth !== 'none' && !upstreamKey) {
-          return toolText(
-            `This API requires ${action.auth} auth. Supply your key via the x-spotcheck-upstream-key header (or ?key= in the server URL). Spotcheck never stores it.`,
-            true,
-          );
-        }
-
         try {
-          const upstream = buildUpstreamRequest(action, args, { token: upstreamKey }, baseUrl, record.authIn);
-          const res = await safeFetch(upstream.url, {
-            method: upstream.method,
-            headers: upstream.headers,
-            body: upstream.body,
-            timeoutMs: 30_000,
-            maxBytes: 1024 * 1024,
-          });
-          console.log('[mcp]', { id, tool: action.name, status: res.status, latencyMs: res.latencyMs });
-          const text = new TextDecoder().decode(res.body);
-          const summary = `HTTP ${res.status} · ${res.latencyMs}ms\n${text || '(empty body)'}`;
-          return toolText(summary, res.status >= 400);
-        } catch (err) {
-          if (err instanceof UpstreamBuildError) return toolText(err.message, true);
-          if (err instanceof SsrfError) return toolText('Upstream URL blocked by safety policy.', true);
-          if (err instanceof UpstreamError) return toolText(err.message, true);
+          const outcome = await callActionTool(
+            action,
+            args,
+            { baseUrls: record.baseUrls, authIn: record.authIn },
+            upstreamKey,
+          );
+          if (outcome.status !== undefined) {
+            console.log('[mcp]', { id, tool: action.name, status: outcome.status, latencyMs: outcome.latencyMs });
+            // Durable analytics ledger — fire-and-forget, never on the
+            // gating hot path (that only ever touches Redis above).
+            if (orgPlan) {
+              const { apiId, orgId } = orgPlan;
+              const status = outcome.status;
+              const latencyMs = outcome.latencyMs ?? 0;
+              after(async () => {
+                try {
+                  await getDb().insert(mcpCalls).values({ apiId, orgId, tool: action.name, status: String(status), latencyMs });
+                } catch {
+                  // best-effort analytics; never surfaced to the caller
+                }
+              });
+            }
+          }
+          return { content: outcome.content, isError: outcome.isError };
+        } catch {
           console.error('[mcp] unexpected', { id, tool: action.name });
           return toolText('Tool call failed unexpectedly.', true);
         }
