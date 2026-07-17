@@ -1,6 +1,12 @@
+import { ClerkProvider, Show, UserButton } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
 import { Geist, Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+
+// Without Clerk keys configured, auth UI is skipped entirely — the anonymous
+// Phase 0 flow must never depend on Clerk being set up. Mirrors kv.ts's
+// xReady() convention. See src/proxy.ts for the matching middleware gate.
+const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const geist = Geist({
   subsets: ['latin'],
@@ -36,7 +42,7 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
+  const page = (
     <html
       lang="en"
       className={`${geist.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`}
@@ -58,12 +64,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a className="nav-link" href="/#score">
                 Score
               </a>
-              <a className="nav-link" href="/#pricing">
+              <a className="nav-link" href="/pricing">
                 Pricing
               </a>
               <a className="nav-link nav-app" href="/app">
                 App
               </a>
+              {clerkReady && (
+                <>
+                  <Show when="signed-out">
+                    <a className="nav-link" href="/sign-in">
+                      Sign in
+                    </a>
+                  </Show>
+                  <Show when="signed-in">
+                    <a className="nav-link" href="/dashboard">
+                      Dashboard
+                    </a>
+                    <UserButton />
+                  </Show>
+                </>
+              )}
               <a className="nav-cta" href="/app">
                 Open app <span aria-hidden="true">→</span>
               </a>
@@ -83,4 +104,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </body>
     </html>
   );
+
+  return clerkReady ? <ClerkProvider>{page}</ClerkProvider> : page;
 }

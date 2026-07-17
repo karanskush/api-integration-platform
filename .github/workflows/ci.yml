@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # Deliberately run with zero Neon/Stripe/Clerk/QStash/Resend credentials
+      # set — this is the exact state a fresh contributor's machine is in,
+      # and it verifies every `xReady()`-style guard degrades cleanly instead
+      # of crashing at module scope during the build.
+      - run: npm run build
