@@ -44,8 +44,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const record = await runImport({ url: url || undefined, text: text || undefined });
-    await kv().setImport(record, ttlSeconds());
+    const { record, rawText } = await runImport({ url: url || undefined, text: text || undefined });
+    const ttl = ttlSeconds();
+    await kv().setImport(record, ttl);
+    await kv().setRawSpec(record.id, rawText, ttl);
 
     const origin = appOrigin(req);
     return withCorsJson(req, {

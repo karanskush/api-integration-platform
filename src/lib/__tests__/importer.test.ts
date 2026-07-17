@@ -107,6 +107,63 @@ describe('normalizeOpenApi', () => {
   });
 });
 
+describe('normalizeOpenApi response/error schemas', () => {
+  const DOC = {
+    openapi: '3.0.3',
+    info: { title: 'Schema Test API', version: '1.0.0' },
+    servers: [{ url: 'https://api.example.com' }],
+    paths: {
+      '/widgets/{id}': {
+        get: {
+          operationId: 'getWidget',
+          responses: {
+            '200': {
+              description: 'ok',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', properties: { id: { type: 'string' }, count: { type: 'integer' } } },
+                },
+              },
+            },
+            '404': {
+              description: 'not found',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', properties: { error: { type: 'string' } } },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/undocumented': {
+        get: {
+          operationId: 'getUndocumented',
+          responses: { '200': { description: 'ok' } },
+        },
+      },
+    },
+  };
+
+  it('populates responseSchema and errorSchema when documented', async () => {
+    const doc = await parseOpenApi(structuredClone(DOC) as never);
+    const spec = normalizeOpenApi(doc);
+    const get = spec.actions.find((a) => a.name === 'get_widget')!;
+    expect(get.responseSchema).toBeDefined();
+    expect((get.responseSchema!.properties as Record<string, unknown>).count).toBeDefined();
+    expect(get.errorSchema).toBeDefined();
+    expect((get.errorSchema!.properties as Record<string, unknown>).error).toBeDefined();
+  });
+
+  it('leaves both undefined without throwing when responses carry no JSON schema', async () => {
+    const doc = await parseOpenApi(structuredClone(DOC) as never);
+    const spec = normalizeOpenApi(doc);
+    const get = spec.actions.find((a) => a.name === 'get_undocumented')!;
+    expect(get.responseSchema).toBeUndefined();
+    expect(get.errorSchema).toBeUndefined();
+  });
+});
+
 describe('snakeCase / safety', () => {
   it('converts names', () => {
     expect(snakeCase('getPetById')).toBe('get_pet_by_id');

@@ -6,11 +6,18 @@ export type WaitlistEntry = { email: string; ts: number; source?: string };
 export interface KV {
   getImport(id: string): Promise<ImportRecord | null>;
   setImport(rec: ImportRecord, ttlSecs: number): Promise<void>;
+  // Companion to setImport/getImport: the raw spec bytes behind an ephemeral
+  // import, kept out of ImportRecord itself so Phase 0's shape/tests are
+  // untouched. Same key, same TTL — read by the claim/persist flow (persist.ts)
+  // to compute the content hash and Blob snapshot; never read by Phase 0.
+  getRawSpec(id: string): Promise<string | null>;
+  setRawSpec(id: string, rawText: string, ttlSecs: number): Promise<void>;
   // Returns false when the email was already on the list.
   addWaitlist(entry: WaitlistEntry): Promise<boolean>;
 }
 
 const IMPORT_KEY = (id: string) => `spotcheck:import:${id}`;
+const RAW_SPEC_KEY = (id: string) => `spotcheck:import:raw:${id}`;
 const WAITLIST_LIST = 'spotcheck:waitlist';
 const WAITLIST_SET = 'spotcheck:waitlist:emails';
 
@@ -22,6 +29,12 @@ function upstashDriver(): KV {
     },
     async setImport(rec, ttlSecs) {
       await redis.set(IMPORT_KEY(rec.id), JSON.stringify(rec), { ex: ttlSecs });
+    },
+    async getRawSpec(id) {
+      return (await redis.get<string>(RAW_SPEC_KEY(id))) ?? null;
+    },
+    async setRawSpec(id, rawText, ttlSecs) {
+      await redis.set(RAW_SPEC_KEY(id), rawText, { ex: ttlSecs });
     },
     async addWaitlist(entry) {
       const added = await redis.sadd(WAITLIST_SET, entry.email);
@@ -38,19 +51,21 @@ function upstashDriver(): KV {
 // handlers separately — module scope alone would give each layer its own Map.
 type MemoryStore = {
   imports: Map<string, { rec: ImportRecord; expiresAt: number }>;
+  rawSpecs: Map<string, { text: string; expiresAt: number }>;
   emails: Set<string>;
   waitlist: WaitlistEntry[];
 };
 
 function memoryDriver(): KV {
   const g = globalThis as typeof globalThis & { __spotcheckKV?: MemoryStore };
-  const initial: MemoryStore = { imports: new Map(), emails: new Set(), waitlist: [] };
+  const initial: MemoryStore = { imports: new Map(), rawSpecs: new Map(), emails: new Set(), waitlist: [] };
   const store = (g.__spotcheckKV ??= initial);
-  const { imports, emails, waitlist } = store;
+  const { imports, rawSpecs, emails, waitlist } = store;
 
   const prune = () => {
     const now = Date.now();
     for (const [k, v] of imports) if (v.expiresAt <= now) imports.delete(k);
+    for (const [k, v] of rawSpecs) if (v.expiresAt <= now) rawSpecs.delete(k);
   };
   setInterval(prune, 60_000).unref?.();
 
@@ -66,6 +81,18 @@ function memoryDriver(): KV {
     },
     async setImport(rec, ttlSecs) {
       imports.set(rec.id, { rec, expiresAt: Date.now() + ttlSecs * 1000 });
+    },
+    async getRawSpec(id) {
+      const hit = rawSpecs.get(id);
+      if (!hit) return null;
+      if (hit.expiresAt <= Date.now()) {
+        rawSpecs.delete(id);
+        return null;
+      }
+      return hit.text;
+    },
+    async setRawSpec(id, rawText, ttlSecs) {
+      rawSpecs.set(id, { text: rawText, expiresAt: Date.now() + ttlSecs * 1000 });
     },
     async addWaitlist(entry) {
       if (emails.has(entry.email)) return false;

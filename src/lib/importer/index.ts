@@ -19,7 +19,12 @@ export type ImportInput = { url?: string; text?: string };
 
 const MAX_SPEC_BYTES = 5 * 1024 * 1024;
 
-export async function runImport(input: ImportInput): Promise<ImportRecord> {
+export type ImportResult = { record: ImportRecord; rawText: string };
+
+// Returns the raw spec bytes alongside the normalized record — Phase 1's
+// content-hash versioning (persist.ts) needs them; Phase 0's route just
+// stores `record` and discards `rawText` via a companion ephemeral KV key.
+export async function runImport(input: ImportInput): Promise<ImportResult> {
   let text: string;
   let sourceUrl: string | undefined;
 
@@ -87,17 +92,20 @@ export async function runImport(input: ImportInput): Promise<ImportRecord> {
   for (const a of normalized.actions) counts[a.safety]++;
 
   return {
-    id: newId(),
-    name: normalized.name,
-    source,
-    sourceUrl,
-    baseUrls,
-    auth: normalized.auth,
-    authIn: normalized.authIn,
-    actions: normalized.actions,
-    ...(normalized.truncated ? { truncated: true } : {}),
-    counts,
-    createdAt: now,
-    expiresAt: now + ttl * 1000,
+    record: {
+      id: newId(),
+      name: normalized.name,
+      source,
+      sourceUrl,
+      baseUrls,
+      auth: normalized.auth,
+      authIn: normalized.authIn,
+      actions: normalized.actions,
+      ...(normalized.truncated ? { truncated: true } : {}),
+      counts,
+      createdAt: now,
+      expiresAt: now + ttl * 1000,
+    },
+    rawText: text,
   };
 }

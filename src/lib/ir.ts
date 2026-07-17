@@ -27,6 +27,8 @@ export type Action = {
   authIn?: AuthPlacement; // apiKey placement (e.g. header X-Api-Key)
   safety: Safety; // gates MCP exposure: destructive never exposed in Phase 0
   examples: Example[];
+  responseSchema?: JSONSchema; // documented 2xx application/json schema, if any
+  errorSchema?: JSONSchema; // documented 4xx application/json schema, if any
 };
 
 export type ImportSource = 'openapi' | 'swagger' | 'postman' | 'curl';

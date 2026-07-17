@@ -1,13 +1,22 @@
+import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import ActionCard from '@/components/ActionCard';
 import AuthGuide from '@/components/AuthGuide';
+import ClaimBanner from '@/components/ClaimBanner';
 import McpBlock from '@/components/McpBlock';
 import Playground from '@/components/Playground';
+import ScorePreviewPanel from '@/components/ScorePreviewPanel';
 import TtlNotice from '@/components/TtlNotice';
+import { dbReady } from '@/lib/db';
 import { isValidId } from '@/lib/ids';
 import { kv } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
+
+// Claiming needs both Clerk (to know who's signed in) and Postgres (to
+// persist into) — matches the same xReady() gate every other Phase 1
+// integration uses.
+const claimReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) && dbReady();
 
 const SOURCE_LABEL: Record<string, string> = {
   openapi: 'OpenAPI 3.x',
@@ -56,10 +65,12 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
   if (!record || record.expiresAt <= Date.now()) return <Expired />;
 
   const mcpUrl = `${appOrigin()}/mcp/${record.id}`;
+  const signedIn = claimReady && Boolean((await auth()).userId);
 
   return (
     <div className="product-page wrap" style={{ display: 'grid', gap: 20 }}>
       <TtlNotice expiresAt={record.expiresAt} />
+      {signedIn && <ClaimBanner ephemeralId={record.id} />}
 
       <header>
         <h1 className="display" style={{ fontSize: 26 }}>{record.name}</h1>
@@ -81,6 +92,7 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
       </header>
 
       <AuthGuide record={record} />
+      <ScorePreviewPanel record={record} />
       <McpBlock record={record} mcpUrl={mcpUrl} />
 
       {record.baseUrls.length > 0 && (
