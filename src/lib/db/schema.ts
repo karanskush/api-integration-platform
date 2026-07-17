@@ -218,6 +218,7 @@ export const claims = pgTable('claims', {
   apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   method: text('method').notNull(), // dns|meta|email
+  domain: text('domain').notNull(), // the exact hostname shown in the claim instructions — verify must check this, not re-derive from apis.baseUrls
   token: text('token').notNull(),
   status: text('status').notNull(),
   attempts: integer('attempts').notNull().default(0),

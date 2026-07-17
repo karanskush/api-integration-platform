@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
-    "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "seed:unclaimed": "dotenv -e .env.local -- node scripts/seed-unclaimed.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.19",

@@ -15,6 +15,13 @@
       "when": 1784300090853,
       "tag": "0001_woozy_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784304836438,
+      "tag": "0002_claims_domain",
+      "breakpoints": true
     }
   ]
 }
