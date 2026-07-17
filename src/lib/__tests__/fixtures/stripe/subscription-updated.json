@@ -1,0 +1,11 @@
+{
+  "id": "evt_subscription_updated",
+  "type": "customer.subscription.updated",
+  "data": {
+    "object": {
+      "customer": "cus_test_placeholder",
+      "status": "active",
+      "items": { "data": [{ "price": { "id": "price_pro_placeholder" } }] }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "evt_checkout_session_completed",
+  "type": "checkout.session.completed",
+  "data": {
+    "object": {
+      "customer": "cus_test_placeholder",
+      "subscription": "sub_test_placeholder",
+      "metadata": { "orgId": "REPLACE_ORG_ID", "plan": "launch" }
+    }
+  }
+}

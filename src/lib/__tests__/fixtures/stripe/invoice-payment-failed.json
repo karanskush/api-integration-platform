@@ -1,0 +1,9 @@
+{
+  "id": "evt_invoice_payment_failed",
+  "type": "invoice.payment_failed",
+  "data": {
+    "object": {
+      "customer": "cus_test_placeholder"
+    }
+  }
+}
