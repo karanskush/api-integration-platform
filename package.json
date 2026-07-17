@@ -7,28 +7,40 @@
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.5.19",
     "@modelcontextprotocol/sdk": "1.26.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@readme/openapi-parser": "^6.1.0",
     "@scalar/postman-to-openapi": "^0.3.0",
+    "@upstash/qstash": "^2.11.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
+    "drizzle-orm": "^0.45.2",
     "mcp-handler": "^1.1.0",
     "next": "^16.2.10",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "resend": "^6.17.2",
+    "stripe": "^22.3.2",
     "swagger2openapi": "^7.0.8",
     "undici": "^7.0.0",
     "yaml": "^2.8.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }
