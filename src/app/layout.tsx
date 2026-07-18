@@ -67,9 +67,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a className="nav-link" href="/pricing">
                 Pricing
               </a>
-              <a className="nav-link nav-app" href="/app">
-                App
-              </a>
               {clerkReady && (
                 <>
                   <Show when="signed-out">
