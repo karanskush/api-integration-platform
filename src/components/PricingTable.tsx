@@ -94,29 +94,28 @@ export default function PricingTable() {
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+      <div className="tiers">
         {TIERS.map((tier) => (
-          <div
-            key={tier.key}
-            className="panel"
-            style={{ padding: 20, display: 'grid', gap: 10, ...(tier.featured ? { borderColor: 'var(--accent)' } : {}) }}
-          >
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{tier.name}</div>
-            <div className="mono" style={{ fontSize: 28 }}>
-              ${tier.price}
-              <small style={{ fontSize: 13, color: 'var(--fg-mute)' }}>/mo</small>
+          <div key={tier.key} className={`tier${tier.featured ? ' featured' : ''}`}>
+            <div className="name">
+              {tier.name}
+              {tier.key === 'free' && <span className="free-flag">Free forever</span>}
+              {tier.featured && <span className="pop">Popular</span>}
             </div>
-            <p style={{ color: 'var(--fg-dim)', fontSize: 13 }}>{tier.blurb}</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 6 }}>
+            <div className="price">
+              <span className="price-cur">$</span>
+              {tier.price}
+              <small>/mo</small>
+            </div>
+            <p className="blurb">{tier.blurb}</p>
+            <ul>
               {tier.features.map((f) => (
-                <li key={f} style={{ fontSize: 13, color: 'var(--fg-dim)' }}>
-                  {f}
-                </li>
+                <li key={f}>{f}</li>
               ))}
             </ul>
             <button
               type="button"
-              className={`btn ${tier.featured ? 'primary' : ''}`}
+              className="tier-cta"
               onClick={() => choose(tier)}
               disabled={busyKey === tier.key}
             >
@@ -127,11 +126,12 @@ export default function PricingTable() {
                   : tier.selfServe
                     ? `Start ${tier.name}`
                     : 'Talk to us'}
+              <span className="arr" aria-hidden="true">→</span>
             </button>
           </div>
         ))}
       </div>
-      {error && <p style={{ color: 'var(--accent-red)', marginTop: 12, fontSize: 13 }}>{error}</p>}
+      {error && <p className="pricing-error" role="alert">{error}</p>}
     </div>
   );
 }

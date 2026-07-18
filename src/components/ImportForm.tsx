@@ -95,7 +95,14 @@ export default function ImportForm() {
       window.location.assign(data.pageUrl);
     } catch (err) {
       clearTimers();
-      setError(err instanceof Error ? err.message : 'Import failed.');
+      const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+      setError(
+        timedOut
+          ? 'Import timed out after 45 seconds — the source may be slow or unreachable. Try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Import failed.',
+      );
       setBusy(false);
     }
   };
@@ -132,7 +139,7 @@ export default function ImportForm() {
             type="button"
             role="tab"
             aria-selected={mode === item.id}
-            aria-controls={`import-panel-${item.id}`}
+            aria-controls={mode === item.id ? `import-panel-${item.id}` : undefined}
             tabIndex={mode === item.id ? 0 : -1}
             onClick={() => selectMode(item.id)}
           >
