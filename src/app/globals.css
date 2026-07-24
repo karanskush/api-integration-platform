@@ -269,9 +269,9 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .hero-copy { max-width: 640px; }
 .hero-title {
   margin-top: 18px;
-  font-size: clamp(38px, 4.6vw, 64px);
-  line-height: 1.04;
-  max-width: 15ch;
+  font-size: clamp(30px, 3.5vw, 46px);
+  line-height: 1.12;
+  max-width: 20ch;
 }
 .hero-tagline {
   margin-top: 20px;

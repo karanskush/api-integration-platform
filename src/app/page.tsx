@@ -56,7 +56,7 @@ export default function Home() {
         <div className="landing-wrap hero-content">
           <div className="hero-copy">
             <p className="eyebrow">Hosted MCP · Live playground · Agent-Ready Score</p>
-            <h1 className="display hero-title">Your API, agent-ready in 60 seconds.</h1>
+            <h1 className="display hero-title">API spec into live endpoints you or your agent can talk to.</h1>
             <p className="hero-tagline">Humans get a live integration page. Agents get a hosted MCP server.</p>
             <p className="hero-lead">
               Paste an OpenAPI spec, Postman collection, or cURL command. Spotcheck builds a shareable
