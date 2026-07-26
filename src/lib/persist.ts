@@ -28,6 +28,7 @@ import { actions, apis, evidenceFacts, scorePreviews, specVersions } from './db/
 import type { ImportRecord } from './ir';
 import { scorePreview as computeScorePreview } from './scorePreview';
 import { allocateApiSlug } from './slug';
+import { blobReady, putSpecSnapshot } from './specStore';
 
 export type PersistInput = {
   orgId: string;
@@ -142,7 +143,26 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
 export async function persistApi(db: NeonDb, input: PersistInput): Promise<PersistResult> {
   const { apiId, slug, specVersionId, statements } = await buildPersistStatements(db, input);
   await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
+  await attachSnapshot(db, specVersionId, input.rawText);
   return { apiId, slug, specVersionId };
+}
+
+// Writes the raw spec to Blob and records the pointer, AFTER the rows are
+// committed. Deliberately not inside the batch: the batch is one atomic
+// Postgres transaction and a blob write cannot participate in it, so folding
+// them together would mean either a rolled-back import with an orphan blob or a
+// committed import lost to a blob outage. This ordering makes the snapshot
+// strictly additive — worst case blob_ref stays null and the import is fine.
+async function attachSnapshot(db: Db, specVersionId: string, rawText: string): Promise<void> {
+  if (!blobReady()) return;
+  const contentHash = createHash('sha256').update(rawText).digest('hex');
+  const snapshot = await putSpecSnapshot(contentHash, rawText);
+  if (!snapshot) return;
+  try {
+    await db.update(specVersions).set({ blobRef: snapshot.blobRef }).where(eq(specVersions.id, specVersionId));
+  } catch (err) {
+    console.error('[persist] blob_ref update failed', { reason: err instanceof Error ? err.name : 'unknown' });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +315,11 @@ export async function reimportApi(db: NeonDb, input: ReimportInput): Promise<Rei
   const { status, specVersionId, contentHash, statements } = await buildReimportStatements(db, input);
   if (statements.length) {
     await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
+  }
+  // Only a genuinely new version needs a snapshot: 'unchanged' and 'reverted'
+  // both point at a version whose bytes are already stored.
+  if (status === 'updated') {
+    await attachSnapshot(db, specVersionId, input.rawText);
   }
   return { status, specVersionId, contentHash };
 }
