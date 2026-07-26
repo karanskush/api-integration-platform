@@ -208,7 +208,7 @@ function bashTest(action: Action, record: ImportRecord): string {
     `  -X ${shq(action.method)} ${shq(parts.url)} \\`,
   ];
   for (const [k, v] of parts.headers) {
-    lines.push(`  -H ${shq(`${k}: ${v.replace('$API_KEY', `$${KEY_ENV}`)}`)} \\`);
+    lines.push(`  -H ${shHeader(k, v)} \\`);
   }
   if (parts.body !== undefined) lines.push(`  -d ${shq(JSON.stringify(parts.body))} \\`);
   lines.push(
@@ -240,6 +240,21 @@ function bashTest(action: Action, record: ImportRecord): string {
 // literal quote, so close/escape/reopen is exhaustive.
 function shq(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// A header whose value carries the API_KEY placeholder needs the shell to
+// EXPAND that variable — and inside single quotes it never does, so a naively
+// escaped header ships the literal text "$API_KEY" to the upstream API. This
+// emits '<literal>'"$API_KEY" instead: every literal part stays single-quoted
+// (and so uninterpretable by the shell), while the variable sits in double
+// quotes where it expands and is still safe against word splitting.
+function shHeader(name: string, value: string): string {
+  const literal = `${name}: ${value}`;
+  if (!literal.includes('$API_KEY')) return shq(literal);
+  return literal
+    .split('$API_KEY')
+    .map((part) => (part ? shq(part) : ''))
+    .join(`"$${KEY_ENV}"`);
 }
 
 export type ContractTestArgs = { tool?: unknown; language?: unknown };

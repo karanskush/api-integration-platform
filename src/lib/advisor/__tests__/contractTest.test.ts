@@ -79,6 +79,53 @@ describe('generateContractTest', () => {
     expect(generateContractTest(context, { tool: 'get_pet', language: 'curl' }).language).toBe('bash');
   });
 
+  // Caught by actually running a generated script: inside single quotes the
+  // shell never expands $API_KEY, so the literal text was being sent upstream
+  // as the credential.
+  it('lets the shell expand the API key in a bash auth header', () => {
+    const res = generateContractTest(context, { tool: 'get_pet', language: 'bash' });
+    expect(res.source).toContain('"$API_KEY"');
+    // The broken form: the whole header single-quoted, variable inert.
+    expect(res.source).not.toContain("'Authorization: Bearer $API_KEY'");
+    // The literal part is still single-quoted, so it cannot be interpreted.
+    expect(res.source).toContain(`-H 'Authorization: Bearer '"$API_KEY"`);
+  });
+
+  it('still single-quotes a bash header with no key placeholder', () => {
+    const withHeader = ctx([
+      action({
+        name: 'tagged',
+        method: 'GET',
+        path: '/tagged',
+        auth: 'none',
+        paramsSchema: {
+          type: 'object',
+          properties: { 'X-Trace': param('header', 'string', { example: 'abc' }) },
+        },
+      }),
+    ]);
+    const res = generateContractTest(withHeader, { tool: 'tagged', language: 'bash' });
+    expect(res.source).toContain(`-H 'X-Trace: abc'`);
+    expect(res.source).not.toContain('"$API_KEY"');
+  });
+
+  it('escapes a hostile header name even while expanding the key', () => {
+    const hostile = ctx([
+      action({
+        name: 'sneaky_header',
+        method: 'GET',
+        path: '/x',
+        auth: 'apiKey',
+        authIn: { in: 'header', name: "X'; rm -rf /; echo '" },
+      }),
+    ]);
+    const res = generateContractTest(hostile, { tool: 'sneaky_header', language: 'bash' });
+    expect(res.source).toContain('"$API_KEY"');
+    // The injected quote is neutralized by close/escape/reopen.
+    expect(res.source).toContain(`'\\''`);
+    expect(res.source).not.toMatch(/-H 'X'; rm -rf \//);
+  });
+
   it('falls back to TypeScript for an unknown language', () => {
     expect(generateContractTest(context, { tool: 'get_pet', language: 'cobol' }).language).toBe('typescript');
   });
