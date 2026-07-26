@@ -7,8 +7,13 @@ import { kv, storageReady } from '@/lib/kv';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { persistApi } from '@/lib/persist';
 import { limitsFor } from '@/lib/plans';
+import { getLimiter, tooMany } from '@/lib/ratelimit';
 
 export const maxDuration = 60;
+
+// Persisting an import writes a spec version, every action row, evidence
+// facts and a score preview — the heaviest write path in the app.
+const CLAIM_IMPORT_LIMIT = { limit: 20, windowSec: 600 };
 
 function appOrigin(req: Request): string {
   return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
@@ -28,6 +33,9 @@ export async function POST(req: Request) {
 
   const { userId } = await auth();
   if (!userId) return Response.json({ error: 'Sign in required' }, { status: 401 });
+
+  const rl = await getLimiter('claim-import', CLAIM_IMPORT_LIMIT).limit(userId);
+  if (!rl.success) return tooMany(rl.reset);
 
   let body: { ephemeralId?: unknown };
   try {

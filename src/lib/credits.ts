@@ -18,9 +18,11 @@ export async function getOrgPlanForSlug(db: Db, slug: string): Promise<OrgPlanIn
   return row ?? null;
 }
 
-// Reuses ratelimit.ts's getLimiter() unchanged — just an org-scoped key and
-// a plan-derived daily ceiling instead of the fixed IP-scoped abuse guard
-// already applied independently on every /mcp/[id] request.
-export function creditLimiter(orgId: string, dailyCeiling: number): Limiter {
-  return getLimiter(`mcp-credits:${orgId}`, { limit: dailyCeiling, windowSec: 86_400 });
+// Reuses ratelimit.ts's getLimiter() unchanged — just a plan-derived daily
+// ceiling instead of the fixed IP-scoped abuse guard already applied
+// independently on every /mcp/[id] request. The org id is the *key* passed to
+// .limit(), not part of the scope: a per-org scope would add one cached
+// limiter per org forever (see ratelimit.ts).
+export function creditLimiter(dailyCeiling: number): Limiter {
+  return getLimiter('mcp-credits', { limit: dailyCeiling, windowSec: 86_400 });
 }

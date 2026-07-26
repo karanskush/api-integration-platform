@@ -4,8 +4,8 @@
 // caller's own account and never touches this file.
 
 import { promises as dns } from 'node:dns';
-import { eq, sql } from 'drizzle-orm';
-import type { NeonDb } from './db';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import type { Db } from './db';
 import { apis, claims, orgs } from './db/schema';
 import { limitsFor } from './plans';
 import { safeFetch } from './ssrf';
@@ -80,25 +80,70 @@ export type ApplyClaimVerificationInput = {
   createdBy: string;
 };
 
-// Mirrors api/apis/claim/route.ts's maxPersistentApis cap check exactly, but
-// resolves the org's plan itself since callers here only have an orgId.
+export type ApplyClaimResult = 'ok' | 'over_limit' | 'already_claimed';
+
+// Transfers an unclaimed API to the verifying org.
+//
+// The ownership transfer is a single conditional UPDATE guarded on
+// `claim_status = 'unclaimed'`, which is what makes it safe. Two things go
+// wrong with a read-then-write version:
+//
+//   * two claimants verifying the same page concurrently both see
+//     "unclaimed" and both transfer it, last writer winning silently;
+//   * a claim started while a page was unclaimed still verifies *after*
+//     somebody else has claimed it, quietly stealing an owned page.
+//
+// Concurrent UPDATEs against the same row serialize in Postgres and the
+// loser re-checks the guard against the committed row, so exactly one
+// transfer can win and a stale claim finds the page already claimed.
+//
+// The plan cap rides along in the same statement's WHERE. Under READ
+// COMMITTED two claims of *different* pages can still each see a
+// pre-transfer count and both pass, so the cap is a best-effort business
+// limit rather than a hard invariant — it self-heals on the next claim, and
+// unlike ownership it has no security consequence.
 export async function applyClaimVerification(
-  db: NeonDb,
+  db: Db,
   input: ApplyClaimVerificationInput,
-): Promise<'ok' | 'over_limit'> {
+): Promise<ApplyClaimResult> {
   const { claimId, apiId, orgId, createdBy } = input;
 
   const [org] = await db.select({ plan: orgs.plan }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(apis)
-    .where(eq(apis.orgId, orgId));
   const limit = limitsFor(org?.plan ?? 'free').maxPersistentApis;
-  if (count >= limit) return 'over_limit';
 
-  await db.batch([
-    db.update(claims).set({ status: 'verified' }).where(eq(claims.id, claimId)),
-    db.update(apis).set({ claimStatus: 'claimed', orgId, createdBy }).where(eq(apis.id, apiId)),
-  ]);
+  const transferred = await db
+    .update(apis)
+    .set({ claimStatus: 'claimed', orgId, createdBy, updatedAt: new Date() })
+    .where(
+      and(
+        eq(apis.id, apiId),
+        eq(apis.claimStatus, 'unclaimed'),
+        sql`(select count(*) from ${apis} as cap where cap.org_id = ${orgId}) < ${limit}`,
+      ),
+    )
+    .returning({ id: apis.id });
+
+  if (!transferred.length) {
+    // Distinguish the two rejection causes for the caller's error message.
+    const [current] = await db
+      .select({ claimStatus: apis.claimStatus })
+      .from(apis)
+      .where(eq(apis.id, apiId))
+      .limit(1);
+    return current && current.claimStatus !== 'unclaimed' ? 'already_claimed' : 'over_limit';
+  }
+
+  await db
+    .update(claims)
+    .set({ status: 'verified' })
+    .where(and(eq(claims.id, claimId), eq(claims.status, 'pending')));
+
+  // Any other claim still pending on this page can never succeed now that the
+  // page is owned — retire them so a stale row can't be replayed later.
+  await db
+    .update(claims)
+    .set({ status: 'superseded' })
+    .where(and(eq(claims.apiId, apiId), eq(claims.status, 'pending'), ne(claims.id, claimId)));
+
   return 'ok';
 }

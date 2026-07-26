@@ -8,7 +8,17 @@ export type Limiter = {
 
 type Config = { limit: number; windowSec: number };
 
+// Cached by scope *and* config. Keying on scope alone silently pins the first
+// config ever seen for that scope: an org upgrading its plan would keep the
+// old daily MCP ceiling until the lambda cold-starts, because the cached
+// limiter was built with the previous limit.
 const limiters = new Map<string, Limiter>();
+
+// A scope is a limiter *family* ('mcp-credits'), never a per-tenant string —
+// the tenant goes in the .limit(key) argument. That keeps this map bounded by
+// families × distinct configs instead of growing one entry per org forever.
+// The cap below is a backstop in case a caller forgets.
+const MAX_CACHED_LIMITERS = 256;
 
 function upstashLimiter(scope: string, cfg: Config): Limiter {
   const rl = new Ratelimit({
@@ -45,10 +55,18 @@ function memoryLimiter(cfg: Config): Limiter {
 }
 
 export function getLimiter(scope: string, cfg: Config): Limiter {
-  let l = limiters.get(scope);
+  const cacheKey = `${scope}|${cfg.limit}|${cfg.windowSec}`;
+  let l = limiters.get(cacheKey);
   if (!l) {
+    if (limiters.size >= MAX_CACHED_LIMITERS) {
+      // Insertion-ordered: drop the oldest entry. Evicting an Upstash limiter
+      // loses nothing (its counters live in Redis); evicting the dev-only
+      // memory limiter just resets a local window.
+      const oldest = limiters.keys().next().value;
+      if (oldest !== undefined) limiters.delete(oldest);
+    }
     l = hasRedis() ? upstashLimiter(scope, cfg) : memoryLimiter(cfg);
-    limiters.set(scope, l);
+    limiters.set(cacheKey, l);
   }
   return l;
 }

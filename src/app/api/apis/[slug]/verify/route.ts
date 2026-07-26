@@ -43,7 +43,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     );
   }
 
-  const rl = await getLimiter('score-run:' + api.orgId, { limit: 1, windowSec: 3600 }).limit(api.orgId);
+  const rl = await getLimiter('score-run', { limit: 1, windowSec: 3600 }).limit(api.orgId);
   if (!rl.success) return tooMany(rl.reset);
 
   let body: { upstreamKey?: unknown };

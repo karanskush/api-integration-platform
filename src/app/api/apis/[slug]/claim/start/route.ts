@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { auth, currentUser } from '@clerk/nextjs/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { checkClaimDomain } from '@/lib/claimDomains';
 import { dbReady, getDb } from '@/lib/db';
-import { apis, claims } from '@/lib/db/schema';
+import { apis, claims, specVersions } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
+import { getLimiter, tooMany } from '@/lib/ratelimit';
 
 export const maxDuration = 30;
+
+// Claim starts are cheap but mint a pending claim row each time; cap them per
+// account so a single user can't paper the table with claims across every
+// unclaimed page.
+const START_LIMIT = { limit: 10, windowSec: 3600 };
 
 const HOSTNAME_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
 
@@ -32,6 +39,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const { userId } = await auth();
   if (!userId) return Response.json({ error: 'Sign in required' }, { status: 401 });
 
+  const rl = await getLimiter('claim-start', START_LIMIT).limit(userId);
+  if (!rl.success) return tooMany(rl.reset);
+
   const { slug } = await ctx.params;
 
   let body: { domain?: unknown; method?: unknown };
@@ -55,6 +65,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (!api) return Response.json({ error: 'Unknown API' }, { status: 404 });
   if (api.claimStatus !== 'unclaimed') {
     return Response.json({ error: 'This API is already claimed or has a claim in progress' }, { status: 409 });
+  }
+
+  // The claimant picks the domain, so it must be one this API demonstrably
+  // belongs to — otherwise proving control of any domain at all would be
+  // enough to take over any unclaimed page (see claimDomains.ts).
+  const [currentSpec] = api.currentSpecVersionId
+    ? await db
+        .select({ sourceUrl: specVersions.sourceUrl })
+        .from(specVersions)
+        .where(and(eq(specVersions.id, api.currentSpecVersionId), eq(specVersions.apiId, api.id)))
+        .limit(1)
+    : [];
+
+  const domainCheck = checkClaimDomain(domain, {
+    baseUrls: api.baseUrls,
+    sourceUrl: currentSpec?.sourceUrl ?? null,
+  });
+  if (!domainCheck.ok) {
+    if (domainCheck.reason === 'no_hostnames') {
+      return Response.json(
+        {
+          error:
+            'This API declares no public hostname, so domain ownership cannot be proven for it. Contact support to claim it.',
+        },
+        { status: 409 },
+      );
+    }
+    return Response.json(
+      {
+        error: 'That domain is not associated with this API.',
+        allowedDomains: domainCheck.allowed,
+      },
+      { status: 403 },
+    );
   }
 
   const user = await currentUser();

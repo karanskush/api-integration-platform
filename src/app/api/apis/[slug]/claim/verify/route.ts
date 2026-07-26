@@ -5,8 +5,16 @@ import { dbReady, getDb } from '@/lib/db';
 import { apis, claims } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { limitsFor } from '@/lib/plans';
+import { getLimiter, tooMany } from '@/lib/ratelimit';
 
 export const maxDuration = 30;
+
+// Every verify attempt fires an outbound DNS lookup or HTTPS fetch at a
+// caller-influenced hostname, so this is the claim flow's amplification
+// surface — rate limit it per account, and retire a claim that has been
+// hammered rather than letting it be retried forever.
+const VERIFY_LIMIT = { limit: 20, windowSec: 3600 };
+const MAX_ATTEMPTS = 25;
 
 function appOrigin(req: Request): string {
   return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
@@ -21,6 +29,9 @@ export async function POST(req: Request) {
 
   const { userId } = await auth();
   if (!userId) return Response.json({ error: 'Sign in required' }, { status: 401 });
+
+  const rl = await getLimiter('claim-verify', VERIFY_LIMIT).limit(userId);
+  if (!rl.success) return tooMany(rl.reset);
 
   let body: { claimId?: unknown };
   try {
@@ -44,8 +55,29 @@ export async function POST(req: Request) {
     return Response.json({ error: 'This claim does not belong to you' }, { status: 403 });
   }
 
+  // A claim is single-use. Without this, an already-verified (or superseded)
+  // claim row stays a replayable ownership token for the page.
+  if (claim.status !== 'pending') {
+    return Response.json(
+      { error: `This claim is already ${claim.status} — start a new claim if you need to verify again.` },
+      { status: 409 },
+    );
+  }
+  if (claim.attempts >= MAX_ATTEMPTS) {
+    return Response.json(
+      { error: 'Too many failed verification attempts on this claim — start a new one.' },
+      { status: 429 },
+    );
+  }
+
   const [api] = await db.select().from(apis).where(eq(apis.id, claim.apiId)).limit(1);
   if (!api) return Response.json({ error: 'Unknown API' }, { status: 404 });
+
+  // Cheap pre-check so an already-claimed page costs no outbound DNS/HTTP.
+  // applyClaimVerification re-checks this atomically; this is not the guard.
+  if (api.claimStatus !== 'unclaimed') {
+    return Response.json({ error: 'This API has already been claimed' }, { status: 409 });
+  }
 
   let verified: boolean;
   if (claim.method === 'dns') {
@@ -63,6 +95,9 @@ export async function POST(req: Request) {
       orgId: org.id,
       createdBy: dbUser.id,
     });
+    if (result === 'already_claimed') {
+      return Response.json({ error: 'This API has already been claimed' }, { status: 409 });
+    }
     if (result === 'over_limit') {
       const limit = limitsFor(org.plan).maxPersistentApis;
       return Response.json(

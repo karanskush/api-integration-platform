@@ -1,9 +1,12 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { dbReady, getDb } from '@/lib/db';
 import { getOrCreateOrgForUser } from '@/lib/org';
+import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { billingReady, getStripe } from '@/lib/stripe';
 
 export const maxDuration = 30;
+
+const PORTAL_LIMIT = { limit: 10, windowSec: 600 };
 
 export async function POST(req: Request) {
   if (!dbReady()) {
@@ -15,6 +18,9 @@ export async function POST(req: Request) {
 
   const { userId } = await auth();
   if (!userId) return Response.json({ error: 'Sign in required' }, { status: 401 });
+
+  const rl = await getLimiter('billing-portal', PORTAL_LIMIT).limit(userId);
+  if (!rl.success) return tooMany(rl.reset);
 
   const user = await currentUser();
   const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;

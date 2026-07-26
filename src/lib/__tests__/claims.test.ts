@@ -1,29 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { NeonDb } from '../db';
 import * as schema from '../db/schema';
 import { createTestDb, type TestDb } from '../db/__tests__/testDb';
 import { applyClaimVerification, verifyDnsClaim, verifyEmailClaim, verifyMetaClaim, type DnsResolver } from '../claims';
 import { limitsFor } from '../plans';
 
 let db: TestDb;
-let neonDb: NeonDb;
 
 beforeAll(async () => {
   db = await createTestDb();
-  // pglite's driver implements no .batch() (only neon-http/d1 do — see
-  // persist.ts's header comment on why persistApi() itself isn't unit-
-  // testable this way). applyClaimVerification's batch is plain Drizzle
-  // query builders, which are thenables usable standalone (same fact
-  // persist.test.ts's runSequentially relies on) — so a minimal sequential
-  // shim, exposed under the exact method name applyClaimVerification calls,
-  // lets it run end-to-end against the pglite harness.
-  (db as unknown as { batch: (items: Promise<unknown>[]) => Promise<unknown[]> }).batch = async (items) => {
-    const results: unknown[] = [];
-    for (const item of items) results.push(await item);
-    return results;
-  };
-  neonDb = db as unknown as NeonDb;
 }, 30_000);
 
 let orgSeq = 0;
@@ -136,7 +121,7 @@ describe('applyClaimVerification', () => {
     const api = await makeApi(seedOrg.id);
     const claim = await makeClaim(api.id, user.id);
 
-    const result = await applyClaimVerification(neonDb, {
+    const result = await applyClaimVerification(db, {
       claimId: claim.id,
       apiId: api.id,
       orgId: claimingOrg.id,
@@ -164,7 +149,7 @@ describe('applyClaimVerification', () => {
     const api = await makeApi(seedOrg.id);
     const claim = await makeClaim(api.id, user.id);
 
-    const result = await applyClaimVerification(neonDb, {
+    const result = await applyClaimVerification(db, {
       claimId: claim.id,
       apiId: api.id,
       orgId: claimingOrg.id,
@@ -178,5 +163,102 @@ describe('applyClaimVerification', () => {
     const [untouchedApi] = await db.select().from(schema.apis).where(eq(schema.apis.id, api.id));
     expect(untouchedApi.claimStatus).toBe('unclaimed');
     expect(untouchedApi.orgId).toBe(seedOrg.id);
+  });
+
+  // A claim started while the page was unclaimed must not be able to steal
+  // the page after somebody else has claimed it.
+  it('refuses to transfer an api that is already claimed, leaving the real owner in place', async () => {
+    const seedOrg = await makeOrg();
+    const realOwner = await makeOrg();
+    const attackerOrg = await makeOrg();
+    const user = await makeUser();
+    const api = await makeApi(seedOrg.id, { claimStatus: 'claimed', orgId: realOwner.id });
+    const staleClaim = await makeClaim(api.id, user.id);
+
+    const result = await applyClaimVerification(db, {
+      claimId: staleClaim.id,
+      apiId: api.id,
+      orgId: attackerOrg.id,
+      createdBy: user.id,
+    });
+    expect(result).toBe('already_claimed');
+
+    const [untouchedApi] = await db.select().from(schema.apis).where(eq(schema.apis.id, api.id));
+    expect(untouchedApi.orgId).toBe(realOwner.id);
+
+    const [untouchedClaim] = await db.select().from(schema.claims).where(eq(schema.claims.id, staleClaim.id));
+    expect(untouchedClaim.status).toBe('pending');
+  });
+
+  // Only one of N concurrent verifications may win; the rest must observe the
+  // committed transfer rather than overwrite it.
+  it('lets exactly one of several concurrent verifications transfer the api', async () => {
+    const seedOrg = await makeOrg();
+    const user = await makeUser();
+    const api = await makeApi(seedOrg.id);
+    const contenders = await Promise.all([makeOrg(), makeOrg(), makeOrg()]);
+    const claimRows = await Promise.all(contenders.map(() => makeClaim(api.id, user.id)));
+
+    const results = await Promise.all(
+      contenders.map((org, i) =>
+        applyClaimVerification(db, {
+          claimId: claimRows[i].id,
+          apiId: api.id,
+          orgId: org.id,
+          createdBy: user.id,
+        }),
+      ),
+    );
+
+    expect(results.filter((r) => r === 'ok')).toHaveLength(1);
+    expect(results.filter((r) => r === 'already_claimed')).toHaveLength(2);
+
+    const [finalApi] = await db.select().from(schema.apis).where(eq(schema.apis.id, api.id));
+    const winnerIndex = results.indexOf('ok');
+    expect(finalApi.orgId).toBe(contenders[winnerIndex].id);
+    expect(finalApi.claimStatus).toBe('claimed');
+  });
+
+  it('supersedes other pending claims on the page once one succeeds', async () => {
+    const seedOrg = await makeOrg();
+    const winnerOrg = await makeOrg();
+    const winner = await makeUser();
+    const other = await makeUser();
+    const api = await makeApi(seedOrg.id);
+    const winningClaim = await makeClaim(api.id, winner.id);
+    const rivalClaim = await makeClaim(api.id, other.id);
+
+    await applyClaimVerification(db, {
+      claimId: winningClaim.id,
+      apiId: api.id,
+      orgId: winnerOrg.id,
+      createdBy: winner.id,
+    });
+
+    const [rival] = await db.select().from(schema.claims).where(eq(schema.claims.id, rivalClaim.id));
+    expect(rival.status).toBe('superseded');
+  });
+
+  it('only marks the winning claim verified, never a claim already resolved', async () => {
+    const seedOrg = await makeOrg();
+    const claimingOrg = await makeOrg();
+    const user = await makeUser();
+    const api = await makeApi(seedOrg.id);
+    const alreadyVerified = await makeClaim(api.id, user.id, { status: 'verified' });
+
+    const result = await applyClaimVerification(db, {
+      claimId: alreadyVerified.id,
+      apiId: api.id,
+      orgId: claimingOrg.id,
+      createdBy: user.id,
+    });
+    // The transfer itself still succeeds (the page was unclaimed), but the
+    // status update is guarded on 'pending' so it stays as it was.
+    expect(result).toBe('ok');
+    const [claim] = await db
+      .select()
+      .from(schema.claims)
+      .where(and(eq(schema.claims.id, alreadyVerified.id), eq(schema.claims.status, 'verified')));
+    expect(claim).toBeDefined();
   });
 });

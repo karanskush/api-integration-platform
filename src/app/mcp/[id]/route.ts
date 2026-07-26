@@ -81,7 +81,7 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
 
         if (orgPlan) {
           const ceiling = limitsFor(orgPlan.plan).mcpCallsPerDay;
-          const credit = await creditLimiter(orgPlan.orgId, ceiling).limit(orgPlan.orgId);
+          const credit = await creditLimiter(ceiling).limit(orgPlan.orgId);
           if (!credit.success) {
             return toolText(
               `Daily MCP call limit reached for this plan. Upgrade at ${appOrigin(req)}/pricing for more credits.`,
