@@ -77,7 +77,12 @@ export function masterKeyReady(): boolean {
   }
 }
 
-export type KeyPurpose = 'ci-token' | 'credential-wrap';
+export type KeyPurpose =
+  | 'ci-token' // CI sync request signing (ciSync.ts)
+  | 'credential-wrap' // vaulted-credential key wrapping (vault.ts)
+  | 'credential-fingerprint' // non-reversible "same key?" check (vault.ts)
+  | 'mcp-access' // org token unlocking vaulted credentials (mcpAccess.ts)
+  | 'audit-actor'; // caller attribution in the audit log, not reversible
 
 // HKDF-SHA256. `purpose` is the salt (domain separation between features) and
 // `context` the info (separation between objects within a feature), so no two
@@ -111,4 +116,15 @@ export function verifyHmacHex(key: Buffer | string, data: string, provided: stri
 
 export function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString('base64url');
+}
+
+// Double-HMAC comparison: the standard way to compare two secrets of unknown,
+// possibly differing length in constant time. Hashing both under a fresh random
+// key per call reduces the comparison to fixed-size digests, so neither the
+// length nor the content of either input is observable through timing.
+export function secretsEqual(a: string, b: string): boolean {
+  const nonce = randomBytes(32);
+  const digestA = createHmac('sha256', nonce).update(a, 'utf8').digest();
+  const digestB = createHmac('sha256', nonce).update(b, 'utf8').digest();
+  return timingSafeEqual(digestA, digestB);
 }

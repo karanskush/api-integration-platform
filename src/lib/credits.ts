@@ -3,14 +3,28 @@ import type { Db } from './db';
 import { apis, orgs } from './db/schema';
 import { getLimiter, type Limiter } from './ratelimit';
 
-export type OrgPlanInfo = { apiId: string; orgId: string; plan: string };
+export type OrgPlanInfo = {
+  apiId: string;
+  orgId: string;
+  plan: string;
+  visibility: string;
+  // Needed by the MCP route to verify an access token in the same query that
+  // resolves the plan, rather than a second round trip per request.
+  mcpTokenVersion: number;
+};
 
 // Only persistent (org-backed) APIs have credit metering — ephemeral
 // /mcp/[id] keeps the flat per-IP rate limit unchanged, since there's no
 // org/plan to meter against.
 export async function getOrgPlanForSlug(db: Db, slug: string): Promise<OrgPlanInfo | null> {
   const [row] = await db
-    .select({ apiId: apis.id, orgId: apis.orgId, plan: orgs.plan })
+    .select({
+      apiId: apis.id,
+      orgId: apis.orgId,
+      plan: orgs.plan,
+      visibility: apis.visibility,
+      mcpTokenVersion: orgs.mcpTokenVersion,
+    })
     .from(apis)
     .innerJoin(orgs, eq(apis.orgId, orgs.id))
     .where(eq(apis.slug, slug))

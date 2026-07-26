@@ -43,6 +43,10 @@ export const orgs = pgTable('orgs', {
   stripePriceId: text('stripe_price_id'),
   seatsIncluded: integer('seats_included').notNull().default(1),
   isSystem: boolean('is_system').notNull().default(false),
+  // Same derived-token pattern as apis.ci_token_version (see mcpAccess.ts):
+  // the MCP access token that unlocks vaulted credentials is derived, not
+  // stored, and bumping this revokes every token issued for the org.
+  mcpTokenVersion: integer('mcp_token_version').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -188,18 +192,56 @@ export const scoreRuns = pgTable('score_runs', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (t) => [index('score_runs_api_id_started_at_idx').on(t.apiId, t.startedAt)]);
 
-// Team+ credential vault — table exists, unused in Phase 1. KMS wiring +
-// audit log deferred to Phase 3 per its own release gate.
+// Team+ credential vault. Envelope-encrypted by vault.ts: `encryptedKey` holds
+// the AES-256-GCM ciphertext, `wrappedDek` the per-credential data key sealed
+// under an org-scoped KEK, and `kmsKeyId` records WHICH key scheme sealed the
+// row so a later migration to a real KMS can proceed row by row. Plaintext
+// exists only inside a single vault.ts function call — never in a column, never
+// in a log.
 export const credentials = pgTable('credentials', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
   apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
-  environment: text('environment').notNull(),
+  environment: text('environment').notNull(), // production|sandbox
   encryptedKey: text('encrypted_key').notNull(),
+  iv: text('iv').notNull(),
+  authTag: text('auth_tag').notNull(),
+  wrappedDek: text('wrapped_dek').notNull(),
+  keyVersion: integer('key_version').notNull().default(1),
   kmsKeyId: text('kms_key_id').notNull(),
+  fingerprint: text('fingerprint').notNull(), // non-reversible; "same key?" checks without revealing it
+  hint: text('hint').notNull(), // last 4 chars, for the dashboard
+  createdBy: uuid('created_by').references(() => users.id),
   createdAt: createdAt(),
+  rotatedAt: timestamp('rotated_at', { withTimezone: true }),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-});
+}, (t) => [
+  // One credential per API per environment: without this, a second POST would
+  // silently shadow the first and the MCP path would pick arbitrarily.
+  uniqueIndex('credentials_api_environment_idx').on(t.apiId, t.environment),
+  index('credentials_org_id_idx').on(t.orgId),
+]);
+
+// Append-only audit trail for the vault. §5 makes this a release gate for
+// Phase 3, and it is what makes a vaulted credential defensible: every decrypt
+// is attributable, and a failed decrypt is as interesting as a successful one.
+// `actorHash` is a salted hash of the caller identity, never a raw IP or token.
+export const credentialAudit = pgTable('credential_audit', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  apiId: uuid('api_id').references(() => apis.id, { onDelete: 'cascade' }),
+  environment: text('environment'),
+  // created|rotated|deleted|used|denied|decrypt_failed
+  action: text('action').notNull(),
+  actorType: text('actor_type').notNull(), // user|mcp|probe|cron
+  actorHash: text('actor_hash'),
+  detail: text('detail'), // short, never a secret or a response body
+  createdAt: createdAt(),
+}, (t) => [
+  index('credential_audit_org_id_created_at_idx').on(t.orgId, t.createdAt),
+  index('credential_audit_credential_id_idx').on(t.credentialId),
+]);
 
 // Durable ledger for Pro+ analytics — never read on the request hot path
 // ("materialize, don't traverse"); written fire-and-forget via after().
