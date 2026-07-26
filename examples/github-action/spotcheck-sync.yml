@@ -1,0 +1,96 @@
+# Spotcheck CI sync — copy this into YOUR API repo at
+# .github/workflows/spotcheck-sync.yml
+#
+# On every push that touches your OpenAPI spec, this re-imports it into
+# Spotcheck, re-normalizes the tools, recomputes the Agent-Ready preview, and
+# purges the public page and badge. With `fail-below` set, a spec that regresses
+# below your threshold fails the build instead of shipping.
+#
+# Setup (one time):
+#   1. Claim your page at https://spotcheckhq.vercel.app/<your-slug>
+#   2. POST /api/apis/<your-slug>/ci/token while signed in to get your token
+#   3. Add it as the repository secret SPOTCHECK_TOKEN
+#   4. Set SPOTCHECK_SLUG below
+#
+# The token signs the request; it is never sent as a bearer credential, so a
+# leaked CI log line cannot be replayed as-is (the signature covers a timestamp
+# with a 5 minute freshness window).
+
+name: Spotcheck sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Point these at wherever your spec actually lives.
+      - 'openapi.json'
+      - 'openapi.yaml'
+      - 'spec/**'
+
+# Nothing here needs write access to the repo.
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SPOTCHECK_ENDPOINT: https://spotcheckhq.vercel.app/api/ci/sync
+      SPOTCHECK_SLUG: your-api-slug
+      SPEC_PATH: openapi.json
+      # Fail the build when the Agent-Ready preview drops below this. Remove to
+      # report without gating.
+      FAIL_BELOW: '80'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync spec to Spotcheck
+        env:
+          SPOTCHECK_TOKEN: ${{ secrets.SPOTCHECK_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${SPOTCHECK_TOKEN:-}" ]]; then
+            echo "::error::SPOTCHECK_TOKEN secret is not set"
+            exit 1
+          fi
+
+          # jq builds the payload so the spec is embedded as a properly escaped
+          # JSON string, whatever it contains.
+          payload=$(jq -nc \
+            --arg slug "$SPOTCHECK_SLUG" \
+            --rawfile spec "$SPEC_PATH" \
+            --argjson failBelow "${FAIL_BELOW:-null}" \
+            '{slug: $slug, specText: $spec} + (if $failBelow == null then {} else {failBelow: $failBelow} end)')
+
+          timestamp=$(date +%s)
+
+          # The signature covers "<timestamp>.<exact request body>" — sign the
+          # same bytes you send, or verification will fail.
+          signature=$(printf '%s.%s' "$timestamp" "$payload" \
+            | openssl dgst -sha256 -hmac "$SPOTCHECK_TOKEN" -hex \
+            | sed 's/^.*= //')
+
+          http_status=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST "$SPOTCHECK_ENDPOINT" \
+            -H 'content-type: application/json' \
+            -H "x-spotcheck-timestamp: $timestamp" \
+            -H "x-spotcheck-signature: sha256=$signature" \
+            --data-binary "$payload")
+
+          jq . response.json || cat response.json
+
+          total=$(jq -r '.scorePreview.total // "n/a"' response.json)
+          state=$(jq -r '.status // "unknown"' response.json)
+          echo "### Spotcheck: $state (score preview $total)" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.note // empty' response.json >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$http_status" == "422" ]]; then
+            echo "::error::Spotcheck score gate failed — preview $total is below $FAIL_BELOW"
+            exit 1
+          fi
+          if [[ "$http_status" != "200" ]]; then
+            echo "::error::Spotcheck sync failed with HTTP $http_status"
+            exit 1
+          fi

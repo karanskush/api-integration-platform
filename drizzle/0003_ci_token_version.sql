@@ -1,0 +1,1 @@
+ALTER TABLE "apis" ADD COLUMN "ci_token_version" integer DEFAULT 0 NOT NULL;

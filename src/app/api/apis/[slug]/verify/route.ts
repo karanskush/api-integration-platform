@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { dbReady, getDb } from '@/lib/db';
 import { apis, orgMembers, scoreRuns, users } from '@/lib/db/schema';
 import { loadPersistentRecord } from '@/lib/persistentApi';
@@ -74,6 +75,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       .update(scoreRuns)
       .set({ status: 'succeeded', findings: result, completedAt: new Date() })
       .where(eq(scoreRuns.id, run.id));
+
+    // A new verified score changes both the page's score panel and the badge
+    // colour, so neither may serve its cached pre-run version.
+    revalidatePath(`/${slug}`);
+    revalidatePath(`/badge/${slug}`);
 
     return Response.json(result);
   } catch {

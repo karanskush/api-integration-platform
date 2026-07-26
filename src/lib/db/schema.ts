@@ -72,6 +72,10 @@ export const apis = pgTable('apis', {
   baseUrls: jsonb('base_urls').notNull().default([]),
   dominantAuth: text('dominant_auth').notNull().default('none'),
   authIn: jsonb('auth_in'), // {in, name}
+  // CI sync tokens are derived, never stored (see ciSync.ts) — this counter is
+  // the whole rotation mechanism: bumping it invalidates every token previously
+  // issued for this API and nothing else.
+  ciTokenVersion: integer('ci_token_version').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

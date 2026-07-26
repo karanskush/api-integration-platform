@@ -3,7 +3,13 @@ import { badgeSvg } from '@/lib/badge';
 import { dbReady, getDb } from '@/lib/db';
 import { apis, scores } from '@/lib/db/schema';
 
-export const dynamic = 'force-dynamic';
+// Cached, not force-dynamic: badges are embedded in READMEs and hit far more
+// often than scores change, and a force-dynamic route can't be purged — the
+// hour of CDN Cache-Control below would have been unrevokable, so a badge could
+// keep advertising a score after a re-import invalidated it. As a cached route
+// it is purged on demand by revalidatePath(`/badge/${slug}`) from api/ci/sync
+// and the verification run.
+export const revalidate = 3600;
 
 const UNVERIFIED_COLOR = '#8a8f98';
 const VERIFIED_COLOR = '#43d9a3'; // --accent-green in globals.css — earned, verified only
