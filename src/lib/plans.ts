@@ -21,6 +21,9 @@ export type PlanLimits = {
   seats: number;
   scheduledVerification: boolean;
   auditLogs: boolean;
+  // Per-action call analytics over the mcp_calls ledger. "Pro+ dashboard" in
+  // TECH_IMPLEMENTATION.md §11.
+  analytics: boolean;
 };
 
 function envInt(name: string, fallback: number): number {
@@ -40,6 +43,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     seats: 1,
     scheduledVerification: false,
     auditLogs: false,
+    analytics: false,
   },
   launch: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_LAUNCH', 3),
@@ -51,6 +55,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     seats: 1,
     scheduledVerification: false,
     auditLogs: false,
+    analytics: false,
   },
   pro: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_PRO', 10),
@@ -62,6 +67,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     seats: 1,
     scheduledVerification: false,
     auditLogs: false,
+    analytics: true,
   },
   team: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_TEAM', 25),
@@ -73,6 +79,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     seats: envInt('PLAN_SEATS_TEAM', 5),
     scheduledVerification: false,
     auditLogs: false,
+    analytics: true,
   },
   business: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_BUSINESS', 100),
@@ -84,6 +91,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     seats: envInt('PLAN_SEATS_BUSINESS', 20),
     scheduledVerification: true,
     auditLogs: true,
+    analytics: true,
   },
 };
 

@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { isValidId } from '@/lib/ids';
 import { clientIp } from '@/lib/ip';
 import { kv } from '@/lib/kv';
@@ -6,8 +7,13 @@ import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { safeFetch, SsrfError, UpstreamError } from '@/lib/ssrf';
 import { buildUpstreamRequest, UpstreamBuildError } from '@/lib/upstream';
 import { validateParams } from '@/lib/validate';
+import { canViewApi } from '@/lib/visibility';
 
 export const maxDuration = 60;
+
+// Same gate the rest of the codebase uses: without Clerk configured there are
+// no accounts, so there is nobody a private API could be scoped to.
+const clerkReady = Boolean(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 // BYOK playground proxy: same-origin only, allowlisted base URLs, injects
 // nothing beyond the caller's own key, persists nothing. Logs carry no
@@ -37,11 +43,19 @@ export async function POST(req: Request) {
   // tiers /p/[id] vs /[slug] and /mcp/[id] vs /mcp/[slug] already split on.
   // A slug can rarely happen to have the same 10-char shape as an ephemeral
   // id, so an id-shaped miss in Redis still falls back to Postgres.
-  const record = isValidId(id)
-    ? ((await kv().getImport(id)) ?? (await loadPersistentRecord(id)))
-    : await loadPersistentRecord(id);
+  const ephemeral = isValidId(id) ? await kv().getImport(id) : null;
+  const record = ephemeral ?? (await loadPersistentRecord(id));
   if (!record || record.expiresAt <= Date.now()) {
     return Response.json({ error: 'Import expired' }, { status: 404 });
+  }
+
+  // A private API's playground is org-members-only. Ephemeral imports have no
+  // visibility to check — they're anonymous by construction.
+  if (!ephemeral) {
+    const { userId } = clerkReady ? await auth() : { userId: null };
+    if (!(await canViewApi(id, userId))) {
+      return Response.json({ error: 'Import expired' }, { status: 404 });
+    }
   }
 
   const action = record.actions.find((a) => a.id === payload.actionId);

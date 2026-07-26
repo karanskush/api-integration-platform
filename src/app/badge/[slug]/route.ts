@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { badgeSvg } from '@/lib/badge';
 import { dbReady, getDb } from '@/lib/db';
 import { apis, scores } from '@/lib/db/schema';
+import { isPrivate } from '@/lib/visibility';
 
 // Cached, not force-dynamic: badges are embedded in READMEs and hit far more
 // often than scores change, and a force-dynamic route can't be purged — the
@@ -40,13 +41,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
 
   const db = getDb();
   const [row] = await db
-    .select({ claimStatus: apis.claimStatus, total: scores.total })
+    .select({ claimStatus: apis.claimStatus, visibility: apis.visibility, total: scores.total })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
     .where(eq(apis.slug, slug))
     .limit(1);
 
   if (!row) {
+    return Response.json({ error: 'Unknown API' }, { status: 404 });
+  }
+
+  // A badge is an unauthenticated, embeddable, CDN-cached asset — there is no
+  // caller identity to check here, so a private API simply has no badge. Same
+  // 404 as an unknown slug, so the response reveals nothing either way.
+  if (isPrivate(row.visibility)) {
     return Response.json({ error: 'Unknown API' }, { status: 404 });
   }
 

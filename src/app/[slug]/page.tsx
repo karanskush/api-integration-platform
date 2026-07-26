@@ -13,10 +13,11 @@ import VerifiedScorePanel from '@/components/VerifiedScorePanel';
 import { getDb } from '@/lib/db';
 import { orgMembers, users } from '@/lib/db/schema';
 import { loadApiVerificationState, loadPersistentRecord } from '@/lib/persistentApi';
+import { canViewApi } from '@/lib/visibility';
 
-// Time-based ISR for now — Phase 1 has no "re-import into an existing
-// persistent api" path yet, so there's nothing to on-demand revalidateTag()
-// against. Add tag-based revalidation once that write path exists (Phase 2+).
+// ISR with on-demand purging: api/ci/sync and the verification run both call
+// revalidatePath() for this path now that a re-import write path exists, so the
+// hour below is a backstop rather than the only refresh mechanism.
 export const revalidate = 3600;
 
 // Same xReady() gate the rest of the codebase uses for claim/auth UI (see
@@ -59,6 +60,10 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
 
   const verification = await loadApiVerificationState(slug);
   const { userId } = clerkReady ? await auth() : { userId: null };
+
+  // A private API is 404 to everyone outside its org — not 403, which would
+  // confirm the slug exists (see visibility.ts).
+  if (!(await canViewApi(slug, userId))) notFound();
 
   let canVerify = false;
   if (userId && verification?.claimStatus === 'claimed') {

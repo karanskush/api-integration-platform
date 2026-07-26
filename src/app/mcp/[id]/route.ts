@@ -25,6 +25,7 @@ import { loadPersistentRecord } from '@/lib/persistentApi';
 import { can, limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { resolveCredential } from '@/lib/vaultStore';
+import { isPrivate } from '@/lib/visibility';
 
 export const maxDuration = 60;
 
@@ -77,6 +78,20 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return jsonRpcError(404, 'Unknown or expired Spotcheck id — re-import the spec to mint a new server');
   }
   const orgPlan = !ephemeralRecord && dbReady() ? await getOrgPlanForSlug(getDb(), id) : null;
+
+  // A private API's MCP server requires the org access token. Same 404 as an
+  // unknown id, so an unauthorized caller cannot tell a private server from a
+  // nonexistent one.
+  if (orgPlan && isPrivate(orgPlan.visibility)) {
+    const authorized = verifyMcpAccessToken(
+      req.headers.get(MCP_ACCESS_HEADER),
+      orgPlan.orgId,
+      orgPlan.mcpTokenVersion,
+    );
+    if (!authorized) {
+      return jsonRpcError(404, 'Unknown or expired Spotcheck id — re-import the spec to mint a new server');
+    }
+  }
 
   // Auth resolution order (TECH_IMPLEMENTATION.md §3.5):
   //   1. caller-supplied header / ?key= — BYOK, pass-through, never stored
