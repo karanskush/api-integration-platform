@@ -186,8 +186,14 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
   }
 
   const results = matches.slice(0, MAX_TRACE_TARGETS).map(({ tool, field }) => {
-    const producers = direction === 'consumers' ? [] : producersFor(graph, tool, field.path);
-    const consumers = direction === 'producers' ? [] : consumersFor(graph, tool, field.path);
+    // Always computed in full, regardless of `direction`: `direction` controls
+    // what gets DISPLAYED, not what's real. Gating this behind the direction
+    // filter made every "consumers"-direction result report
+    // origin:"caller_supplied" even for a field with five real producers,
+    // because an empty (never-computed) producers array was fed straight into
+    // originOf() — found by driving this against the real Swagger Petstore.
+    const producers = producersFor(graph, tool, field.path);
+    const consumers = consumersFor(graph, tool, field.path);
     const origin = originOf(field, producers.length > 0);
 
     return {

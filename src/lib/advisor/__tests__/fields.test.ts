@@ -192,6 +192,19 @@ describe('traceField', () => {
     expect(hit.consumedBy.map((c: Payload) => c.tool)).toContain('create_order');
   });
 
+  // Found by driving this against the real Swagger Petstore: with
+  // direction:'consumers', origin was computed from an array deliberately left
+  // empty for that direction, so a field with five real producers reported
+  // origin:"caller_supplied" — direction controls what's DISPLAYED, not what
+  // is real, and the bug conflated the two.
+  it('reports the true origin even when direction hides the producedBy list', () => {
+    const both = traceField(store, { field: 'customerId', tool: 'create_order', direction: 'both' });
+    const consumersOnly = traceField(store, { field: 'customerId', tool: 'create_order', direction: 'consumers' });
+    expect(both.results[0].origin).toBe('produced_by_api');
+    expect(consumersOnly.results[0].origin).toBe('produced_by_api');
+    expect(consumersOnly.results[0].producedBy).toBeUndefined();
+  });
+
   it('honours the direction argument', () => {
     const producers = traceField(store, { field: 'customerId', tool: 'create_order', direction: 'producers' });
     expect(producers.results[0].producedBy).toBeDefined();
