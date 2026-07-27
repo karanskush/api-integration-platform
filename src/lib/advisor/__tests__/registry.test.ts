@@ -10,10 +10,15 @@ function payload(name: string, args: Record<string, unknown> = {}) {
 }
 
 describe('advisor registry', () => {
-  it('exposes exactly the six tools the spec calls for', () => {
+  // Order is the tools/list order, and it is deliberate: search first (the
+  // entry point), then the per-operation detail tools, then the field-level
+  // ones, then diagnosis and codegen.
+  it('exposes exactly the expected tool set, in order', () => {
     expect(ADVISOR_TOOLS.map((t) => t.name)).toEqual([
       'spotcheck_search_endpoints',
       'spotcheck_get_endpoint_schema',
+      'spotcheck_describe_fields',
+      'spotcheck_trace_field',
       'spotcheck_get_call_sequence',
       'spotcheck_explain_error',
       'spotcheck_get_score_explanation',
@@ -48,6 +53,8 @@ describe('advisor registry', () => {
     expect(byName.get('spotcheck_get_call_sequence')?.inputSchema.required).toEqual(['tool']);
     expect(byName.get('spotcheck_explain_error')?.inputSchema.required).toEqual(['status']);
     expect(byName.get('spotcheck_generate_contract_test')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('spotcheck_describe_fields')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('spotcheck_trace_field')?.inputSchema.required).toEqual(['field']);
     expect(byName.get('spotcheck_search_endpoints')?.inputSchema.required).toBeUndefined();
     expect(byName.get('spotcheck_get_score_explanation')?.inputSchema.required).toBeUndefined();
   });
@@ -68,6 +75,8 @@ describe('callAdvisorTool', () => {
     expect(payload('spotcheck_explain_error', { status: 429 }).data.retryable).toBe(true);
     expect(payload('spotcheck_get_score_explanation').data.total).toBeTypeOf('number');
     expect(payload('spotcheck_generate_contract_test', { tool: 'get_pet' }).data.source).toBeTypeOf('string');
+    expect(payload('spotcheck_describe_fields', { tool: 'create_pet' }).data.request).toBeDefined();
+    expect(payload('spotcheck_trace_field', { field: 'petId' }).data.results).toBeDefined();
   });
 
   it('returns machine-parseable JSON, not prose', () => {

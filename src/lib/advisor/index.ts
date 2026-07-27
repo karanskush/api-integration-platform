@@ -15,6 +15,7 @@
 import type { ToolDescriptor, ToolCallOutcome } from '../mcpTools';
 import { generateContractTest } from './contractTest';
 import { explainError } from './errors';
+import { describeFields, traceField } from './fields';
 import { getCallSequence } from './sequence';
 import { getEndpointSchema, searchEndpoints } from './search';
 import { getScoreExplanation } from './score';
@@ -73,6 +74,51 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
     'Full detail for one operation: parameters and where each goes, request body, documented response and error shapes, auth requirements, safety class, retry safety, and any drift already observed against the live API.',
     { tool: TOOL_NAME_ARG },
     ['tool'],
+  ),
+  descriptor(
+    'describe_fields',
+    'Describe fields',
+    'Every field an operation accepts or returns, flattened to addressable paths with their types, allowed values, constraints, and — for inputs — where each value is supposed to come from. Use this to answer "what data can I actually send here", especially for a nested request body.',
+    {
+      tool: TOOL_NAME_ARG,
+      direction: {
+        type: 'string',
+        enum: ['request', 'response', 'error', 'all'],
+        description: 'Which side to describe (default request).',
+      },
+      filter: {
+        type: 'string',
+        description: 'Only return fields whose path, name, or description contains this substring. Use it on large schemas.',
+      },
+      limit: { type: 'integer', description: 'Maximum fields per section (1-300, default 60).' },
+      includeReadOnly: {
+        type: 'boolean',
+        description: 'Include server-assigned fields in the request view. Off by default, since they cannot be sent.',
+      },
+    },
+    ['tool'],
+  ),
+  descriptor(
+    'trace_field',
+    'Trace a field',
+    'Where a value comes from and what accepts it. Given a field name or path, returns the operations whose responses produce it and the operations whose requests consume it, each with the evidence for the link. Call this instead of inventing an identifier — a field with no producer is reported as caller-supplied rather than guessed at.',
+    {
+      field: {
+        type: 'string',
+        description: 'A field name ("customerId") or a full path ("body.customer.email").',
+      },
+      tool: { type: 'string', description: 'Optional: restrict to one operation.' },
+      direction: {
+        type: 'string',
+        enum: ['producers', 'consumers', 'both'],
+        description: 'producers = where it comes from; consumers = what accepts it (default both).',
+      },
+      includeLowConfidence: {
+        type: 'boolean',
+        description: 'Include weakly-evidenced links. Off by default — a wrong link is worse than a missing one.',
+      },
+    },
+    ['field'],
   ),
   descriptor(
     'get_call_sequence',
@@ -143,6 +189,10 @@ export function callAdvisorTool(name: string, args: Args, ctx: AdvisorContext): 
       return result(searchEndpoints(ctx, args));
     case `${ADVISOR_PREFIX}get_endpoint_schema`:
       return result(getEndpointSchema(ctx, args));
+    case `${ADVISOR_PREFIX}describe_fields`:
+      return result(describeFields(ctx, args));
+    case `${ADVISOR_PREFIX}trace_field`:
+      return result(traceField(ctx, args));
     case `${ADVISOR_PREFIX}get_call_sequence`:
       return result(getCallSequence(ctx, args));
     case `${ADVISOR_PREFIX}explain_error`:
