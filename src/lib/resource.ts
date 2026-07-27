@@ -73,13 +73,28 @@ export function pathResources(path: string): string[] {
   return out;
 }
 
+const ID_TOKENS = new Set(['id', 'ids', 'key', 'uuid', 'guid', 'slug', 'code', 'ref', 'reference', 'number', 'no', 'token']);
+
+// Whether a field name denotes an identifier.
+//
+// This replaces a regex — /(^|[_-])(id|ids|...)$/i — that required the id token
+// to be preceded by a start-of-string or a separator, and therefore never
+// matched camelCase at all: `customer_id` was recognised, `customerId` was not.
+// Tokenizing first makes both work, which is the difference between tracing a
+// camelCase API's identifiers and silently ignoring all of them.
+export function isIdLike(name: string): boolean {
+  const tokens = tokenize(name);
+  const last = tokens[tokens.length - 1];
+  return last !== undefined && ID_TOKENS.has(last);
+}
+
 // `petId` -> `pet`, `customer_id` -> `customer`, `id` -> null.
 // The resource a foreign-key-shaped field name points at.
 export function resourceFromFieldName(name: string): string | null {
   const tokens = tokenize(name);
   if (tokens.length < 2) return null;
   const last = tokens[tokens.length - 1];
-  if (!/^(id|ids|key|uuid|guid|slug|code|ref|reference|number|no)$/.test(last)) return null;
+  if (!ID_TOKENS.has(last)) return null;
   return singularize(tokens.slice(0, -1).join('_'));
 }
 

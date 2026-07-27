@@ -14,10 +14,9 @@
 import type { Action, ImportRecord } from '../ir';
 // Live in lib/resource.ts so lineage.ts can share them without this module and
 // that one importing each other.
-import { collectionPathFor, resourceOf } from '../resource';
+import { collectionPathFor, isIdLike, resourceOf } from '../resource';
 import { asData, paramsOf, type AdvisorContext } from './types';
 
-const ID_LIKE = /(^|[_-])(id|ids|key|uuid|slug|code|number|no)$/i;
 const MAX_PRODUCERS_PER_PARAM = 4;
 
 // Re-exported to keep this module's public surface (and its tests) unchanged.
@@ -160,7 +159,7 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
     .filter((p) => p.in === 'path')
     .sort((a, b) => target.path.indexOf(`{${a.name}}`) - target.path.indexOf(`{${b.name}}`));
 
-  const idLikeQueryParams = params.filter((p) => p.in === 'query' && p.required && ID_LIKE.test(p.name));
+  const idLikeQueryParams = params.filter((p) => p.in === 'query' && p.required && isIdLike(p.name));
 
   for (const param of [...pathParams, ...idLikeQueryParams]) {
     const producers = findProducers(ctx.record, target, param.name);

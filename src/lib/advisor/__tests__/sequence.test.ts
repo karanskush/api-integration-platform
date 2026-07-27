@@ -158,6 +158,29 @@ describe('getCallSequence', () => {
     expect((step?.from as Array<{ tool: string }>).map((f) => f.tool)).toContain('list_customers');
   });
 
+  // Regression: the old ID_LIKE regex required a separator before the id token,
+  // so camelCase query identifiers were never traced on any camelCase API.
+  it('traces a camelCase id-shaped query parameter', () => {
+    const actions = [
+      action({
+        name: 'list_invoices',
+        method: 'GET',
+        path: '/v1/invoices',
+        paramsSchema: { type: 'object', required: ['customerId'], properties: { customerId: param('query') } },
+      }),
+      action({
+        name: 'list_customers',
+        method: 'GET',
+        path: '/v1/customers',
+        responseSchema: { type: 'array', items: { type: 'object', properties: { customerId: { type: 'string' } } } },
+      }),
+    ];
+    const res = getCallSequence(ctx(actions), { tool: 'list_invoices' });
+    const step = res.steps?.find((s: Payload) => s.parameter === 'customerId');
+    expect(step).toBeDefined();
+    expect((step?.from as Array<{ tool: string }>).map((f) => f.tool)).toContain('list_customers');
+  });
+
   it('ignores a non-id query parameter', () => {
     const actions = [
       action({
