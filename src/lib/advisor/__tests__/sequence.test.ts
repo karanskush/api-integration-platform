@@ -200,6 +200,99 @@ describe('getCallSequence', () => {
     expect((final?.alsoRequires as Array<{ name: string }>).map((r) => r.name)).toEqual(['body']);
   });
 
+  // Until the field map existed, a body was one opaque parameter, so an
+  // operation whose real prerequisite was `body.customerId` reported only "you
+  // also need: body" — precisely the point at which an agent invents an id.
+  describe('body fields', () => {
+    const bodyActions = [
+      action({
+        name: 'list_customers',
+        method: 'GET',
+        path: '/customers',
+        responseSchema: {
+          type: 'array',
+          items: { type: 'object', properties: { customerId: { type: 'string' }, email: { type: 'string' } } },
+        },
+      }),
+      action({
+        name: 'create_invoice',
+        method: 'POST',
+        path: '/invoices',
+        safety: 'write',
+        paramsSchema: {
+          type: 'object',
+          required: ['body'],
+          properties: {
+            body: param('body', 'object', {
+              required: ['customerId', 'amount', 'currency'],
+              properties: {
+                customerId: { type: 'string' },
+                amount: { type: 'integer' },
+                currency: { type: 'string', enum: ['usd', 'eur'] },
+                memo: { type: 'string' },
+              },
+            }),
+          },
+        },
+      }),
+    ];
+
+    it('adds a step tracing a required body identifier to its producer', () => {
+      const res = getCallSequence(ctx(bodyActions), { tool: 'create_invoice' });
+      const step = res.steps?.find((s: Payload) => s.parameter === 'body.customerId');
+      expect(step).toBeDefined();
+      expect(step?.in).toBe('body');
+      expect((step?.from as Array<{ tool: string }>).map((f) => f.tool)).toContain('list_customers');
+    });
+
+    it('lists required body fields individually instead of one opaque body', () => {
+      const res = getCallSequence(ctx(bodyActions), { tool: 'create_invoice' });
+      const final = res.steps?.[res.steps.length - 1];
+      const names = (final?.alsoRequires as Array<{ name: string }>).map((r) => r.name);
+      expect(names).toContain('body.customerId');
+      expect(names).toContain('body.amount');
+      expect(names).not.toContain('body');
+    });
+
+    it('carries allowed values onto a required enum body field', () => {
+      const res = getCallSequence(ctx(bodyActions), { tool: 'create_invoice' });
+      const final = res.steps?.[res.steps.length - 1];
+      const currency = (final?.alsoRequires as Array<Payload>).find((r) => r.name === 'body.currency');
+      expect(currency?.allowed).toEqual(['usd', 'eur']);
+    });
+
+    it('does not add a step for a body field nothing produces', () => {
+      const res = getCallSequence(ctx(bodyActions), { tool: 'create_invoice' });
+      expect(res.steps?.some((s: Payload) => s.parameter === 'body.amount')).toBe(false);
+    });
+
+    // Noise control: a required `email` is obviously caller-supplied, but an
+    // untraceable required *identifier* is worth calling out explicitly.
+    it('notes an untraceable required body identifier', () => {
+      const orphan = [
+        action({
+          name: 'create_thing',
+          method: 'POST',
+          path: '/things',
+          safety: 'write',
+          paramsSchema: {
+            type: 'object',
+            required: ['body'],
+            properties: {
+              body: param('body', 'object', {
+                required: ['tenantId', 'label'],
+                properties: { tenantId: { type: 'string' }, label: { type: 'string' } },
+              }),
+            },
+          },
+        }),
+      ];
+      const res = getCallSequence(ctx(orphan), { tool: 'create_thing' });
+      expect(res.notes?.some((n: string) => n.includes('body.tenantId'))).toBe(true);
+      expect(res.notes?.some((n: string) => n.includes('body.label'))).toBe(false);
+    });
+  });
+
   it('warns that a destructive target needs human confirmation', () => {
     const res = getCallSequence(context, { tool: 'delete_pet' });
     expect(res.notes?.some((n: string) => n.includes('human confirmation'))).toBe(true);

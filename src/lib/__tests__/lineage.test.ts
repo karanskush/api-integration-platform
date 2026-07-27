@@ -422,10 +422,35 @@ describe('lineageFor — caching', () => {
     expect(lineageFor(r)).toBe(lineageFor(r));
   });
 
-  it('recomputes when the record changes', () => {
-    const a = lineageFor(record(REST));
-    const b = lineageFor({ ...record(REST), createdAt: 999 });
-    expect(a).not.toBe(b);
+  it('recomputes for a different record object', () => {
+    expect(lineageFor(record(REST))).not.toBe(lineageFor(record(REST)));
+  });
+
+  // Regression: the cache was keyed on `id|actionCount|createdAt`, which two
+  // different records can easily agree on — the collision returned a graph
+  // computed from somebody else's actions. Silently wrong answers are the worst
+  // failure this module can have, so identity is now the key.
+  it('does not confuse two records that share id, length and timestamp', () => {
+    const a: ImportRecord = { ...record(REST), id: 'same', createdAt: 1 };
+    const b: ImportRecord = {
+      ...record([
+        action({
+          name: 'list_customers',
+          method: 'GET',
+          path: '/v1/customers',
+          responseSchema: { type: 'object', properties: { unrelated: { type: 'string' } } },
+        }),
+        action({ name: 'create_customer', method: 'POST', path: '/v1/customers', safety: 'write' }),
+        action({ name: 'create_order', method: 'POST', path: '/v1/orders', safety: 'write' }),
+      ]),
+      id: 'same',
+      createdAt: 1,
+    };
+    expect(a.id).toBe(b.id);
+    expect(a.actions.length).toBe(b.actions.length);
+
+    expect(lineageFor(a).edges.length).toBeGreaterThan(0);
+    expect(lineageFor(b).edges).toEqual([]);
   });
 
   it('keys separately on the includeLow option', () => {

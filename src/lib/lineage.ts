@@ -341,24 +341,32 @@ export function computeLineage(record: ImportRecord, options: LineageOptions = {
   };
 }
 
-// Per-request memoization. The MCP handler builds a graph per tools/call, and
-// Fluid Compute reuses instances across requests, so recomputing a 300-action
-// graph every time would be pure waste. Keyed by record identity + action count
-// so a re-import invalidates it.
-const cache = new Map<string, LineageGraph>();
-const MAX_CACHED_GRAPHS = 32;
+// Memoization. The MCP handler can build a graph several times per request
+// (get_call_sequence, describe_fields and trace_field all want one), and Fluid
+// Compute reuses instances across requests, so recomputing a 300-action graph
+// each time would be pure waste.
+//
+// Keyed on the RECORD OBJECT, not a derived string. A string key of
+// id+count+createdAt looks unique but is not: two different records can agree
+// on all three, and the collision hands back a graph computed from somebody
+// else's actions — silently wrong answers, which is the worst failure this
+// module can have. A WeakMap cannot collide, needs no eviction policy, and lets
+// a discarded record's graph be collected with it.
+const cache = new WeakMap<ImportRecord, Map<string, LineageGraph>>();
 
 export function lineageFor(record: ImportRecord, options: LineageOptions = {}): LineageGraph {
-  const key = `${record.id}|${record.actions.length}|${record.createdAt}|${options.includeLow ? 'low' : 'std'}`;
-  const hit = cache.get(key);
+  const variant = options.includeLow ? 'low' : 'std';
+  let byVariant = cache.get(record);
+  if (!byVariant) {
+    byVariant = new Map();
+    cache.set(record, byVariant);
+  }
+
+  const hit = byVariant.get(variant);
   if (hit) return hit;
 
   const graph = computeLineage(record, options);
-  if (cache.size >= MAX_CACHED_GRAPHS) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  cache.set(key, graph);
+  byVariant.set(variant, graph);
   return graph;
 }
 

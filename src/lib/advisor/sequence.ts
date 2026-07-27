@@ -11,13 +11,20 @@
 // LLM. When a producer genuinely cannot be found the parameter is reported as
 // unresolved rather than papered over with a plausible guess (LLM09).
 
+import { fieldMapFor } from '../fieldMap';
 import type { Action, ImportRecord } from '../ir';
+import { lineageFor, producersFor } from '../lineage';
 // Live in lib/resource.ts so lineage.ts can share them without this module and
 // that one importing each other.
 import { collectionPathFor, isIdLike, resourceOf } from '../resource';
 import { asData, paramsOf, type AdvisorContext } from './types';
 
 const MAX_PRODUCERS_PER_PARAM = 4;
+// A Stripe-shaped create can declare dozens of required body fields. Emitting a
+// step per field would bury the plan, so the rest are pointed at
+// describe_fields rather than silently dropped.
+const MAX_BODY_STEPS = 8;
+const MAX_BODY_FIELDS_LISTED = 25;
 
 // Re-exported to keep this module's public surface (and its tests) unchanged.
 export { collectionPathFor, resourceOf };
@@ -186,14 +193,68 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
     });
   }
 
-  const missingRequired = params.filter((p) => p.required && p.in !== 'path');
+  // Required BODY fields. Until now the body was a single opaque parameter, so
+  // an operation whose real prerequisite was `body.customerId` reported only
+  // "you also need: body" — which is exactly the point at which an agent
+  // invents an identifier. fieldMap flattens it; lineage says where each value
+  // comes from.
+  const map = fieldMapFor(target);
+  const graph = lineageFor(ctx.record);
+  const requiredBodyFields = map.request.filter(
+    (f) => f.location === 'body' && f.required && !f.container && !f.readOnly,
+  );
+
+  let bodyStepsEmitted = 0;
+  const untracedBodyFields: string[] = [];
+
+  for (const field of requiredBodyFields) {
+    const edges = producersFor(graph, target.name, field.path);
+    if (!edges.length) {
+      // Only identifier-shaped fields are worth flagging: a required `email` or
+      // `amount` is obviously caller-supplied and saying so is noise.
+      if (isIdLike(field.name)) untracedBodyFields.push(field.path);
+      continue;
+    }
+    if (bodyStepsEmitted >= MAX_BODY_STEPS) continue;
+    bodyStepsEmitted++;
+
+    steps.push({
+      order: ++order,
+      purpose: `Obtain ${field.path}`,
+      parameter: field.path,
+      in: 'body',
+      from: edges.slice(0, MAX_PRODUCERS_PER_PARAM).map((e) => ({
+        tool: e.from.tool,
+        field: e.from.field,
+        confidence: e.confidence,
+        provides: `read "${e.from.field}" from its response`,
+      })),
+    });
+  }
+
+  const skippedBodySteps = Math.max(0, requiredBodyFields.filter((f) => producersFor(graph, target.name, f.path).length).length - bodyStepsEmitted);
+
+  // Required inputs that are not path params. Body fields are listed
+  // individually rather than as one `body` blob.
+  const nonBodyRequired = params.filter((p) => p.required && p.in !== 'path' && p.in !== 'body');
+  const alsoRequires = [
+    ...nonBodyRequired.map((p) => ({ name: p.name, in: p.in, type: p.type })),
+    ...requiredBodyFields.slice(0, MAX_BODY_FIELDS_LISTED).map((f) => ({
+      name: f.path,
+      in: 'body' as const,
+      type: f.type,
+      ...(f.enum ? { allowed: f.enum } : {}),
+    })),
+  ];
+
   steps.push({
     order: ++order,
     purpose: 'Call the target operation',
     tool: target.name,
     call: `${target.method} ${target.path}`,
-    ...(missingRequired.length
-      ? { alsoRequires: missingRequired.map((p) => ({ name: p.name, in: p.in, type: p.type })) }
+    ...(alsoRequires.length ? { alsoRequires } : {}),
+    ...(requiredBodyFields.length > MAX_BODY_FIELDS_LISTED
+      ? { moreRequiredBodyFields: requiredBodyFields.length - MAX_BODY_FIELDS_LISTED }
       : {}),
   });
 
@@ -207,6 +268,16 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
   if (unresolved.length) {
     notes.push(
       `${unresolved.length} identifier(s) could not be traced to a producing operation: ${unresolved.join(', ')}. Treat them as caller-supplied inputs.`,
+    );
+  }
+  if (untracedBodyFields.length) {
+    notes.push(
+      `These required body identifiers have no producer on this API: ${untracedBodyFields.join(', ')}. They must come from you — do not invent them.`,
+    );
+  }
+  if (skippedBodySteps > 0) {
+    notes.push(
+      `${skippedBodySteps} further required body field(s) also have producers; call spotcheck_describe_fields on this tool to see them all.`,
     );
   }
 
