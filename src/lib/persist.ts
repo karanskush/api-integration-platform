@@ -26,6 +26,7 @@ import type { BatchItem } from 'drizzle-orm/batch';
 import type { Db, NeonDb } from './db';
 import { actions, apis, evidenceFacts, scorePreviews, specVersions } from './db/schema';
 import type { ImportRecord } from './ir';
+import { buildLineageEvidenceStatements } from './lineageEvidence';
 import { scorePreview as computeScorePreview } from './scorePreview';
 import { allocateApiSlug } from './slug';
 import { blobReady, putSpecSnapshot } from './specStore';
@@ -132,6 +133,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
       subscores: preview.checks,
       explanation: preview.checks.map((c, i) => ({ factId: factIds[i], message: c.message })),
     }),
+    ...buildLineageEvidenceStatements(db, { apiId, specVersionId, record }),
     // Only ever flips to a version whose rows were just written in this same
     // atomic batch — a mid-batch failure rolls the whole thing back on
     // Neon's side, so this never points at a half-written version.
@@ -302,6 +304,10 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
       .insert(scorePreviews)
       .values({ apiId, ...previewValues })
       .onConflictDoUpdate({ target: scorePreviews.apiId, set: { ...previewValues, computedAt: new Date() } }),
+    // Also append-only, like the evidence above: field relationships can
+    // change between spec versions (a field renamed, a new producer added), so
+    // each version gets its own recomputed set rather than patching the last.
+    ...buildLineageEvidenceStatements(db, { apiId, specVersionId, record }),
     db
       .update(apis)
       .set({ ...apiUpdate, currentSpecVersionId: specVersionId })

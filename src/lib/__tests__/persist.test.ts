@@ -180,4 +180,51 @@ describe('buildPersistStatements', () => {
     const [api] = await db.select().from(schema.apis).where(eq(schema.apis.id, result.apiId));
     expect(api.claimStatus).toBe('unclaimed');
   });
+
+  // End-to-end confirmation that buildLineageEvidenceStatements is actually
+  // wired into the real persist batch, not just independently correct —
+  // lineageEvidence.test.ts covers the unit itself.
+  it('materializes a field-lineage edge alongside the parser evidence', async () => {
+    const org = await makeOrg('i');
+    const actionsList = [
+      action({
+        id: 'lp1',
+        name: 'list_customers',
+        method: 'GET',
+        path: '/customers',
+        responseSchema: {
+          type: 'array',
+          items: { type: 'object', properties: { customerId: { type: 'string', format: 'uuid' } } },
+        },
+      }),
+      action({
+        id: 'lp2',
+        name: 'create_order',
+        method: 'POST',
+        path: '/orders',
+        safety: 'write',
+        paramsSchema: {
+          type: 'object',
+          required: ['body'],
+          properties: {
+            body: {
+              type: 'object',
+              required: ['customerId'],
+              properties: { customerId: { type: 'string', format: 'uuid' } },
+              'x-spotcheck-in': 'body',
+            },
+          },
+        },
+      }),
+    ];
+    const result = await buildPersistStatements(db, { orgId: org.id, record: record({ actions: actionsList }), rawText: 'lineage-fixture' });
+    await runSequentially(result.statements);
+
+    const rows = await db
+      .select()
+      .from(schema.evidenceFacts)
+      .where(and(eq(schema.evidenceFacts.apiId, result.apiId), eq(schema.evidenceFacts.kind, 'graph.field_lineage')));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].specVersionId).toBe(result.specVersionId);
+  });
 });

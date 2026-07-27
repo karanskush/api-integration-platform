@@ -253,4 +253,53 @@ describe('buildReimportStatements', () => {
     expect(version.actionCount).toBe(3);
     expect(version.parseStatus).toBe('parsed');
   });
+
+  // End-to-end confirmation on the reimport path specifically: evidence is
+  // append-only, so each version needs its OWN recomputed lineage rather than
+  // reusing the previous version's.
+  it('materializes field-lineage evidence scoped to the new spec version', async () => {
+    const { apiId } = await seedApi('{"v":1}');
+    const linked = record({
+      actions: [
+        action({
+          id: 'rl1',
+          name: 'list_customers',
+          method: 'GET',
+          path: '/customers',
+          responseSchema: {
+            type: 'array',
+            items: { type: 'object', properties: { customerId: { type: 'string', format: 'uuid' } } },
+          },
+        }),
+        action({
+          id: 'rl2',
+          name: 'create_order',
+          method: 'POST',
+          path: '/orders',
+          safety: 'write',
+          paramsSchema: {
+            type: 'object',
+            required: ['body'],
+            properties: {
+              body: {
+                type: 'object',
+                required: ['customerId'],
+                properties: { customerId: { type: 'string', format: 'uuid' } },
+                'x-spotcheck-in': 'body',
+              },
+            },
+          },
+        }),
+      ],
+    });
+    const result = await buildReimportStatements(db, { apiId, record: linked, rawText: '{"v":2}' });
+    await runSequentially(result.statements as Statements);
+
+    const rows = await db
+      .select()
+      .from(schema.evidenceFacts)
+      .where(and(eq(schema.evidenceFacts.apiId, apiId), eq(schema.evidenceFacts.kind, 'graph.field_lineage')));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.specVersionId === result.specVersionId)).toBe(true);
+  });
 });

@@ -16,7 +16,13 @@ export type EvidenceKind =
   | 'probe.auth_reject'
   | 'probe.error_quality'
   | 'probe.doc_drift'
-  | 'probe.idempotency_signal';
+  | 'probe.idempotency_signal'
+  // Static, spec-derived — computed by lib/lineage.ts, same "no live traffic
+  // needed" character as parser.*. Namespaced separately because it isn't a
+  // scorePreview check: it's the field-to-field data-flow graph schema.ts's
+  // own header comment names as a future kind ("dag_edge ... in Phase 2 — no
+  // migration needed for new kinds").
+  | 'graph.field_lineage';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -49,6 +55,21 @@ const idempotencySignalPayload = z.object({
   matchedParam: z.string().optional(),
 });
 
+// Both endpoints of a lineage edge, keyed by tool NAME + field PATH — never
+// the actions table uuid. A lineage edge spans two actions (producer and
+// consumer), so it has no single row to attach evidence_facts.action_id to
+// anyway; the endpoints live entirely in this payload, matched back to a
+// spec_version's actions by (tool, field) at read time.
+const fieldLineagePayload = z.object({
+  fromTool: z.string(),
+  fromField: z.string(),
+  toTool: z.string(),
+  toField: z.string(),
+  confidence: z.enum(['high', 'medium', 'low']),
+  score: z.number(),
+  why: z.array(z.string()),
+});
+
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
 const evidenceSchemas = {
@@ -60,6 +81,7 @@ const evidenceSchemas = {
   'probe.error_quality': errorQualityPayload,
   'probe.doc_drift': docDriftPayload,
   'probe.idempotency_signal': idempotencySignalPayload,
+  'graph.field_lineage': fieldLineagePayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {
