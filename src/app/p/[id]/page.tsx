@@ -1,12 +1,14 @@
 import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import ActionCard from '@/components/ActionCard';
+import AskAssistant from '@/components/AskAssistant';
 import AuthGuide from '@/components/AuthGuide';
 import ClaimBanner from '@/components/ClaimBanner';
 import McpBlock from '@/components/McpBlock';
 import Playground from '@/components/Playground';
 import ScorePreviewPanel from '@/components/ScorePreviewPanel';
 import TtlNotice from '@/components/TtlNotice';
+import { aiReady } from '@/lib/ask';
 import { dbReady } from '@/lib/db';
 import { isValidId } from '@/lib/ids';
 import { kv } from '@/lib/kv';
@@ -93,6 +95,13 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
 
       <AuthGuide record={record} />
       <ScorePreviewPanel record={record} />
+      {aiReady() && (
+        <AskAssistant
+          slug={record.id}
+          endpoint={`/api/p/${record.id}/ask`}
+          subtitle={`Ask in plain language, free — no sign-in needed. Grounded in this API's own spec, capped to a few questions per paste.`}
+        />
+      )}
       <McpBlock record={record} mcpUrl={mcpUrl} />
 
       {record.baseUrls.length > 0 && (

@@ -5,11 +5,23 @@ import { useState } from 'react';
 type AskResult = { answer: string; toolCalls: Array<{ tool: string; input: unknown }>; steps: number };
 
 // Same busy/error/fetch shape as RunVerificationButton.tsx. Unlike that
-// component this isn't owner-gated — /api/apis/[slug]/ask authorizes any
-// signed-in user who can view the page (private still requires membership),
-// so [slug]/page.tsx renders this for every signed-in visitor, not just the
-// claiming org.
-export default function AskAssistant({ slug }: { slug: string }) {
+// component this isn't owner-gated:
+//  - on a claimed page (default endpoint), /api/apis/[slug]/ask authorizes
+//    any signed-in user who can view the page (private still requires
+//    membership), so [slug]/page.tsx renders this for every signed-in
+//    visitor, not just the claiming org.
+//  - on the anonymous instant-preview page, `endpoint` is passed as
+//    /api/p/[id]/ask instead — no sign-in, no plan, bounded by a hard
+//    per-paste + per-IP quota server-side rather than an auth gate.
+export default function AskAssistant({
+  slug,
+  endpoint,
+  subtitle,
+}: {
+  slug: string;
+  endpoint?: string;
+  subtitle?: string;
+}) {
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +33,7 @@ export default function AskAssistant({ slug }: { slug: string }) {
     setError(null);
     setResult(null);
     try {
-      const res = await fetch(`/api/apis/${slug}/ask`, {
+      const res = await fetch(endpoint ?? `/api/apis/${slug}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
@@ -40,8 +52,8 @@ export default function AskAssistant({ slug }: { slug: string }) {
     <div className="panel" style={{ padding: 20, display: 'grid', gap: 12 }}>
       <h2 style={{ fontSize: 15 }}>Ask this API</h2>
       <p style={{ color: 'var(--fg-mute)', fontSize: 12.5 }}>
-        Ask in plain language — "where does the customer id come from?", "what can I send to create an order?". Answers
-        are grounded in this API&apos;s own spec, not general knowledge.
+        {subtitle ??
+          'Ask in plain language — "where does the customer id come from?", "what can I send to create an order?". Answers are grounded in this API\'s own spec, not general knowledge.'}
       </p>
       <textarea
         aria-label="Question about this API"
