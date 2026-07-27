@@ -196,6 +196,49 @@ describe('loadPersistentRecord', () => {
   });
 });
 
+describe('loadRecordForVersion', () => {
+  it('returns null when persistence is not configured', async () => {
+    delete process.env.DATABASE_URL;
+    const { loadRecordForVersion } = await loadModule();
+    expect(await loadRecordForVersion('any', 'any')).toBeNull();
+  });
+
+  it('returns null for an unknown apiId', async () => {
+    const { loadRecordForVersion } = await loadModule();
+    expect(await loadRecordForVersion('00000000-0000-0000-0000-000000000000', 'any')).toBeNull();
+  });
+
+  // The reason this function exists rather than reusing loadPersistentRecord:
+  // a background job is launched against a specific spec version and must
+  // keep reading THAT version even if a re-import makes a newer one current
+  // while the job is still in flight.
+  it('loads a specific version even when a newer one has since become current', async () => {
+    const { loadRecordForVersion } = await loadModule();
+    const { apiId, specVersionId } = await seedApi();
+    await addAction(specVersionId, apiId, { actionKey: 'k1', name: 'action_one' });
+
+    const [newerVersion] = await db
+      .insert(schema.specVersions)
+      .values({ apiId, source: 'openapi', contentHash: 'newer-hash', parseStatus: 'parsed' })
+      .returning();
+    await db.update(schema.apis).set({ currentSpecVersionId: newerVersion.id }).where(eq(schema.apis.id, apiId));
+    await addAction(newerVersion.id, apiId, { actionKey: 'k2', name: 'action_two' });
+
+    const record = await loadRecordForVersion(apiId, specVersionId);
+    expect(record?.actions.map((a) => a.name)).toEqual(['action_one']);
+  });
+
+  it('restores the same field shapes loadPersistentRecord does', async () => {
+    const { loadRecordForVersion } = await loadModule();
+    const { apiId, specVersionId, slug } = await seedApi();
+    await addAction(specVersionId, apiId, { scopes: ['read:things'] });
+
+    const record = await loadRecordForVersion(apiId, specVersionId);
+    expect(record).toMatchObject({ id: slug, source: 'openapi', auth: 'oauth2', expiresAt: Number.MAX_SAFE_INTEGER });
+    expect(record?.actions[0].scopes).toEqual(['read:things']);
+  });
+});
+
 describe('loadApiVerificationState', () => {
   it('returns null when persistence is not configured', async () => {
     delete process.env.DATABASE_URL;

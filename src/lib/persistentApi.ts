@@ -36,28 +36,18 @@ function toAction(row: typeof actionsTable.$inferSelect): Action {
   };
 }
 
-// Loads a persistent API by slug and reshapes it into the same ImportRecord
-// shape Phase 0's ephemeral records use, so every existing renderer
-// (ActionCard, AuthGuide, McpBlock, Playground, ScorePreviewPanel), the
-// playground proxy, and the MCP handler work unchanged against either
-// storage. `expiresAt` is set to Number.MAX_SAFE_INTEGER — persistent
-// records never expire.
-export async function loadPersistentRecord(slug: string): Promise<ImportRecord | null> {
-  if (!dbReady()) return null;
-  const db = getDb();
+type ApiRow = typeof apis.$inferSelect;
 
-  const [api] = await db.select().from(apis).where(eq(apis.slug, slug)).limit(1);
-  if (!api || !api.currentSpecVersionId) return null;
-
-  const [specVersion] = await db
-    .select()
-    .from(specVersions)
-    .where(eq(specVersions.id, api.currentSpecVersionId))
-    .limit(1);
+async function assembleRecord(
+  db: ReturnType<typeof getDb>,
+  api: ApiRow,
+  specVersionId: string,
+): Promise<ImportRecord | null> {
+  const [specVersion] = await db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1);
   const rows = await db
     .select()
     .from(actionsTable)
-    .where(and(eq(actionsTable.apiId, api.id), eq(actionsTable.specVersionId, api.currentSpecVersionId)));
+    .where(and(eq(actionsTable.apiId, api.id), eq(actionsTable.specVersionId, specVersionId)));
 
   const actionsList = rows.map(toAction);
   const counts = { total: actionsList.length, read: 0, write: 0, destructive: 0 };
@@ -76,6 +66,37 @@ export async function loadPersistentRecord(slug: string): Promise<ImportRecord |
     createdAt: api.createdAt.getTime(),
     expiresAt: Number.MAX_SAFE_INTEGER,
   };
+}
+
+// Loads a persistent API by slug and reshapes it into the same ImportRecord
+// shape Phase 0's ephemeral records use, so every existing renderer
+// (ActionCard, AuthGuide, McpBlock, Playground, ScorePreviewPanel), the
+// playground proxy, and the MCP handler work unchanged against either
+// storage. `expiresAt` is set to Number.MAX_SAFE_INTEGER — persistent
+// records never expire.
+export async function loadPersistentRecord(slug: string): Promise<ImportRecord | null> {
+  if (!dbReady()) return null;
+  const db = getDb();
+
+  const [api] = await db.select().from(apis).where(eq(apis.slug, slug)).limit(1);
+  if (!api || !api.currentSpecVersionId) return null;
+
+  return assembleRecord(db, api, api.currentSpecVersionId);
+}
+
+// Same shape as loadPersistentRecord, but by (apiId, specVersionId) rather
+// than slug — for background jobs (the deep-analysis chain) that only ever
+// have ids, and that may need a specific version rather than "whichever is
+// current" (a re-import could complete while an older version's analysis is
+// still in flight).
+export async function loadRecordForVersion(apiId: string, specVersionId: string): Promise<ImportRecord | null> {
+  if (!dbReady()) return null;
+  const db = getDb();
+
+  const [api] = await db.select().from(apis).where(eq(apis.id, apiId)).limit(1);
+  if (!api) return null;
+
+  return assembleRecord(db, api, specVersionId);
 }
 
 // Claim status + live-verified score, kept separate from ImportRecord (which
