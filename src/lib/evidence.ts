@@ -22,7 +22,17 @@ export type EvidenceKind =
   // scorePreview check: it's the field-to-field data-flow graph schema.ts's
   // own header comment names as a future kind ("dag_edge ... in Phase 2 — no
   // migration needed for new kinds").
-  | 'graph.field_lineage';
+  | 'graph.field_lineage'
+  // Deep-analysis pipeline (analyze-crawl / analyze-enrich jobs): text
+  // extracted from the provider's own public docs, and the LLM's semantic
+  // read over spec + docs together. Both are a step below spec-derived facts
+  // in trust — they're inference, not declaration — hence the separate
+  // 'llm' source value rather than reusing 'parser'.
+  | 'llm.doc_grounding'
+  | 'llm.field_semantics'
+  // A clarification the human answered — the highest trust tier, above both
+  // 'parser' and 'llm' sourced facts, since a person confirmed it directly.
+  | 'human.clarification';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -70,6 +80,34 @@ const fieldLineagePayload = z.object({
   why: z.array(z.string()),
 });
 
+// One crawled page's extracted text, capped and quoted — never rendered or
+// prompted as anything but data (see docsCrawler.ts).
+const docGroundingPayload = z.object({
+  url: z.string(),
+  title: z.string().optional(),
+  excerpt: z.string(),
+});
+
+// One field's LLM-inferred meaning beyond what structural heuristics alone
+// can say. `confidenceOverride` is advisory only — see deepEnrich.ts: a
+// conflict with a high-confidence heuristic edge becomes a clarification
+// instead of either side silently winning.
+const fieldSemanticsPayload = z.object({
+  tool: z.string(),
+  field: z.string(),
+  semanticMeaning: z.string(),
+  businessConstraint: z.string().optional(),
+  confidenceOverride: z.enum(['high', 'medium', 'low']).optional(),
+  sourcedFrom: z.enum(['spec', 'docs']),
+});
+
+// A clarification question's human-provided answer, materialized as a fact.
+const humanClarificationPayload = z.object({
+  clarificationId: z.string(),
+  question: z.string(),
+  answer: z.unknown(),
+});
+
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
 const evidenceSchemas = {
@@ -82,6 +120,9 @@ const evidenceSchemas = {
   'probe.doc_drift': docDriftPayload,
   'probe.idempotency_signal': idempotencySignalPayload,
   'graph.field_lineage': fieldLineagePayload,
+  'llm.doc_grounding': docGroundingPayload,
+  'llm.field_semantics': fieldSemanticsPayload,
+  'human.clarification': humanClarificationPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

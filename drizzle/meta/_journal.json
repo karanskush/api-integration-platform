@@ -43,6 +43,13 @@
       "when": 1785134277368,
       "tag": "0005_action_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785157010558,
+      "tag": "0006_rapid_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

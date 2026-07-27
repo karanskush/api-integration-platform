@@ -37,6 +37,11 @@ export type PersistInput = {
   record: ImportRecord;
   rawText: string;
   claimStatus?: 'unclaimed' | 'claimed';
+  // Omitted (column default 'complete') for every existing caller — only the
+  // authenticated /api/apis/analyze route passes 'queued' to enter the deep
+  // pipeline. See schema.ts's analysisStatus comment for why the default
+  // isn't 'queued'.
+  analysisStatus?: 'queued' | 'complete';
 };
 
 export type PersistResult = { apiId: string; slug: string; specVersionId: string };
@@ -52,7 +57,7 @@ export type PersistStatements = PersistResult & { statements: BatchItem<'pg'>[] 
 // spec_versions (api_id, content_hash) unique constraint can never actually
 // conflict today — onConflictDoNothing is defensive, ahead of that feature.
 export async function buildPersistStatements(db: Db, input: PersistInput): Promise<PersistStatements> {
-  const { orgId, createdBy, record, rawText, claimStatus } = input;
+  const { orgId, createdBy, record, rawText, claimStatus, analysisStatus } = input;
   const contentHash = createHash('sha256').update(rawText).digest('hex');
 
   const slug = await allocateApiSlug(record.name, async (candidate) => {
@@ -76,6 +81,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
       dominantAuth: record.auth,
       authIn: record.authIn ?? null,
       ...(claimStatus !== undefined ? { claimStatus } : {}),
+      ...(analysisStatus !== undefined ? { analysisStatus } : {}),
     }),
     db
       .insert(specVersions)

@@ -71,6 +71,11 @@ export const apis = pgTable('apis', {
   name: text('name').notNull(),
   visibility: text('visibility').notNull().default('public'), // public|private (private = Team+)
   claimStatus: text('claim_status').notNull().default('claimed'), // unclaimed|pending|claimed
+  // queued|crawling|enriching|needs_input|complete|failed. Default 'complete'
+  // (not 'queued') deliberately: every EXISTING write path (claim, ci sync,
+  // reimport) skips the deep pipeline entirely and should read as already
+  // done. Only the new authenticated /api/apis/analyze route sets 'queued'.
+  analysisStatus: text('analysis_status').notNull().default('complete'),
   createdBy: uuid('created_by').references(() => users.id),
   currentSpecVersionId: uuid('current_spec_version_id'),
   baseUrls: jsonb('base_urls').notNull().default([]),
@@ -97,6 +102,11 @@ export const specVersions = pgTable('spec_versions', {
   parseStatus: text('parse_status').notNull(), // pending|parsed|failed
   parseError: text('parse_error'),
   actionCount: integer('action_count').notNull().default(0),
+  // Populated by the deep-analysis pipeline's finalize stage (and regenerated
+  // whenever a clarification answer changes the picture) — Blob pointers to
+  // the portable Arazzo workflow file and the x-spotcheck-* enriched OpenAPI.
+  arazzoBlobRef: text('arazzo_blob_ref'),
+  enrichedSpecBlobRef: text('enriched_spec_blob_ref'),
   createdAt: createdAt(),
 }, (t) => [
   uniqueIndex('spec_versions_api_id_content_hash_idx').on(t.apiId, t.contentHash),
@@ -257,6 +267,43 @@ export const mcpCalls = pgTable('mcp_calls', {
   callerHash: text('caller_hash'),
   createdAt: createdAt(),
 }, (t) => [index('mcp_calls_org_id_created_at_idx').on(t.orgId, t.createdAt)]);
+
+// One row per stage per deep-analysis run (parse|crawl|enrich|finalize) —
+// same status vocabulary and observability purpose as score_runs above. This
+// is also the idempotency backbone for the QStash job chain: each job route
+// checks its own stage's row before doing work, so an at-least-once retry
+// after a partial success is a no-op rather than a double write.
+export const analysisRuns = pgTable('analysis_runs', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(), // parse|crawl|enrich|finalize
+  status: text('status').notNull(), // queued|running|succeeded|failed
+  detail: jsonb('detail'), // stage-specific: pages crawled, chunks processed, caps hit, etc. — never silently dropped
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [index('analysis_runs_api_id_started_at_idx').on(t.apiId, t.startedAt)]);
+
+// Open questions the deep-analysis pipeline could not confidently resolve on
+// its own — the human-in-the-loop step. An answered row becomes the highest
+// trust tier of evidence_facts (source: 'human', confidence: 1), above both
+// heuristic (source: 'parser') and LLM-inferred (source: 'llm') facts.
+export const clarifications = pgTable('clarifications', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  actionId: uuid('action_id').references(() => actions.id, { onDelete: 'cascade' }), // nullable: some questions are API-level
+  fieldPath: text('field_path'), // e.g. 'body.customer.type' — null for API-level questions
+  kind: text('kind').notNull(), // ambiguous_origin|ambiguous_enum|unclear_scope|conflicting_signal
+  question: text('question').notNull(),
+  options: jsonb('options'), // string[] when multiple-choice; null for free text
+  status: text('status').notNull().default('pending'), // pending|answered|skipped
+  answer: jsonb('answer'),
+  answeredBy: uuid('answered_by').references(() => users.id),
+  answeredAt: timestamp('answered_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('clarifications_api_id_status_idx').on(t.apiId, t.status)]);
 
 // Zero rows in Phase 1 (everything here is pre-claimed at creation) — exists
 // for schema stability ahead of Phase 2's real claim flow.
