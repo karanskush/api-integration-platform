@@ -138,6 +138,70 @@ describe('getEndpointSchema', () => {
     expect(res.note).toContain('no response schema');
   });
 
+  it('summarises the sendable fields inline, flattened from the body', () => {
+    const res = getEndpointSchema(context, { tool: 'create_pet' });
+    expect(res.fields.sendable.map((f: Payload) => f.path)).toContain('body.name');
+    expect(res.fields.totalSendable).toBeGreaterThan(0);
+  });
+
+  it('separates server-assigned fields from sendable ones', () => {
+    const withReadOnly = ctx([
+      action({
+        name: 'make_thing',
+        method: 'POST',
+        path: '/things',
+        safety: 'write',
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            body: param('body', 'object', {
+              properties: { name: { type: 'string' }, id: { type: 'string', readOnly: true } },
+            }),
+          },
+        },
+      }),
+    ]);
+    const res = getEndpointSchema(withReadOnly, { tool: 'make_thing' });
+    expect(res.fields.sendable.map((f: Payload) => f.path)).not.toContain('body.id');
+    expect(res.fields.serverAssigned).toContain('body.id');
+  });
+
+  it('reports the pagination model for a list operation', () => {
+    const paged = ctx([
+      action({
+        name: 'list_things',
+        method: 'GET',
+        path: '/things',
+        paramsSchema: { type: 'object', properties: { cursor: param('query'), limit: param('query', 'integer') } },
+      }),
+    ]);
+    expect(getEndpointSchema(paged, { tool: 'list_things' }).pagination.model).toBe('cursor');
+  });
+
+  it('omits pagination for an operation that does not paginate', () => {
+    expect(getEndpointSchema(context, { tool: 'get_pet' }).pagination).toBeUndefined();
+  });
+
+  // These were echoed verbatim with no size limit, so one deeply nested body
+  // could swamp the caller's context by itself.
+  it('caps a very large raw schema instead of echoing it whole', () => {
+    const properties: Record<string, unknown> = {};
+    for (let i = 0; i < 400; i++) {
+      properties[`field${i}`] = { type: 'string', description: 'x'.repeat(60) };
+    }
+    const huge = ctx([
+      action({ name: 'huge', method: 'GET', path: '/huge', responseSchema: { type: 'object', properties } }),
+    ]);
+    const res = getEndpointSchema(huge, { tool: 'huge' });
+    expect(res.responseSchema.omitted).toBe(true);
+    expect(res.responseSchema.use).toContain('describe_fields');
+    expect(res.responseSchema.topLevelKeys.length).toBeGreaterThan(0);
+  });
+
+  it('still returns an ordinary schema inline', () => {
+    expect(getEndpointSchema(context, { tool: 'get_pet' }).responseSchema.omitted).toBeUndefined();
+  });
+
   it('errors with suggestions for an unknown tool', () => {
     const res = getEndpointSchema(context, { tool: 'get_pe' });
     expect(res.error).toContain('No operation named');

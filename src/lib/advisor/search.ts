@@ -5,11 +5,35 @@
 // operation it needs. Search returns one compact line per hit; the schema tool
 // then returns full detail for exactly one action.
 
+import { fieldMapFor } from '../fieldMap';
 import type { Action, ImportRecord } from '../ir';
+import { paginationFor } from '../pagination';
 import { actionSummary, asData, paramsOf, type AdvisorContext } from './types';
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const FIELD_SUMMARY_LIMIT = 40;
+// Roughly the point past which a raw schema stops being readable and starts
+// being a context tax. Callers wanting more use describe_fields, which paginates
+// and filters.
+const MAX_RAW_SCHEMA_CHARS = 6000;
+
+// Raw schemas were previously returned verbatim and unbounded. A single Stripe
+// body can run to tens of kilobytes, which is a real cost when the caller is an
+// LLM paying for every token of it.
+function capSchema(schema: unknown, label: string): unknown {
+  if (schema === null || schema === undefined) return null;
+  const serialized = JSON.stringify(schema);
+  if (serialized.length <= MAX_RAW_SCHEMA_CHARS) return schema;
+
+  const properties = (schema as { properties?: Record<string, unknown> }).properties;
+  return {
+    omitted: true,
+    reason: `This ${label} schema is ${serialized.length} characters — too large to return inline.`,
+    topLevelKeys: properties ? Object.keys(properties).slice(0, 60) : undefined,
+    use: 'spotcheck_describe_fields with a filter argument to inspect it field by field.',
+  };
+}
 
 function tokenize(text: string): string[] {
   return text
@@ -127,6 +151,10 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
 
   const params = paramsOf(action);
   const drift = ctx.insights.driftObservations.find((o) => o.actionId === action.id);
+  const map = fieldMapFor(action);
+  const sendable = map.request.filter((f) => !f.readOnly && !f.container);
+  const serverAssigned = map.request.filter((f) => f.readOnly).map((f) => f.path);
+  const pagination = paginationFor(action, map);
 
   return {
     tool: action.name,
@@ -142,11 +170,34 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
       satisfiableWithApiKey: action.auth !== 'oauth2',
     },
     parameters: params,
-    requestBodySchema: params.some((p) => p.in === 'body')
-      ? ((action.paramsSchema.properties as Record<string, unknown> | undefined)?.body ?? null)
-      : null,
-    responseSchema: action.responseSchema ?? null,
-    errorSchema: action.errorSchema ?? null,
+    // Flattened, addressable view of everything sendable — the part an agent
+    // can act on without parsing a nested schema itself. Bounded; the full
+    // picture lives behind describe_fields.
+    fields: {
+      sendable: sendable.slice(0, FIELD_SUMMARY_LIMIT).map((f) => ({
+        path: f.path,
+        type: f.nullable ? `${f.type}|null` : f.type,
+        required: f.required,
+        ...(f.format ? { format: f.format } : {}),
+        ...(f.enum ? { allowed: f.enum } : {}),
+      })),
+      totalSendable: sendable.length,
+      ...(serverAssigned.length ? { serverAssigned: serverAssigned.slice(0, 20) } : {}),
+      ...(sendable.length > FIELD_SUMMARY_LIMIT || map.truncated
+        ? { note: `Showing ${Math.min(sendable.length, FIELD_SUMMARY_LIMIT)} of ${sendable.length}. Call spotcheck_describe_fields for the rest, with a filter.` }
+        : {}),
+    },
+    ...(pagination.model !== 'none' ? { pagination } : {}),
+    // Raw schemas, capped. These were echoed verbatim with no size limit, so a
+    // deeply nested body could swamp the caller's context on its own (LLM10).
+    requestBodySchema: capSchema(
+      params.some((p) => p.in === 'body')
+        ? ((action.paramsSchema.properties as Record<string, unknown> | undefined)?.body ?? null)
+        : null,
+      'request body',
+    ),
+    responseSchema: capSchema(action.responseSchema ?? null, 'response'),
+    errorSchema: capSchema(action.errorSchema ?? null, 'error'),
     examples: action.examples.slice(0, 3),
     retry: describeIdempotency(action, ctx),
     ...(drift
