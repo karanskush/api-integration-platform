@@ -48,6 +48,12 @@ export type ImportRecord = {
   authIn?: AuthPlacement;
   actions: Action[];
   truncated?: boolean; // true when the spec exceeded MAX_ACTIONS
+  // The spec's own declared externalDocs.url, if any — a seed for the
+  // deep-analysis pipeline's docs crawler (docsCrawler.ts). NOT yet
+  // SSRF-validated — validated at the point it's actually fetched, since it's
+  // only ever consumed by the crawler and never used to construct a request
+  // the way baseUrls is.
+  externalDocsUrl?: string;
   counts: { total: number; read: number; write: number; destructive: number };
   createdAt: number;
   expiresAt: number;

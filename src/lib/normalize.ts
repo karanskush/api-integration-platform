@@ -13,6 +13,10 @@ export type NormalizedSpec = {
   authIn?: AuthPlacement;
   actions: Action[];
   truncated: boolean;
+  // The spec's own top-level externalDocs.url, if declared — a seed for the
+  // deep-analysis pipeline's docs crawler (docsCrawler.ts). Not yet
+  // SSRF-validated, same caveat as rawBaseUrls.
+  externalDocsUrl?: string;
 };
 
 type OASOperation = Record<string, unknown>;
@@ -73,7 +77,13 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
   }
 
   const { auth, authIn } = dominantAuth(actions);
-  return { name: String(name), rawBaseUrls, auth, authIn, actions, truncated };
+  return { name: String(name), rawBaseUrls, auth, authIn, actions, truncated, ...extractExternalDocs(doc) };
+}
+
+function extractExternalDocs(doc: Record<string, unknown>): { externalDocsUrl?: string } {
+  const externalDocs = doc.externalDocs as Record<string, unknown> | undefined;
+  const url = typeof externalDocs?.url === 'string' ? externalDocs.url.trim() : '';
+  return url ? { externalDocsUrl: url } : {};
 }
 
 function extractBaseUrls(doc: Record<string, unknown>, sourceUrl?: string): string[] {

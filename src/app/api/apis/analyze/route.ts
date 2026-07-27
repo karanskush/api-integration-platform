@@ -2,6 +2,7 @@ import { auth, currentUser } from '@clerk/nextjs/server';
 import { eq, sql } from 'drizzle-orm';
 import { dbReady, getDb } from '@/lib/db';
 import { analysisRuns, apis } from '@/lib/db/schema';
+import { discoverDocSeeds } from '@/lib/docsCrawler';
 import { ImportInputError, runImport } from '@/lib/importer';
 import { CurlParseError } from '@/lib/importer/curl';
 import { DetectError } from '@/lib/importer/detect';
@@ -129,10 +130,14 @@ export async function POST(req: Request) {
     completedAt: new Date(),
   });
 
+  // Resolved once, here, while `record` is still in memory — the job only
+  // ever receives the final seed list, never the record itself.
+  const docSeeds = discoverDocSeeds(record.externalDocsUrl, docUrls);
+
   await publishJob('/api/jobs/analyze-crawl', {
     apiId: result.apiId,
     specVersionId: result.specVersionId,
-    docUrls,
+    docSeeds,
   });
 
   return Response.json({
