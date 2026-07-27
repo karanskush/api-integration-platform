@@ -220,6 +220,16 @@ describe('getEndpointSchema', () => {
     });
   });
 
+  it('surfaces required scopes when the spec declares them', () => {
+    const scoped = ctx([action({ name: 'x', method: 'POST', path: '/x', auth: 'oauth2', scopes: ['write:orders'] })]);
+    expect(getEndpointSchema(scoped, { tool: 'x' }).auth.scopes).toEqual(['write:orders']);
+  });
+
+  it('omits scopes when the spec declares none', () => {
+    const oauth = ctx([action({ name: 'x', method: 'GET', path: '/x', auth: 'oauth2' })]);
+    expect(getEndpointSchema(oauth, { tool: 'x' }).auth.scopes).toBeUndefined();
+  });
+
   it('defaults an unannotated parameter to query rather than dropping it', () => {
     const odd = ctx([
       action({

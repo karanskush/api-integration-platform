@@ -32,6 +32,7 @@ function toAction(row: typeof actionsTable.$inferSelect): Action {
     examples: (row.examples as Action['examples']) ?? [],
     responseSchema: (row.responseSchemas as Action['responseSchema']) ?? undefined,
     errorSchema: (row.errorSchemas as Action['errorSchema']) ?? undefined,
+    scopes: (row.scopes as Action['scopes']) ?? undefined,
   };
 }
 

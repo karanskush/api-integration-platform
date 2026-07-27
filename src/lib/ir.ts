@@ -29,6 +29,11 @@ export type Action = {
   examples: Example[];
   responseSchema?: JSONSchema; // documented 2xx application/json schema, if any
   errorSchema?: JSONSchema; // documented 4xx application/json schema, if any
+  // OAuth2/OIDC scopes this operation's security requirement declares, e.g.
+  // ['write:orders']. Undefined (not empty) when auth isn't oauth2/openIdConnect
+  // or the spec's security requirement lists none — that distinguishes "no
+  // scope requirement documented" from "documented as requiring nothing".
+  scopes?: string[];
 };
 
 export type ImportSource = 'openapi' | 'swagger' | 'postman' | 'curl';

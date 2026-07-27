@@ -36,6 +36,13 @@
       "when": 1785073827870,
       "tag": "0004_credential_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785134277368,
+      "tag": "0005_action_scopes",
+      "breakpoints": true
     }
   ]
 }

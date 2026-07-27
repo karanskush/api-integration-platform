@@ -315,6 +315,17 @@ describe('getCallSequence', () => {
     expect(res.steps?.[0].detail).toContain('OAuth2');
   });
 
+  it('names the required scopes on the authenticate step', () => {
+    const scoped = ctx([action({ name: 'x', method: 'POST', path: '/x', auth: 'oauth2', scopes: ['write:orders'] })]);
+    const res = getCallSequence(scoped, { tool: 'x' });
+    expect(res.steps?.[0].requiredScopes).toEqual(['write:orders']);
+  });
+
+  it('omits requiredScopes when the operation declares none', () => {
+    const oauth = ctx([action({ name: 'x', method: 'GET', path: '/x', auth: 'oauth2' })]);
+    expect(getCallSequence(oauth, { tool: 'x' }).steps?.[0].requiredScopes).toBeUndefined();
+  });
+
   it('errors for an unknown tool and requires the argument', () => {
     expect(getCallSequence(context, { tool: 'nope' }).error).toContain('No operation named');
     expect(getCallSequence(context, {}).error).toContain('tool is required');

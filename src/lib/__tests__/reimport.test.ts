@@ -129,6 +129,32 @@ describe('buildReimportStatements', () => {
     expect(allRows.length).toBe(2);
   });
 
+  it('persists and restores OAuth scopes through a re-import round trip', async () => {
+    const { apiId } = await seedApi('{"v":1}');
+    const scoped = record({ actions: [action({ id: 'c1', name: 'scoped_action', auth: 'oauth2', scopes: ['write:orders'] })] });
+    const result = await buildReimportStatements(db, { apiId, record: scoped, rawText: '{"v":2}' });
+    await runSequentially(result.statements as Statements);
+
+    const [row] = await db
+      .select()
+      .from(schema.actions)
+      .where(and(eq(schema.actions.apiId, apiId), eq(schema.actions.specVersionId, result.specVersionId)));
+    expect(row.scopes).toEqual(['write:orders']);
+  });
+
+  it('stores no scopes for an action that declares none', async () => {
+    const { apiId } = await seedApi('{"v":1}');
+    const unscoped = record({ actions: [action({ id: 'd1', name: 'plain_action' })] });
+    const result = await buildReimportStatements(db, { apiId, record: unscoped, rawText: '{"v":2}' });
+    await runSequentially(result.statements as Statements);
+
+    const [row] = await db
+      .select()
+      .from(schema.actions)
+      .where(and(eq(schema.actions.apiId, apiId), eq(schema.actions.specVersionId, result.specVersionId)));
+    expect(row.scopes).toBeNull();
+  });
+
   it('replaces the score preview rather than accumulating rows', async () => {
     const { apiId } = await seedApi('{"v":1}');
     const result = await buildReimportStatements(db, { apiId, record: record(), rawText: '{"v":2}' });

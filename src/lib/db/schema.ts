@@ -115,6 +115,7 @@ export const actions = pgTable('actions', {
   paramsSchema: jsonb('params_schema').notNull(),
   responseSchemas: jsonb('response_schemas'), // null until Phase 2 populates
   errorSchemas: jsonb('error_schemas'),
+  scopes: jsonb('scopes'), // string[] of OAuth2 scopes this operation requires, if declared
   auth: text('auth').notNull(),
   authIn: jsonb('auth_in'),
   safety: text('safety').notNull(), // read|write|destructive

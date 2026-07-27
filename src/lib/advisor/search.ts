@@ -168,6 +168,7 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
       scheme: action.auth,
       ...(action.authIn ?? ctx.record.authIn ? { placement: action.authIn ?? ctx.record.authIn } : {}),
       satisfiableWithApiKey: action.auth !== 'oauth2',
+      ...(action.scopes ? { scopes: action.scopes } : {}),
     },
     parameters: params,
     // Flattened, addressable view of everything sendable — the part an agent

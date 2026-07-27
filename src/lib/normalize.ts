@@ -46,7 +46,7 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
         break outer;
       }
 
-      const { auth, authIn } = resolveAuth(op, rootSecurity, schemes);
+      const { auth, authIn, scopes } = resolveAuth(op, rootSecurity, schemes);
       const opParams = Array.isArray(op.parameters) ? op.parameters : [];
       const allParams = dedupeParams([...pathParams, ...opParams]);
 
@@ -67,6 +67,7 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
         examples,
         responseSchema,
         errorSchema,
+        ...(scopes ? { scopes } : {}),
       });
     }
   }
@@ -128,17 +129,36 @@ function mapScheme(scheme: SecurityScheme): { auth: AuthScheme; authIn?: AuthPla
   }
 }
 
+// A security requirement is `{ schemeName: string[] }` — OAS's own shape for
+// "this scheme, needing these scopes". That scope array was previously
+// discarded entirely: only `Object.keys(requirement)` was ever read. Capturing
+// it is what lets get_endpoint_schema answer "what permission does this call
+// need" instead of just "it needs oauth2, somehow".
+function scopesOf(requirement: Record<string, unknown>, schemeName: string): string[] | undefined {
+  const raw = requirement[schemeName];
+  if (!Array.isArray(raw)) return undefined;
+  const scopes = raw.filter((s): s is string => typeof s === 'string' && s.length > 0);
+  return scopes.length ? scopes : undefined;
+}
+
 function resolveAuth(
   op: OASOperation,
   rootSecurity: Array<Record<string, unknown>> | undefined,
   schemes: Record<string, SecurityScheme>,
-): { auth: AuthScheme; authIn?: AuthPlacement } {
+): { auth: AuthScheme; authIn?: AuthPlacement; scopes?: string[] } {
   const security = (Array.isArray(op.security) ? op.security : rootSecurity) ?? [];
   for (const requirement of security) {
     if (typeof requirement !== 'object' || requirement === null) continue;
     for (const schemeName of Object.keys(requirement)) {
       const scheme = schemes[schemeName];
-      if (scheme) return mapScheme(scheme);
+      if (!scheme) continue;
+      const mapped = mapScheme(scheme);
+      // Scopes are only meaningful for oauth2/openIdConnect — an apiKey or
+      // basic scheme's requirement array is always empty in practice, and
+      // attaching an accidental value to those schemes would misrepresent them
+      // as scope-gated.
+      const scopes = mapped.auth === 'oauth2' ? scopesOf(requirement, schemeName) : undefined;
+      return { ...mapped, ...(scopes ? { scopes } : {}) };
     }
   }
   return { auth: 'none' };
