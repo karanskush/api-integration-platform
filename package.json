@@ -23,6 +23,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "@vercel/blob": "^2.6.1",
+    "ai": "^7.0.37",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "drizzle-orm": "^0.45.2",
