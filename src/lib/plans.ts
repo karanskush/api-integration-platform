@@ -24,6 +24,11 @@ export type PlanLimits = {
   // Per-action call analytics over the mcp_calls ledger. "Pro+ dashboard" in
   // TECH_IMPLEMENTATION.md §11.
   analytics: boolean;
+  // Grounded natural-language Q&A over the advisor tools (lib/ask.ts). Gated
+  // like analytics — it spends real LLM tokens on Spotcheck's account, so it
+  // needs the same paid-tier floor as the other genuinely-costs-money features
+  // rather than being free for anyone who can view the page.
+  askAssistant: boolean;
 };
 
 function envInt(name: string, fallback: number): number {
@@ -44,6 +49,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     scheduledVerification: false,
     auditLogs: false,
     analytics: false,
+    askAssistant: false,
   },
   launch: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_LAUNCH', 3),
@@ -56,6 +62,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     scheduledVerification: false,
     auditLogs: false,
     analytics: false,
+    askAssistant: false,
   },
   pro: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_PRO', 10),
@@ -68,6 +75,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     scheduledVerification: false,
     auditLogs: false,
     analytics: true,
+    askAssistant: true,
   },
   team: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_TEAM', 25),
@@ -80,6 +88,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     scheduledVerification: false,
     auditLogs: false,
     analytics: true,
+    askAssistant: true,
   },
   business: {
     maxPersistentApis: envInt('PLAN_MAX_APIS_BUSINESS', 100),
@@ -92,6 +101,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     scheduledVerification: true,
     auditLogs: true,
     analytics: true,
+    askAssistant: true,
   },
 };
 
