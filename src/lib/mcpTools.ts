@@ -3,10 +3,28 @@
 // /mcp/[slug] handler (Postgres-backed), so the two don't duplicate this
 // ~80-line core.
 
+import { isAdvisorTool } from './advisor';
 import type { Action, AuthPlacement } from './ir';
 import { safeFetch, SsrfError, UpstreamError } from './ssrf';
 import { buildUpstreamRequest, UpstreamBuildError } from './upstream';
 import { validateParams } from './validate';
+
+// A third-party spec can declare an operationId that collides with an advisor
+// tool's `spotcheck_`-prefixed name. The advisor tool wins — it is part of this
+// server's fixed contract — so the colliding endpoint tool is suffixed to stay
+// reachable rather than silently shadowed.
+//
+// Applied to the FULL action list, not the MCP-exposed subset: advisor tools
+// (get_endpoint_schema, describe_fields, trace_field, get_call_sequence)
+// deliberately still describe a destructive action even though it is hidden
+// from execution — flagged `exposedOverMcp: false` rather than omitted — so a
+// colliding destructive action needs its resolved name too, or it would be
+// invisible to advisor tools as well as uncallable, instead of merely the
+// latter. Callers therefore resolve collisions once, over every action, before
+// filtering to the exposed subset.
+export function resolveNameCollisions(actions: Action[]): Action[] {
+  return actions.map((a) => (isAdvisorTool(a.name) ? { ...a, name: `${a.name}_api` } : a));
+}
 
 export type ToolDescriptor = {
   name: string;

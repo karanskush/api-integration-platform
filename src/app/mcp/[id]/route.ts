@@ -17,10 +17,10 @@ import { dbReady, getDb } from '@/lib/db';
 import { mcpCalls } from '@/lib/db/schema';
 import { isValidId } from '@/lib/ids';
 import { clientIp } from '@/lib/ip';
-import { mcpExposedActions, type Action } from '@/lib/ir';
+import { mcpExposedActions } from '@/lib/ir';
 import { kv } from '@/lib/kv';
 import { MCP_ACCESS_HEADER, actorHashForToken, verifyMcpAccessToken } from '@/lib/mcpAccess';
-import { buildToolList, callActionTool, toolText } from '@/lib/mcpTools';
+import { buildToolList, callActionTool, resolveNameCollisions, toolText } from '@/lib/mcpTools';
 import { loadPersistentRecord } from '@/lib/persistentApi';
 import { can, limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
@@ -55,13 +55,6 @@ function appOrigin(req: Request): string {
   return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
 }
 
-// An advisor tool name is `spotcheck_`-prefixed, but a third-party spec could
-// still declare an operationId that collides. The advisor tool wins (it is part
-// of this server's contract) and the endpoint tool is suffixed so it stays
-// reachable rather than being silently shadowed.
-function resolveNameCollisions(actions: Action[]): Action[] {
-  return actions.map((a) => (isAdvisorTool(a.name) ? { ...a, name: `${a.name}_api` } : a));
-}
 
 async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -129,7 +122,23 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return vaultResolution;
   };
 
-  const exposed = resolveNameCollisions(mcpExposedActions(record));
+  // Collision resolution has to run over the FULL action list, including
+  // destructive ones: advisor tools deliberately still describe a destructive
+  // operation (get_endpoint_schema flags it `exposedOverMcp: false` rather than
+  // hiding it), so they need it present under its resolved name too. Filtering
+  // to non-destructive first and renaming second would make a colliding
+  // destructive action invisible everywhere instead of merely uncallable.
+  const resolvedActions = resolveNameCollisions(record.actions);
+  const exposed = mcpExposedActions({ ...record, actions: resolvedActions });
+
+  // Advisor tools must reason over the SAME names the caller can actually
+  // invoke. If they read the raw `record`, a colliding operation would be
+  // described and traced under its original name (e.g. if the spec itself
+  // declares an operationId like `search_endpoints`) — a name the caller
+  // cannot call, because resolveNameCollisions already renamed it to `..._api`
+  // for the exposed tool list. This record differs only in its actions array,
+  // so every advisor tool sees the resolved names for free.
+  const advisorRecord = { ...record, actions: resolvedActions };
 
   // Advisor tools cite the evidence graph, which only persistent APIs have.
   // Loaded once per request (they are read on tools/call, not tools/list) and
@@ -157,7 +166,7 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
         if (isAdvisorTool(params.name)) {
           const args = (params.arguments ?? {}) as Record<string, unknown>;
           try {
-            const outcome = callAdvisorTool(params.name, args, { record, insights: await getInsights() });
+            const outcome = callAdvisorTool(params.name, args, { record: advisorRecord, insights: await getInsights() });
             return { content: outcome.content, isError: outcome.isError };
           } catch {
             console.error('[mcp] advisor failed', { id, tool: params.name });
