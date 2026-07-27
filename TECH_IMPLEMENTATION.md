@@ -190,6 +190,15 @@ These are not Phase 0 requirements, but the architecture should leave clean hook
 
 ## 9. Implementation log
 
+### 2026-07-27
+
+- Added field-level reasoning beneath the operation-level model: `fieldMap.ts` flattens a request/response schema into addressable paths (`body.customer.address.line1`) with type, constraints, and a `readOnly`/`writeOnly`-derived origin (`server_generated` | `constant` | `enum_constrained` | `produced_by_api` | `caller_supplied`) — the direct answer to "what data can I send here."
+- Added `lineage.ts`, the field-to-field Entity Dependency DAG from §3's original sketch and L2_ENGINE_SPEC.md §3: matches producers to consumers on title/shape identity, distinctive names, foreign-key shape, resource affinity, format, and enum overlap. Precision-gated (≥95%, matching the BUILD_PLAN.md release criterion) rather than recall-optimized — a generic field name never emits an edge on its own, and a four-corpus accuracy suite (Petstore/Slack/GitHub/Stripe-shaped, chosen to each stress a different structural property) asserts it.
+- Grew the advisor tool set from six to eight: `describe_fields` (the field inventory) and `trace_field` (lineage in both directions — where a value comes from, and what else accepts it). `get_endpoint_schema` and `get_call_sequence` were extended to use both under the hood, so a required body identifier is now traced individually instead of reported as one opaque `body` parameter.
+- Added pagination-model detection (cursor/page/offset/none) and OAuth2/OIDC scope capture, both previously undetected/discarded by the normalizer.
+- Materialized lineage edges into the evidence graph (`graph.field_lineage`, no migration — evidence_facts.kind is free text) as a durable audit record, per §5's schema note anticipating a `dag_edge` kind.
+- Added a grounded natural-language ask layer (`lib/ask.ts`, `POST /api/apis/[slug]/ask`, Pro+): the model is bound to the advisor tools as callable functions and never sees raw spec text, since every advisor result already passes through the existing sanitization before this layer exists — grounding over fluency, matching how `get_call_sequence` already refuses to guess at an untraceable identifier.
+
 ### 2026-07-10
 
 - Updated the plan scope to reflect that this repo now includes a Phase 0-style Next.js `app/` workspace, not only the static marketing site.
