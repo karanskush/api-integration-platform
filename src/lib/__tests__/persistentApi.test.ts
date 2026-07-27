@@ -254,7 +254,18 @@ describe('loadApiVerificationState', () => {
   it('reports claimStatus with scores null when no score row exists', async () => {
     const { loadApiVerificationState } = await loadModule();
     const { slug } = await seedApi({ claimStatus: 'claimed' });
-    expect(await loadApiVerificationState(slug)).toEqual({ orgId: expect.any(String), claimStatus: 'claimed', scores: null });
+    expect(await loadApiVerificationState(slug)).toEqual({
+      orgId: expect.any(String),
+      claimStatus: 'claimed',
+      analysisStatus: 'complete',
+      scores: null,
+    });
+  });
+
+  it('reports a non-default analysisStatus', async () => {
+    const { loadApiVerificationState } = await loadModule();
+    const { slug } = await seedApi({ analysisStatus: 'needs_input' });
+    expect(await loadApiVerificationState(slug)).toMatchObject({ analysisStatus: 'needs_input' });
   });
 
   it('includes the verified score when one exists', async () => {

@@ -15,6 +15,7 @@ export type VerifiedScore = {
 export type ApiVerificationState = {
   orgId: string;
   claimStatus: string;
+  analysisStatus: string;
   scores: VerifiedScore | null;
 };
 
@@ -111,6 +112,7 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
     .select({
       orgId: apis.orgId,
       claimStatus: apis.claimStatus,
+      analysisStatus: apis.analysisStatus,
       total: scores.total,
       authClarity: scores.authClarity,
       errorQuality: scores.errorQuality,
@@ -127,6 +129,7 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
   return {
     orgId: row.orgId,
     claimStatus: row.claimStatus,
+    analysisStatus: row.analysisStatus,
     scores:
       row.total == null
         ? null

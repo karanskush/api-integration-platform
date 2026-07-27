@@ -100,6 +100,38 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
         )}
       </header>
 
+      {verification && verification.analysisStatus !== 'complete' && (
+        <section className="panel" style={{ padding: 20 }}>
+          {verification.analysisStatus === 'needs_input' ? (
+            <>
+              <h2 style={{ fontSize: 15, marginBottom: 6 }}>Open questions — help us finish</h2>
+              <p style={{ color: 'var(--fg-dim)', fontSize: 13.5, marginBottom: 14 }}>
+                We went deep on this API but couldn&apos;t confidently resolve everything on our own. Check your
+                email for a link, or continue here if you&apos;re signed in as the owner.
+              </p>
+              <a className="btn primary" href={`/apis/${slug}/complete`}>
+                Finish setting up
+              </a>
+            </>
+          ) : verification.analysisStatus === 'failed' ? (
+            <>
+              <h2 style={{ fontSize: 15, marginBottom: 6 }}>Analysis failed</h2>
+              <p style={{ color: 'var(--fg-dim)', fontSize: 13.5 }}>
+                Something went wrong during the deep analysis of this API. Try submitting it again.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 style={{ fontSize: 15, marginBottom: 6 }}>Deep analysis in progress</h2>
+              <p style={{ color: 'var(--fg-dim)', fontSize: 13.5 }}>
+                We&apos;re crawling the provider&apos;s docs and running a full field-by-field analysis. This takes
+                real time — we&apos;ll email you the moment it&apos;s ready.
+              </p>
+            </>
+          )}
+        </section>
+      )}
+
       {verification?.claimStatus === 'unclaimed' && (
         <section className="panel" style={{ padding: 20 }}>
           <h2 style={{ fontSize: 15, marginBottom: 6 }}>
@@ -125,44 +157,48 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
         </section>
       )}
 
-      <AuthGuide record={record} />
-      {verification?.scores ? <VerifiedScorePanel scores={verification.scores} /> : <ScorePreviewPanel record={record} />}
-      {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
-      {clerkReady &&
-        (userId ? (
-          <AskAssistant slug={slug} />
-        ) : (
-          <div className="panel" style={{ padding: 20, display: 'grid', gap: 8 }}>
-            <h2 style={{ fontSize: 15 }}>Ask this API</h2>
-            <p style={{ color: 'var(--fg-mute)', fontSize: 12.5 }}>
-              Sign in to ask plain-language questions about this API, grounded in its own spec.
-            </p>
-            <a className="btn primary" href="/sign-in" style={{ justifySelf: 'start' }}>
-              Sign in to ask
-            </a>
-          </div>
-        ))}
-      <McpBlock record={record} mcpUrl={mcpUrl} />
+      {(!verification || verification.analysisStatus === 'complete') && (
+        <>
+          <AuthGuide record={record} />
+          {verification?.scores ? <VerifiedScorePanel scores={verification.scores} /> : <ScorePreviewPanel record={record} />}
+          {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
+          {clerkReady &&
+            (userId ? (
+              <AskAssistant slug={slug} />
+            ) : (
+              <div className="panel" style={{ padding: 20, display: 'grid', gap: 8 }}>
+                <h2 style={{ fontSize: 15 }}>Ask this API</h2>
+                <p style={{ color: 'var(--fg-mute)', fontSize: 12.5 }}>
+                  Sign in to ask plain-language questions about this API, grounded in its own spec.
+                </p>
+                <a className="btn primary" href="/sign-in" style={{ justifySelf: 'start' }}>
+                  Sign in to ask
+                </a>
+              </div>
+            ))}
+          <McpBlock record={record} mcpUrl={mcpUrl} />
 
-      {record.baseUrls.length > 0 && (
-        <section className="panel" style={{ padding: 20 }}>
-          <h2 style={{ fontSize: 15, marginBottom: 12 }}>Playground</h2>
-          <Playground
-            id={record.id}
-            actions={record.actions}
-            baseUrls={record.baseUrls}
-            auth={record.auth}
-            authIn={record.authIn}
-          />
-        </section>
+          {record.baseUrls.length > 0 && (
+            <section className="panel" style={{ padding: 20 }}>
+              <h2 style={{ fontSize: 15, marginBottom: 12 }}>Playground</h2>
+              <Playground
+                id={record.id}
+                actions={record.actions}
+                baseUrls={record.baseUrls}
+                auth={record.auth}
+                authIn={record.authIn}
+              />
+            </section>
+          )}
+
+          <section style={{ display: 'grid', gap: 14 }}>
+            <h2 style={{ fontSize: 15 }}>Actions</h2>
+            {record.actions.map((a) => (
+              <ActionCard key={a.id} action={a} record={record} />
+            ))}
+          </section>
+        </>
       )}
-
-      <section style={{ display: 'grid', gap: 14 }}>
-        <h2 style={{ fontSize: 15 }}>Actions</h2>
-        {record.actions.map((a) => (
-          <ActionCard key={a.id} action={a} record={record} />
-        ))}
-      </section>
     </div>
   );
 }
