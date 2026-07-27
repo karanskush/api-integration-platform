@@ -146,3 +146,79 @@ describe('getSpecSnapshot', () => {
     await expect(getSpecSnapshot(`specs/${HASH}.txt`)).resolves.toBeNull();
   });
 });
+
+const SPEC_VERSION_ID = 'a1b2c3d4-0000-4000-8000-000000000000';
+
+describe('putArazzoArtifact / putEnrichedSpecArtifact', () => {
+  it('return null when Blob is not configured, rather than throwing', async () => {
+    const put = vi.fn();
+    const { putArazzoArtifact, putEnrichedSpecArtifact } = await loadStore({ put, get: vi.fn() });
+    await expect(putArazzoArtifact(SPEC_VERSION_ID, 'arazzo: 1.0.1')).resolves.toBeNull();
+    await expect(putEnrichedSpecArtifact(SPEC_VERSION_ID, '{}')).resolves.toBeNull();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('write each to its own kind-prefixed path, keyed by spec version id, with private overwrite-in-place access', async () => {
+    process.env[ENV] = 'token';
+    const put = vi.fn().mockResolvedValue({ pathname: 'irrelevant' });
+    const { putArazzoArtifact, putEnrichedSpecArtifact } = await loadStore({ put, get: vi.fn() });
+
+    await putArazzoArtifact(SPEC_VERSION_ID, 'arazzo: 1.0.1');
+    expect(put).toHaveBeenCalledWith(
+      `artifacts/arazzo/${SPEC_VERSION_ID}.yaml`,
+      'arazzo: 1.0.1',
+      expect.objectContaining({ access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/yaml; charset=utf-8' }),
+    );
+
+    await putEnrichedSpecArtifact(SPEC_VERSION_ID, '{"openapi":"3.1.0"}');
+    expect(put).toHaveBeenCalledWith(
+      `artifacts/enriched/${SPEC_VERSION_ID}.json`,
+      '{"openapi":"3.1.0"}',
+      expect.objectContaining({ access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json; charset=utf-8' }),
+    );
+  });
+
+  it('swallow a Blob failure and return null rather than throwing', async () => {
+    process.env[ENV] = 'token';
+    const put = vi.fn().mockRejectedValue(new Error('blob store unavailable'));
+    const { putArazzoArtifact } = await loadStore({ put, get: vi.fn() });
+    await expect(putArazzoArtifact(SPEC_VERSION_ID, 'x')).resolves.toBeNull();
+  });
+});
+
+describe('getArtifactText', () => {
+  function streamOf(text: string) {
+    const bytes = new TextEncoder().encode(text);
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+  }
+
+  it('reads an artifact back the same way a spec snapshot is read', async () => {
+    process.env[ENV] = 'token';
+    const get = vi.fn().mockResolvedValue({ statusCode: 200, stream: streamOf('arazzo: 1.0.1') });
+    const { getArtifactText } = await loadStore({ put: vi.fn(), get });
+
+    await expect(getArtifactText(`artifacts/arazzo/${SPEC_VERSION_ID}.yaml`)).resolves.toBe('arazzo: 1.0.1');
+    expect(get).toHaveBeenCalledWith(`artifacts/arazzo/${SPEC_VERSION_ID}.yaml`, { access: 'private' });
+  });
+
+  it('returns null when Blob is not configured or the ref is empty', async () => {
+    const { getArtifactText } = await loadStore({ put: vi.fn(), get: vi.fn() });
+    await expect(getArtifactText(`artifacts/arazzo/${SPEC_VERSION_ID}.yaml`)).resolves.toBeNull();
+
+    process.env[ENV] = 'token';
+    const store = await loadStore({ put: vi.fn(), get: vi.fn() });
+    await expect(store.getArtifactText('')).resolves.toBeNull();
+  });
+
+  it('returns null rather than throwing when the read fails', async () => {
+    process.env[ENV] = 'token';
+    const get = vi.fn().mockRejectedValue(new Error('network'));
+    const { getArtifactText } = await loadStore({ put: vi.fn(), get });
+    await expect(getArtifactText(`artifacts/enriched/${SPEC_VERSION_ID}.json`)).resolves.toBeNull();
+  });
+});

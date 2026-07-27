@@ -77,15 +77,15 @@ export async function putSpecSnapshot(contentHash: string, rawText: string): Pro
 
 const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024;
 
-export async function getSpecSnapshot(blobRef: string): Promise<string | null> {
+// Shared bounded-read: any blob this module writes is capped and private, so
+// reading it back is identical work regardless of which kind it is.
+async function readPrivateBlob(blobRef: string, maxBytes: number, logLabel: string): Promise<string | null> {
   if (!blobReady() || !blobRef) return null;
   try {
     // access must match how it was written, or the SDK resolves the wrong URL.
     const result = await get(blobRef, { access: 'private' });
     if (!result || result.statusCode !== 200) return null;
 
-    // Bounded read: a snapshot larger than the import limit means something is
-    // wrong, and streaming it into memory unbounded would be the bug.
     const reader = result.stream.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
@@ -93,7 +93,7 @@ export async function getSpecSnapshot(blobRef: string): Promise<string | null> {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_SNAPSHOT_BYTES) {
+      if (total > maxBytes) {
         await reader.cancel().catch(() => {});
         return null;
       }
@@ -107,7 +107,63 @@ export async function getSpecSnapshot(blobRef: string): Promise<string | null> {
     }
     return new TextDecoder().decode(body);
   } catch (err) {
-    console.error('[specStore] snapshot read failed', { reason: err instanceof Error ? err.name : 'unknown' });
+    console.error(`[specStore] ${logLabel} read failed`, { reason: err instanceof Error ? err.name : 'unknown' });
     return null;
   }
+}
+
+export async function getSpecSnapshot(blobRef: string): Promise<string | null> {
+  return readPrivateBlob(blobRef, MAX_SNAPSHOT_BYTES, 'snapshot');
+}
+
+// The deep-analysis pipeline's portable artifacts (Arazzo workflow doc,
+// enriched OpenAPI) — same access model as the raw spec snapshot above and
+// for the same reason: a private API's derived artifacts must not sit behind
+// a guessable public URL just because the artifact itself is "just" a
+// derived summary. Keyed by spec_version_id (not content hash) since these
+// are regenerated whenever a clarification answer changes the picture, not
+// only when the spec bytes themselves change.
+const ARTIFACT_PREFIX = 'artifacts';
+const MAX_ARTIFACT_BYTES = 5 * 1024 * 1024;
+
+function artifactPathFor(specVersionId: string, kind: 'arazzo' | 'enriched', extension: string): string {
+  return `${ARTIFACT_PREFIX}/${kind}/${specVersionId}.${extension}`;
+}
+
+async function putArtifact(
+  path: string,
+  text: string,
+  contentType: string,
+  logLabel: string,
+): Promise<SnapshotResult> {
+  if (!blobReady()) return null;
+  try {
+    const result = await put(path, text, {
+      access: 'private',
+      contentType,
+      addRandomSuffix: false,
+      allowOverwrite: true, // regenerated in place whenever the picture changes
+    });
+    return { blobRef: result.pathname };
+  } catch (err) {
+    console.error(`[specStore] ${logLabel} write failed`, { reason: err instanceof Error ? err.name : 'unknown' });
+    return null;
+  }
+}
+
+export async function putArazzoArtifact(specVersionId: string, yamlText: string): Promise<SnapshotResult> {
+  return putArtifact(artifactPathFor(specVersionId, 'arazzo', 'yaml'), yamlText, 'application/yaml; charset=utf-8', 'arazzo artifact');
+}
+
+export async function putEnrichedSpecArtifact(specVersionId: string, jsonText: string): Promise<SnapshotResult> {
+  return putArtifact(
+    artifactPathFor(specVersionId, 'enriched', 'json'),
+    jsonText,
+    'application/json; charset=utf-8',
+    'enriched-spec artifact',
+  );
+}
+
+export async function getArtifactText(blobRef: string): Promise<string | null> {
+  return readPrivateBlob(blobRef, MAX_ARTIFACT_BYTES, 'artifact');
 }
