@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ActionCard from '@/components/ActionCard';
+import AskAssistant from '@/components/AskAssistant';
 import AuthGuide from '@/components/AuthGuide';
 import ClaimOwnershipForm from '@/components/ClaimOwnershipForm';
 import McpBlock from '@/components/McpBlock';
@@ -127,6 +128,20 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
       <AuthGuide record={record} />
       {verification?.scores ? <VerifiedScorePanel scores={verification.scores} /> : <ScorePreviewPanel record={record} />}
       {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
+      {clerkReady &&
+        (userId ? (
+          <AskAssistant slug={slug} />
+        ) : (
+          <div className="panel" style={{ padding: 20, display: 'grid', gap: 8 }}>
+            <h2 style={{ fontSize: 15 }}>Ask this API</h2>
+            <p style={{ color: 'var(--fg-mute)', fontSize: 12.5 }}>
+              Sign in to ask plain-language questions about this API, grounded in its own spec.
+            </p>
+            <a className="btn primary" href="/sign-in" style={{ justifySelf: 'start' }}>
+              Sign in to ask
+            </a>
+          </div>
+        ))}
       <McpBlock record={record} mcpUrl={mcpUrl} />
 
       {record.baseUrls.length > 0 && (
