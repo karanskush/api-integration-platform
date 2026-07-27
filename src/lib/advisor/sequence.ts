@@ -12,35 +12,16 @@
 // unresolved rather than papered over with a plausible guess (LLM09).
 
 import type { Action, ImportRecord } from '../ir';
+// Live in lib/resource.ts so lineage.ts can share them without this module and
+// that one importing each other.
+import { collectionPathFor, resourceOf } from '../resource';
 import { asData, paramsOf, type AdvisorContext } from './types';
 
 const ID_LIKE = /(^|[_-])(id|ids|key|uuid|slug|code|number|no)$/i;
 const MAX_PRODUCERS_PER_PARAM = 4;
 
-// `/v1/pets/{petId}/toys/{toyId}` + `toyId` → `/v1/pets/{petId}/toys`
-// i.e. the collection the identifier addresses an item within.
-export function collectionPathFor(path: string, param: string): string | null {
-  const segments = path.split('/');
-  const index = segments.findIndex((s) => s === `{${param}}`);
-  if (index <= 0) return null;
-  return segments.slice(0, index).join('/') || '/';
-}
-
-// Last static segment of a collection path, crudely singularized: the resource
-// an identifier under it refers to. `/v1/pets` → `pet`.
-export function resourceOf(collectionPath: string): string | null {
-  const statics = collectionPath.split('/').filter((s) => s && !s.startsWith('{'));
-  const last = statics[statics.length - 1];
-  if (!last) return null;
-  const lower = last.toLowerCase();
-  if (lower.endsWith('ies')) return `${lower.slice(0, -3)}y`; // companies -> company
-  if (lower.endsWith('ses') || lower.endsWith('xes') || lower.endsWith('zes')) return lower.slice(0, -2); // addresses -> address
-  // Singular nouns that merely end in s: status, bonus, analysis, address.
-  // Stripping the s here would produce a resource name that matches nothing.
-  if (/(?:ss|us|is)$/.test(lower)) return lower;
-  if (lower.endsWith('s')) return lower.slice(0, -1);
-  return lower;
-}
+// Re-exported to keep this module's public surface (and its tests) unchanged.
+export { collectionPathFor, resourceOf };
 
 function snake(name: string): string {
   return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();

@@ -322,12 +322,19 @@ const SCHEMA_KEEP_KEYS = new Set([
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
   'minLength', 'maxLength', 'pattern', 'minItems', 'maxItems', 'uniqueItems',
   'oneOf', 'anyOf', 'allOf', 'nullable', 'const', 'title',
+  // Direction and lifecycle annotations. These were previously dropped as
+  // "noise", but they answer a question nothing else can: readOnly means the
+  // server generates this field and a client must NOT send it, writeOnly means
+  // the opposite. Without them, "what data can we send?" cannot be answered
+  // from a response-shaped schema at all — every field looks suppliable.
+  // Ajv treats all three as annotations, so validation behaviour is unchanged.
+  'readOnly', 'writeOnly', 'deprecated',
 ]);
 const MAX_SCHEMA_DEPTH = 12;
 
 // Deep-cleans an OAS schema into portable JSON Schema: drops vendor keys,
-// readOnly/xml/discriminator noise, and any unresolved $ref (replaced with a
-// permissive stub so validation still passes).
+// xml/discriminator noise, and any unresolved $ref (replaced with a permissive
+// stub so validation still passes).
 export function sanitizeSchema(schema: unknown, depth = 0): Record<string, unknown> {
   if (typeof schema !== 'object' || schema === null || depth > MAX_SCHEMA_DEPTH) return {};
   const src = schema as Record<string, unknown>;
