@@ -200,6 +200,32 @@ describe('apiAnalytics', () => {
     expect((await apiAnalytics(db, mine.apiId)).tools.map((t) => t.tool)).toEqual(['mine']);
   });
 
+  // /api/apis/[slug]/ask writes its own rows to this same ledger (tool: 'ask',
+  // credits: 5) rather than a separate billing dimension — this confirms that
+  // integration seam actually works: an ask row must surface exactly like any
+  // endpoint tool's, with its heavier credit weight counted correctly.
+  it('surfaces ask-assistant rows alongside ordinary MCP tool calls', async () => {
+    const ids = await seed();
+    await recordCalls(ids, [
+      { tool: 'get_pet', status: '200', latencyMs: 50 },
+      { tool: 'ask', status: '200', latencyMs: 900, credits: 5 },
+    ]);
+
+    const result = await apiAnalytics(db, ids.apiId);
+    const ask = result.tools.find((t) => t.tool === 'ask');
+    expect(ask).toMatchObject({ calls: 1, errors: 0, creditsUsed: 5 });
+    expect(result.totals.creditsUsed).toBe(6);
+  });
+
+  it('counts a failed ask (502) as an error like any other tool failure', async () => {
+    const ids = await seed();
+    await recordCalls(ids, [{ tool: 'ask', status: '502', latencyMs: 1200, credits: 0 }]);
+
+    const result = await apiAnalytics(db, ids.apiId);
+    expect(result.failureClasses.find((c) => c.statusClass === '5xx')?.calls).toBe(1);
+    expect(result.tools.find((t) => t.tool === 'ask')?.errors).toBe(1);
+  });
+
   it('reports the window start it used', async () => {
     const ids = await seed();
     const result = await apiAnalytics(db, ids.apiId, '24h');
