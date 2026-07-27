@@ -129,6 +129,90 @@ describe('computeLineage — the core case', () => {
 });
 
 describe('computeLineage — refuses wrong edges', () => {
+  // Found by driving the real Swagger Petstore over MCP (fields.ts's own
+  // describe_fields, not a synthetic fixture): place_order's body and
+  // get_order_by_id's response are the SAME Order shape, and quantity/
+  // shipDate/complete were traced as "produced by" get_order_by_id with high
+  // confidence. That is backwards — get_order_by_id needs an orderId that
+  // only exists once place_order has already run, so it cannot be an upstream
+  // source for place_order's own body. It is an echo, not a flow.
+  it('does not treat a GET-by-id on the resource being created as a producer for that create', () => {
+    const graph = computeLineage(
+      record([
+        action({
+          name: 'place_order',
+          method: 'POST',
+          path: '/store/order',
+          safety: 'write',
+          paramsSchema: {
+            type: 'object',
+            properties: {
+              body: param('body', {
+                type: 'object',
+                properties: {
+                  quantity: { type: 'integer' },
+                  shipDate: { type: 'string', format: 'date-time' },
+                  complete: { type: 'boolean' },
+                },
+              }),
+            },
+          },
+        }),
+        action({
+          name: 'get_order_by_id',
+          method: 'GET',
+          path: '/store/order/{orderId}',
+          paramsSchema: { type: 'object', required: ['orderId'], properties: { orderId: param('path') } },
+          responseSchema: {
+            type: 'object',
+            properties: {
+              quantity: { type: 'integer' },
+              shipDate: { type: 'string', format: 'date-time' },
+              complete: { type: 'boolean' },
+            },
+          },
+        }),
+      ]),
+    );
+
+    expect(producersFor(graph, 'place_order', 'body.quantity')).toEqual([]);
+    expect(producersFor(graph, 'place_order', 'body.shipDate')).toEqual([]);
+    expect(producersFor(graph, 'place_order', 'body.complete')).toEqual([]);
+  });
+
+  // The scope of the fix: an UPDATE (not a create) legitimately read-modifies
+  // a resource that already exists, so a prior GET of it is a normal and
+  // correct pattern — this must keep working.
+  it('still allows a GET-by-id to producer an UPDATE (not create) on the same resource', () => {
+    const graph = computeLineage(
+      record([
+        action({
+          name: 'get_order_by_id',
+          method: 'GET',
+          path: '/store/order/{orderId}',
+          paramsSchema: { type: 'object', required: ['orderId'], properties: { orderId: param('path') } },
+          responseSchema: { type: 'object', properties: { trackingCode: { type: 'string' } } },
+        }),
+        action({
+          name: 'update_order',
+          method: 'PUT',
+          path: '/store/order/{orderId}',
+          safety: 'write',
+          paramsSchema: {
+            type: 'object',
+            required: ['orderId', 'body'],
+            properties: {
+              orderId: param('path'),
+              body: param('body', { type: 'object', properties: { trackingCode: { type: 'string' } } }),
+            },
+          },
+        }),
+      ]),
+    );
+    expect(producersFor(graph, 'update_order', 'body.trackingCode').map((e) => e.from.tool)).toContain('get_order_by_id');
+  });
+
+
   // The negative test the plan calls for: two unrelated resources both exposing
   // `id` must not be linked. This is the edge class that gets an agent to act
   // on the wrong object.

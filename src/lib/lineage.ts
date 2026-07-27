@@ -27,6 +27,7 @@
 import { buildFieldIndex, type ApiFieldIndex, type FieldNode } from './fieldMap';
 import type { Action, ImportRecord } from './ir';
 import {
+  collectionPathFor,
   isGenericFieldName,
   isIdLike,
   normalizeFieldName,
@@ -188,7 +189,38 @@ function scoreGenericMatch(
   return null;
 }
 
+// Excludes a producer that cannot possibly precede the consumer in time.
+//
+// Found by driving the real Swagger Petstore over MCP: place_order's body
+// fields (quantity, shipDate, complete, status — all part of the same Order
+// shape get_order_by_id later reads back) were traced as "produced by"
+// get_order_by_id with HIGH confidence. That is backwards. get_order_by_id
+// needs an orderId that only exists once place_order has already run — it
+// cannot be an upstream source for place_order's own request fields, no
+// matter how well the field names, types, and resource affinity line up.
+// Structurally, get_order_by_id's response and place_order's body are the
+// SAME schema (an echo of what you sent), not one flowing into the other.
+//
+// The general shape: a producer that reads a single item by id off the EXACT
+// collection path the consumer creates into cannot have run before the
+// consumer, because the id it reads by is the one the consumer's own call is
+// what allocates. This mirrors sequence.ts's existing "reads before writes"
+// ordering intuition for path params, extended to body fields, where lineage.ts
+// had no analogous check.
+//
+// Scoped to POST specifically: an update (PUT/PATCH) legitimately read-modifies
+// a resource that already exists, so a prior GET of it is a normal, valid
+// pattern there — excluding it would remove a genuinely common and correct
+// case, not just the circular one.
+function isDownstreamItemRead(producerPath: string, consumerAction: Action): boolean {
+  if (consumerAction.method !== 'POST') return false;
+  const params = producerPath.match(/\{([^}]+)\}/g) ?? [];
+  return params.some((raw) => collectionPathFor(producerPath, raw.slice(1, -1)) === consumerAction.path);
+}
+
 function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
+  if (isDownstreamItemRead(producer.action.path, consumer.action)) return null;
+
   const producerName = normalizeFieldName(producer.field.name);
   const consumerName = normalizeFieldName(consumer.field.name);
   const generic = isGenericFieldName(consumerName);
