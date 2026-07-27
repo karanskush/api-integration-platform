@@ -82,6 +82,7 @@ export type KeyPurpose =
   | 'credential-wrap' // vaulted-credential key wrapping (vault.ts)
   | 'credential-fingerprint' // non-reversible "same key?" check (vault.ts)
   | 'mcp-access' // org token unlocking vaulted credentials (mcpAccess.ts)
+  | 'analysis-access' // clarification email magic link (analysisAccess.ts)
   | 'audit-actor'; // caller attribution in the audit log, not reversible
 
 // HKDF-SHA256. `purpose` is the salt (domain separation between features) and

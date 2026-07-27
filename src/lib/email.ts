@@ -31,3 +31,49 @@ export async function sendWaitlistWelcomeEmail(to: string): Promise<void> {
     text: 'Thanks for joining the Spotcheck waitlist — we\'ll let you know as soon as your access is ready.',
   });
 }
+
+// Sent by the analyze-finalize job when the deep-analysis pipeline found
+// something it couldn't confidently resolve on its own. `completeUrl` already
+// carries the signed cross-device access token (analysisAccess.ts) — this
+// email exists specifically so the link works even if it's opened somewhere
+// with no Clerk session.
+export async function sendClarificationNeededEmail(
+  to: string,
+  input: { apiName: string; completeUrl: string; questionCount: number },
+): Promise<void> {
+  const resend = getResend();
+  const { apiName, completeUrl, questionCount } = input;
+  const plural = questionCount === 1 ? 'question' : 'questions';
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Finish setting up ${apiName} — ${questionCount} ${plural} left`,
+    text: [
+      `We went deep on ${apiName} — crawled the provider's own docs and ran a full field-by-field analysis.`,
+      `There ${questionCount === 1 ? 'is' : 'are'} ${questionCount} ${plural} we couldn't confidently resolve on our own.`,
+      '',
+      `Finish it here: ${completeUrl}`,
+      '',
+      'This link works for 7 days, even if you open it on a different device than the one you started on.',
+    ].join('\n'),
+  });
+}
+
+// Sent by the analyze-finalize job when the deep-analysis pipeline resolved
+// everything on its own — no clarification needed — or by the clarification
+// answer route once the last open question is answered.
+export async function sendAnalysisReadyEmail(to: string, input: { apiName: string; pageUrl: string }): Promise<void> {
+  const resend = getResend();
+  const { apiName, pageUrl } = input;
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: `${apiName} is ready`,
+    text: [
+      `The deep analysis of ${apiName} is complete — every field has been traced, and the provider's own docs`,
+      "were folded in wherever they helped explain something the spec alone didn't.",
+      '',
+      `View it here: ${pageUrl}`,
+    ].join('\n'),
+  });
+}
