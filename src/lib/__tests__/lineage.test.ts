@@ -177,6 +177,63 @@ describe('computeLineage — refuses wrong edges', () => {
     expect(edgeLabels(graph)).toEqual([]);
   });
 
+  // Found by the accuracy corpus (lineageAccuracy.test.ts): a purely generic,
+  // non-identifier field shared by two operations on the same resource is NOT
+  // evidence of data flow — list_pets.name and create_pet.name are two
+  // independent pieces of data, not one flowing into the other. Resource
+  // affinity alone (plus the type_match/collection_producer bonuses that used
+  // to stack on top of it automatically) was enough to promote this to medium
+  // confidence, which is exactly the "wrong edge" class this module exists to
+  // refuse. Only an id-LIKE generic name (a bare `id`) gets resource affinity
+  // promoted at all — see scoreGenericMatch.
+  it('does not link a non-identifier generic field shared by the same resource', () => {
+    const graph = computeLineage(
+      record([
+        action({
+          name: 'list_pets',
+          method: 'GET',
+          path: '/pets',
+          responseSchema: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        }),
+        action({
+          name: 'create_pet',
+          method: 'POST',
+          path: '/pets',
+          safety: 'write',
+          paramsSchema: {
+            type: 'object',
+            properties: { body: param('body', { type: 'object', properties: { name: { type: 'string' } } }) },
+          },
+        }),
+      ]),
+    );
+    expect(producersFor(graph, 'create_pet', 'body.name')).toEqual([]);
+  });
+
+  // The one generic-name case that SHOULD still promote on resource affinity
+  // alone: a bare `id`, which — unlike `name` or `status` — genuinely is an
+  // identifier when the spec happens to name it that plainly rather than
+  // `petId`.
+  it('still links a bare id shared by the same resource', () => {
+    const graph = computeLineage(
+      record([
+        action({
+          name: 'list_pets',
+          method: 'GET',
+          path: '/pets',
+          responseSchema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } } } },
+        }),
+        action({
+          name: 'get_pet',
+          method: 'GET',
+          path: '/pets/{id}',
+          paramsSchema: { type: 'object', required: ['id'], properties: { id: param('path') } },
+        }),
+      ]),
+    );
+    expect(producersFor(graph, 'get_pet', 'path.id').map((e) => e.from.tool)).toContain('list_pets');
+  });
+
   it('links a generic name when overlapping enums make it distinctive', () => {
     const graph = computeLineage(
       record([

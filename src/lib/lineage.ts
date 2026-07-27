@@ -28,6 +28,7 @@ import { buildFieldIndex, type ApiFieldIndex, type FieldNode } from './fieldMap'
 import type { Action, ImportRecord } from './ir';
 import {
   isGenericFieldName,
+  isIdLike,
   normalizeFieldName,
   pathResources,
   resourceFromFieldName,
@@ -74,7 +75,10 @@ const WEIGHTS: Record<LineageSignal, number> = {
   title_match: 50,
   shape_match: 35,
   distinctive_name: 40,
-  generic_name: 8,
+  // Not used in scoring — scoreGenericMatch() assigns a generic match's tier
+  // directly rather than summing weights (see its header comment for why).
+  // Kept here only so WEIGHTS stays exhaustive over LineageSignal.
+  generic_name: 0,
   foreign_key_name: 45,
   resource_affinity: 25,
   collection_producer: 15,
@@ -143,10 +147,48 @@ function shapeFingerprint(field: FieldNode, index: ApiFieldIndex, tool: string, 
   return children.length >= 2 ? children.join('|') : null;
 }
 
-function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
-  const why: LineageSignal[] = [];
-  let score = 0;
+// Purely generic exact-name matches (`name`, `status`, `data`, ...) get their
+// own scoring, deliberately NOT the additive weight-sum the distinctive/
+// foreign-key path uses below.
+//
+// The accuracy corpus (lineageAccuracy.test.ts) is what surfaced why that
+// matters: `type_match` and `collection_producer` fire almost automatically
+// whenever two operations share a resource and a string-typed field — which
+// is exactly true of `name`, `description`, and every other ordinary
+// attribute a resource has. Additively stacking those onto resource_affinity
+// pushed a coincidental shared attribute (list_pets.name and create_pet.name
+// are two INDEPENDENT pieces of data, not one flowing into the other) over
+// the medium-confidence threshold. That is precisely the "wrong edge" class
+// this module exists to prevent.
+//
+// So a generic name gets a fixed tier from a short, explicit list of the only
+// signals treated as real corroboration for a common word:
+//   title match            -> high   (both sides are provably the same type)
+//   overlapping enum values -> medium (the values themselves agree)
+//   id-like name + shared resource -> medium (an unqualified `id` under the
+//     same resource is the one generic-name case with real identifier
+//     semantics — `list_pets[].id` really can feed `get_pet.path.id`)
+//   anything else -> no edge
+function scoreGenericMatch(
+  producer: ProducerField,
+  consumer: ConsumerField,
+  sharedResource: boolean,
+): { score: number; why: LineageSignal[] } | null {
+  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
+  if (titleMatch) return { score: HIGH + 10, why: ['generic_name', 'title_match'] };
 
+  if (enumOverlap(producer.field, consumer.field)) {
+    return { score: MEDIUM + 10, why: ['generic_name', 'enum_overlap'] };
+  }
+
+  if (sharedResource && isIdLike(consumer.field.name)) {
+    return { score: MEDIUM + 3, why: ['generic_name', 'resource_affinity'] };
+  }
+
+  return null;
+}
+
+function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
   const producerName = normalizeFieldName(producer.field.name);
   const consumerName = normalizeFieldName(consumer.field.name);
   const generic = isGenericFieldName(consumerName);
@@ -157,21 +199,7 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
   const foreignKey =
     !exactName && fkResource !== null && producerName === 'id' && producer.resources.includes(fkResource);
 
-  if (exactName) {
-    why.push(generic ? 'generic_name' : 'distinctive_name');
-    score += generic ? WEIGHTS.generic_name : WEIGHTS.distinctive_name;
-  } else if (foreignKey) {
-    why.push('foreign_key_name');
-    score += WEIGHTS.foreign_key_name;
-  } else {
-    return null; // names must relate somehow; nothing else is evidence enough
-  }
-
-  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
-  if (titleMatch) {
-    why.push('title_match');
-    score += WEIGHTS.title_match;
-  }
+  if (!exactName && !foreignKey) return null; // names must relate somehow; nothing else is evidence enough
 
   // Resource affinity. For a foreign-key match the resource came from the field
   // name; otherwise compare the two operations' paths.
@@ -179,6 +207,18 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
     ? true
     : producer.resources.some((r) => consumer.resources.includes(r)) ||
       (fkResource !== null && producer.resources.includes(fkResource));
+
+  if (exactName && generic) return scoreGenericMatch(producer, consumer, sharedResource);
+
+  const why: LineageSignal[] = [exactName ? 'distinctive_name' : 'foreign_key_name'];
+  let score = exactName ? WEIGHTS.distinctive_name : WEIGHTS.foreign_key_name;
+
+  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
+  if (titleMatch) {
+    why.push('title_match');
+    score += WEIGHTS.title_match;
+  }
+
   if (sharedResource) {
     why.push('resource_affinity');
     score += WEIGHTS.resource_affinity;
@@ -203,18 +243,12 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
   }
 
   // A list or create on the resource is the canonical place an identifier comes
-  // from, and is what an agent should be sent to first.
+  // from, and is what an agent should be sent to first. Reserved for
+  // distinctive/foreign-key matches — see scoreGenericMatch's header for why a
+  // generic match must not earn this bonus.
   if ((producer.action.method === 'GET' || producer.action.method === 'POST') && sharedResource) {
     why.push('collection_producer');
     score += WEIGHTS.collection_producer;
-  }
-
-  // THE HARD GATE. A shared generic name is not evidence. Without a title
-  // match, resource affinity, or overlapping enums, `id` on one resource and
-  // `id` on an unrelated one would link — which is exactly the class of edge
-  // that gets an agent to act on the wrong object.
-  if (generic && exactName && !titleMatch && !sharedResource && !why.includes('enum_overlap')) {
-    return null;
   }
 
   return { score, why };
