@@ -4,7 +4,14 @@ import { aiReady } from '@/lib/ask';
 import { getDb } from '@/lib/db';
 import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts } from '@/lib/db/schema';
 import { clusterQuestions, consideredFieldsFor, type DocExcerpt, enrichRecord, reconcileOpenQuestions } from '@/lib/deepEnrich';
-import { classifyQuestion } from '@/lib/clarify';
+import {
+  classifyQuestion,
+  evidenceForQuestion,
+  questionHandle,
+  synthesizeMappings,
+  triageQuestions,
+} from '@/lib/clarify';
+import { fieldMapFor } from '@/lib/fieldMap';
 import { loadRecordForVersion } from '@/lib/persistentApi';
 import { publishJob } from '@/lib/queue';
 
@@ -77,6 +84,12 @@ async function handler(req: Request) {
     const autoQuestions = reconcileOpenQuestions(considered, result, actionPathByName);
     const allQuestions = clusterQuestions([...result.openQuestions, ...autoQuestions], actionPathByName);
 
+    // Reported on the run rather than discarded. A triage pass that retired
+    // nothing and a triage pass that was refused for cause look identical from
+    // the outside otherwise, and the rejection reasons are how you find out the
+    // model is producing quotes that do not verify.
+    let triageDetail: Record<string, unknown> = {};
+
     if (result.fields.length) {
       await db.insert(evidenceFacts).values(
         result.fields.map((f) => ({
@@ -134,21 +147,114 @@ async function handler(req: Request) {
       // Concrete questions first: someone who answers three quickly keeps going.
       classified.sort((a, b) => (a.c?.rank ?? 99) - (b.c?.rank ?? 99));
 
+      // Two model passes, each strictly bounded and each degrading to the
+      // pre-existing behaviour on any failure. Triage can only downgrade a
+      // question to an assumption the owner still sees; synthesis can only
+      // pre-fill candidate meanings for a code the spec never documented. Neither
+      // can create, answer or delete a question.
+      //
+      // Skipped entirely on a partial reading of the API: an incomplete
+      // enrichment pass is exactly when an inference drawn from it would be wrong.
+      const enrichmentComplete = !result.truncated && result.chunksProcessed >= result.chunksTotal;
+      const triage = aiReady()
+        ? await triageQuestions({
+            enrichmentComplete,
+            candidates: classified.flatMap(({ q, c }) =>
+              c && q.fieldPath
+                ? [
+                    {
+                      id: questionHandle(q),
+                      question: q.question,
+                      tool: q.tool,
+                      actionPath: actionPathByName.get(q.tool) ?? '',
+                      fieldPath: q.fieldPath,
+                      answerSpec: c.answerSpec,
+                      envelopes: evidenceForQuestion(record, q, docExcerpts),
+                    },
+                  ]
+                : [],
+            ),
+          })
+        : { assumptions: [], rejections: [], considered: 0 };
+      const assumedByHandle = new Map(triage.assumptions.map((a) => [a.id, a]));
+      triageDetail = {
+        triageConsidered: triage.considered,
+        triageAssumed: triage.assumptions.length,
+        ...(triage.skipped ? { triageSkipped: triage.skipped } : {}),
+        ...(triage.rejections.length ? { triageRejections: triage.rejections.slice(0, 20) } : {}),
+      };
+
+      // The one archetype whose answer space cannot be enumerated from structure.
+      const openValueQuestions = classified.filter(({ c }) => c?.archetype === 'undocumented_code_semantics');
+      const synthesis =
+        aiReady() && openValueQuestions.length
+          ? await synthesizeMappings({
+              candidates: openValueQuestions.flatMap(({ q }) => {
+                const action = record.actions.find((a) => a.name === q.tool);
+                const field = action && q.fieldPath ? fieldMapFor(action).request.find((f) => f.path === q.fieldPath) : undefined;
+                return action && field && q.fieldPath
+                  ? [
+                      {
+                        id: questionHandle(q),
+                        question: q.question,
+                        tool: q.tool,
+                        actionPath: action.path,
+                        fieldPath: q.fieldPath,
+                        fieldType: field.type,
+                        ...(field.description ? { fieldDescription: field.description } : {}),
+                        envelopes: evidenceForQuestion(record, q, docExcerpts),
+                      },
+                    ]
+                  : [];
+              }),
+            })
+          : { suggestions: new Map(), rejections: [] };
+
       await db
         .insert(clarifications)
         .values(
-          classified.map(({ q, c }) => ({
-            apiId,
-            specVersionId,
-            actionId: idByName.get(q.tool) ?? null,
-            fieldPath: q.fieldPath ?? null,
-            kind: q.kind,
-            question: q.question,
-            options: q.options ?? null,
-            groupKey: q.groupKey ?? null,
-            appliesTo: q.appliesTo ?? null,
-            ...(c ? { archetype: c.archetype, answerSpec: { ...c.answerSpec, why: c.why, unlocks: c.unlocks } } : {}),
-          })),
+          classified.map(({ q, c }) => {
+            const handle = questionHandle(q);
+            const assumed = assumedByHandle.get(handle);
+            const suggestions = synthesis.suggestions.get(handle);
+            return {
+              apiId,
+              specVersionId,
+              actionId: idByName.get(q.tool) ?? null,
+              fieldPath: q.fieldPath ?? null,
+              kind: q.kind,
+              question: q.question,
+              options: q.options ?? null,
+              groupKey: q.groupKey ?? null,
+              appliesTo: q.appliesTo ?? null,
+              ...(c
+                ? {
+                    archetype: c.archetype,
+                    answerSpec: {
+                      ...c.answerSpec,
+                      why: c.why,
+                      unlocks: c.unlocks,
+                      ...(suggestions?.length ? { suggestions } : {}),
+                    },
+                  }
+                : {}),
+              // Downgraded, not removed. It still renders, with its quote and
+              // source, and one click puts it back to pending. answerSource stays
+              // 'llm' so the human-only CHECK keeps holding.
+              ...(assumed
+                ? {
+                    status: 'assumed',
+                    answerSource: 'llm',
+                    assumedAnswer: assumed.answer,
+                    assumedBasis: {
+                      quote: assumed.quote,
+                      sourceKind: assumed.sourceKind,
+                      ...(assumed.sourceUrl ? { sourceUrl: assumed.sourceUrl } : {}),
+                    },
+                  }
+                : {}),
+            };
+          }),
         )
         // A retried job re-derives the same groups. The partial unique index on
         // (spec_version_id, group_key) turns that into a no-op rather than a
@@ -168,6 +274,7 @@ async function handler(req: Request) {
           fieldsFound: result.fields.length,
           questionsRaised: allQuestions.length,
           aiConfigured: aiReady(),
+          ...triageDetail,
         },
       })
       .where(eq(analysisRuns.id, run.id));
