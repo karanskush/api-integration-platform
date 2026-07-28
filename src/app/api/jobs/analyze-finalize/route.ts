@@ -47,6 +47,9 @@ async function handler(req: Request) {
       and(eq(clarifications.apiId, apiId), eq(clarifications.specVersionId, specVersionId), eq(clarifications.status, 'pending')),
     );
   const pendingCount = pendingRows.length;
+  // Reported in the run detail so a completed analysis records how much of it
+  // stayed unknown, rather than reading as fully resolved.
+  let unresolvedTotal = 0;
 
   const [lastRun] = await db
     .select({ status: analysisRuns.status, detail: analysisRuns.detail })
@@ -185,13 +188,18 @@ async function handler(req: Request) {
       await db.update(apis).set({ analysisStatus: 'complete' }).where(eq(apis.id, apiId));
 
       if (email && emailReady()) {
-        await sendAnalysisReadyEmail(email, { apiName: api.name, pageUrl: `${appOrigin()}/${api.slug}` });
+        await sendAnalysisReadyEmail(email, {
+          apiName: api.name,
+          pageUrl: `${appOrigin()}/${api.slug}`,
+          unresolvedCount: unresolved.size,
+        });
       }
+      unresolvedTotal = unresolved.size;
     }
 
     await db
       .update(analysisRuns)
-      .set({ status: 'succeeded', completedAt: new Date(), detail: { pendingCount } })
+      .set({ status: 'succeeded', completedAt: new Date(), detail: { pendingCount, unresolvedCount: unresolvedTotal } })
       .where(eq(analysisRuns.id, run.id));
   } catch (err) {
     await db
