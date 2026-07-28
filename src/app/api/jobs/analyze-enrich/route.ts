@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { aiReady } from '@/lib/ask';
 import { getDb } from '@/lib/db';
 import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts } from '@/lib/db/schema';
-import { consideredFieldsFor, type DocExcerpt, enrichRecord, reconcileOpenQuestions } from '@/lib/deepEnrich';
+import { clusterQuestions, consideredFieldsFor, type DocExcerpt, enrichRecord, reconcileOpenQuestions } from '@/lib/deepEnrich';
 import { loadRecordForVersion } from '@/lib/persistentApi';
 import { publishJob } from '@/lib/queue';
 
@@ -67,9 +67,14 @@ async function handler(req: Request) {
       ? await enrichRecord({ record, docExcerpts })
       : { fields: [], openQuestions: [], chunksProcessed: 0, chunksTotal: 0, truncated: false };
 
+    // Operation name -> path, so questions about the same field on different
+    // operations can be recognised as one question. Passed to reconcile too, so
+    // the auto-clarification budget is spent per cluster rather than per site.
+    const actionPathByName = new Map(record.actions.map((a) => [a.name, a.path]));
+
     const considered = consideredFieldsFor(record, record.actions);
-    const autoQuestions = reconcileOpenQuestions(considered, result);
-    const allQuestions = [...result.openQuestions, ...autoQuestions];
+    const autoQuestions = reconcileOpenQuestions(considered, result, actionPathByName);
+    const allQuestions = clusterQuestions([...result.openQuestions, ...autoQuestions], actionPathByName);
 
     if (result.fields.length) {
       await db.insert(evidenceFacts).values(
@@ -119,17 +124,25 @@ async function handler(req: Request) {
         .where(eq(actionsTable.specVersionId, specVersionId));
       const idByName = new Map(actionRows.map((a) => [a.name, a.id]));
 
-      await db.insert(clarifications).values(
-        allQuestions.map((q) => ({
-          apiId,
-          specVersionId,
-          actionId: idByName.get(q.tool) ?? null,
-          fieldPath: q.fieldPath ?? null,
-          kind: q.kind,
-          question: q.question,
-          options: q.options ?? null,
-        })),
-      );
+      await db
+        .insert(clarifications)
+        .values(
+          allQuestions.map((q) => ({
+            apiId,
+            specVersionId,
+            actionId: idByName.get(q.tool) ?? null,
+            fieldPath: q.fieldPath ?? null,
+            kind: q.kind,
+            question: q.question,
+            options: q.options ?? null,
+            groupKey: q.groupKey ?? null,
+            appliesTo: q.appliesTo ?? null,
+          })),
+        )
+        // A retried job re-derives the same groups. The partial unique index on
+        // (spec_version_id, group_key) turns that into a no-op rather than a
+        // duplicate set of questions or a failed run.
+        .onConflictDoNothing();
     }
 
     await db
