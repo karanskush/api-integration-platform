@@ -4,6 +4,7 @@ import { aiReady } from '@/lib/ask';
 import { getDb } from '@/lib/db';
 import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts } from '@/lib/db/schema';
 import { clusterQuestions, consideredFieldsFor, type DocExcerpt, enrichRecord, reconcileOpenQuestions } from '@/lib/deepEnrich';
+import { classifyQuestion } from '@/lib/clarify';
 import { loadRecordForVersion } from '@/lib/persistentApi';
 import { publishJob } from '@/lib/queue';
 
@@ -124,10 +125,19 @@ async function handler(req: Request) {
         .where(eq(actionsTable.specVersionId, specVersionId));
       const idByName = new Map(actionRows.map((a) => [a.name, a.id]));
 
+      // Classified here, deterministically, from the field's own shape and the
+      // lineage we already have. Storing the answer space on the row is what
+      // lets the completion page render a quiz without re-deriving anything, and
+      // lets the answer route validate a choice against the exact options the
+      // question was asked with.
+      const classified = allQuestions.map((q) => ({ q, c: classifyQuestion(record, q) }));
+      // Concrete questions first: someone who answers three quickly keeps going.
+      classified.sort((a, b) => (a.c?.rank ?? 99) - (b.c?.rank ?? 99));
+
       await db
         .insert(clarifications)
         .values(
-          allQuestions.map((q) => ({
+          classified.map(({ q, c }) => ({
             apiId,
             specVersionId,
             actionId: idByName.get(q.tool) ?? null,
@@ -137,6 +147,7 @@ async function handler(req: Request) {
             options: q.options ?? null,
             groupKey: q.groupKey ?? null,
             appliesTo: q.appliesTo ?? null,
+            ...(c ? { archetype: c.archetype, answerSpec: { ...c.answerSpec, why: c.why, unlocks: c.unlocks } } : {}),
           })),
         )
         // A retried job re-derives the same groups. The partial unique index on
