@@ -315,13 +315,19 @@ export const clarifications = pgTable('clarifications', {
   // below exist so that when an LLM triage pass lands it is structurally unable
   // to mark anything answered, rather than merely not doing so.
   answerSource: text('answer_source').notNull().default('human'),
-  status: text('status').notNull().default('pending'), // pending|answered|skipped
+  // Set when triage concluded the evidence already answers this. The question is
+  // downgraded, never removed: it still renders, with the sentence relied on and
+  // where that sentence came from, and one click puts it back to pending.
+  assumedAnswer: jsonb('assumed_answer'),
+  assumedBasis: jsonb('assumed_basis'), // { quote, sourceKind, sourceUrl? }
+  status: text('status').notNull().default('pending'), // pending|answered|skipped|assumed
   answer: jsonb('answer'),
   answeredBy: uuid('answered_by').references(() => users.id),
   answeredAt: timestamp('answered_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [
   index('clarifications_api_id_status_idx').on(t.apiId, t.status),
+  index('clarifications_spec_version_status_idx').on(t.specVersionId, t.status),
   // Makes the collapse enforceable rather than merely intended: a retried enrich
   // job cannot re-insert a group that already exists for this spec version.
   uniqueIndex('clarifications_spec_version_group_key_idx')

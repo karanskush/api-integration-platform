@@ -57,6 +57,13 @@
       "when": 1785312000000,
       "tag": "0007_clarification_quiz",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785398400000,
+      "tag": "0008_clarification_assumptions",
+      "breakpoints": true
     }
   ]
 }
