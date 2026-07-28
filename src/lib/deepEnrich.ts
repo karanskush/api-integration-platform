@@ -43,9 +43,23 @@ export type OpenQuestion = {
   options?: string[];
 };
 
+// The model's disagreement with a structural lineage edge. This is where a
+// "your knownProducers entry is wrong" observation goes instead of becoming a
+// question: it is a claim about our own heuristics, and the API's owner has no
+// way to adjudicate it.
+export type LineageDispute = {
+  tool: string;
+  field: string;
+  producer: string; // the knownProducers string verbatim: "tool.field (confidence)"
+  reason: string;
+};
+
 export type EnrichResult = {
   fields: FieldSemanticsFinding[];
   openQuestions: OpenQuestion[];
+  // Optional: callers construct EnrichResult literals (including in tests), and
+  // a required field would break every one of them.
+  lineageDisputes?: LineageDispute[];
   chunksProcessed: number;
   chunksTotal: number;
   truncated: boolean;
@@ -75,6 +89,20 @@ const ChunkOutputSchema = z.object({
       options: z.array(z.string()).optional(),
     }),
   ),
+  // .optional() is load-bearing, not stylistic: the tests mock doGenerate with
+  // objects carrying only `fields` and `openQuestions`, and a required key makes
+  // generateObject throw into the per-chunk catch below, silently emptying the
+  // whole pass.
+  lineageDisputes: z
+    .array(
+      z.object({
+        action: z.string(),
+        field: z.string(),
+        producer: z.string(),
+        reason: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 function groupByResource(actions: Action[]): Array<{ resource: string; actions: Action[] }> {
@@ -135,6 +163,14 @@ function consideredFieldsFor(record: ImportRecord, actions: Action[]): Considere
   return out;
 }
 
+// Vocabulary that only makes sense to someone who can see inside Spotcheck. A
+// question containing any of it is asking the API's owner to adjudicate our own
+// inference — "Is this heuristic noise conflating distinct entity ids?" — which
+// they cannot do. On one Swagger Petstore run these were the majority of the
+// questions raised.
+const INTERNAL_VOCABULARY =
+  /\b(known[\s_]?producers?|heuristics?|lineage|spotcheck|confidence (?:score|level|value)|structural (?:heuristic|signal)|edge (?:score|weight)|scoring)\b/i;
+
 function systemInstructions(): string {
   return [
     "You are analyzing an API's fields to explain what each one actually means and where its value should come from, beyond what structural heuristics alone can say.",
@@ -144,8 +180,9 @@ function systemInstructions(): string {
     'For each field listed:',
     '- Give a confident, specific semantic reading (what the value represents, any business constraint the docs or description imply) ONLY when you are genuinely confident.',
     "- If you cannot tell — the name is generic, nothing in the docs explains it, and it has no known producer — raise it as an open question instead of guessing. A wrong guess is worse than an honest \"unknown\": someone will read your answer as fact and act on it.",
-    '- If a field already has a knownProducers entry from structural heuristics and you believe it is WRONG based on the docs or description, do not silently override it — raise an open question describing the conflict instead of asserting your own read over it.',
-    '- Never invent a field, an endpoint, or documentation content that was not given to you in this message.',
+    "- Open questions go verbatim to the API's OWNER: a person who knows their own product, and who has never seen this tool. Only ask what they can answer from their own knowledge of the API — what a value means, where a caller gets it, which of two readings is right. NEVER ask about knownProducers, heuristics, lineage, confidence, scoring, or anything else about how this analysis was produced. They have no way to answer that, and every such question burns one of the few chances you get to ask them anything.",
+    '- If a knownProducers entry looks WRONG, do not raise a question about it. Put it in `lineageDisputes` with the producer string exactly as given and a one-line reason; that downgrades the link on its own. If the FIELD is also genuinely ambiguous, ask about the field itself — what it represents and where a caller would get it — never about the entry.',
+    '- Never invent a field, an endpoint, or documentation content that was not given to you in this message. Only ask about fields listed above, named exactly as they are listed.',
   ].join('\n');
 }
 
@@ -180,10 +217,17 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
 
   const fields: FieldSemanticsFinding[] = [];
   const openQuestions: OpenQuestion[] = [];
+  const lineageDisputes: LineageDispute[] = [];
 
   for (const group of processed) {
     const chunkFields = consideredFieldsFor(input.record, group.actions);
     if (!chunkFields.length) continue;
+
+    // Every (action, field) pair the model was actually shown. A question about
+    // anything else is about a field that does not exist — see the admit-list
+    // below.
+    const shown = new Set(chunkFields.map((f) => `${f.action} ${f.field}`));
+    const shownActions = new Set(chunkFields.map((f) => f.action));
 
     try {
       const { object } = await generateObject({
@@ -204,12 +248,31 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
         });
       }
       for (const q of object.openQuestions) {
+        // Two hard filters, both enforcement rather than instruction. Nothing
+        // previously checked that a question named a real action or a real
+        // field, so a hallucinated `drop_all_pets` became a row rendered to the
+        // API's owner with a null action_id.
+        if (q.fieldPath ? !shown.has(`${q.action} ${q.fieldPath}`) : !shownActions.has(q.action)) continue;
+        // And a question about our own inference is unanswerable by an owner.
+        // The system prompt says so, but prompts drift; dropping it here is
+        // safe because reconcileOpenQuestions re-raises the underlying field
+        // honestly if it genuinely has no producer.
+        if (INTERNAL_VOCABULARY.test(q.question)) continue;
         openQuestions.push({
           tool: q.action,
           ...(q.fieldPath ? { fieldPath: q.fieldPath } : {}),
           kind: q.kind,
           question: asData(q.question, 300),
           ...(q.options?.length ? { options: q.options.slice(0, 8).map((o) => asData(o, 100)) } : {}),
+        });
+      }
+      for (const d of object.lineageDisputes ?? []) {
+        if (!shown.has(`${d.action} ${d.field}`)) continue;
+        lineageDisputes.push({
+          tool: d.action,
+          field: d.field,
+          producer: asData(d.producer, 200),
+          reason: asData(d.reason, 300),
         });
       }
     } catch {
@@ -222,6 +285,7 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
   return {
     fields,
     openQuestions,
+    lineageDisputes,
     chunksProcessed: processed.length,
     chunksTotal: groups.length,
     truncated: truncatedByChunkCap,
