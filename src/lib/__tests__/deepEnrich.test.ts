@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MockLanguageModelV4 } from 'ai/test';
-import { consideredFieldsFor, enrichRecord, reconcileOpenQuestions } from '../deepEnrich';
+import { clusterQuestions, consideredFieldsFor, enrichRecord, reconcileOpenQuestions } from '../deepEnrich';
 import type { Action, ImportRecord } from '../ir';
 
 function action(o: Partial<Action> & { name: string; method: string; path: string }): Action {
@@ -294,6 +294,86 @@ describe('enrichRecord', () => {
     const result = await enrichRecord({ record: readOnlyRecord, docExcerpts: [], model });
     expect(model.doGenerateCalls).toHaveLength(0);
     expect(result.chunksProcessed).toBe(1);
+  });
+});
+
+describe('clusterQuestions', () => {
+  // The four Petstore operations that all take petId, plus the two creates that
+  // both take a bare `id` but for different entities.
+  const PATHS = new Map([
+    ['get_pet_by_id', '/pet/{petId}'],
+    ['update_pet_with_form', '/pet/{petId}'],
+    ['delete_pet', '/pet/{petId}'],
+    ['upload_file', '/pet/{petId}/uploadImage'],
+    ['add_pet', '/pet'],
+    ['place_order', '/store/order'],
+    ['update_pet', '/pet'],
+  ]);
+
+  const q = (tool: string, fieldPath: string, question = 'Where does this come from?') => ({
+    tool,
+    fieldPath,
+    kind: 'ambiguous_origin' as const,
+    question,
+  });
+
+  it('asks about petId once and records every operation it affects', () => {
+    const clustered = clusterQuestions(
+      [
+        q('get_pet_by_id', 'path.petId'),
+        q('update_pet_with_form', 'path.petId'),
+        q('delete_pet', 'path.petId'),
+        q('upload_file', 'path.petId'),
+      ],
+      PATHS,
+    );
+
+    expect(clustered).toHaveLength(1);
+    expect(clustered[0].appliesTo).toHaveLength(4);
+    expect(clustered[0].appliesTo!.map((s) => s.tool)).toEqual([
+      'get_pet_by_id',
+      'update_pet_with_form',
+      'delete_pet',
+      'upload_file',
+    ]);
+  });
+
+  it('keeps the first wording verbatim rather than rewriting it', () => {
+    const clustered = clusterQuestions(
+      [q('get_pet_by_id', 'path.petId', 'First phrasing'), q('delete_pet', 'path.petId', 'Second phrasing')],
+      PATHS,
+    );
+    expect(clustered[0].question).toBe('First phrasing');
+  });
+
+  it('does not merge the same field name across different entities', () => {
+    // add_pet.body.id is a Pet id and place_order.body.id is an Order id. One
+    // answer must not silently apply to both.
+    const clustered = clusterQuestions([q('add_pet', 'body.id'), q('place_order', 'body.id')], PATHS);
+    expect(clustered).toHaveLength(2);
+  });
+
+  it('separates a nested entity id from its parent', () => {
+    const clustered = clusterQuestions(
+      [q('update_pet', 'body.id'), q('update_pet', 'body.category.id'), q('update_pet', 'body.tags[].id')],
+      PATHS,
+    );
+    expect(clustered).toHaveLength(3);
+  });
+
+  it('does not merge different kinds of question about one field', () => {
+    const clustered = clusterQuestions(
+      [
+        { ...q('add_pet', 'body.status'), kind: 'ambiguous_origin' as const },
+        { ...q('add_pet', 'body.status'), kind: 'ambiguous_enum' as const },
+      ],
+      PATHS,
+    );
+    expect(clustered).toHaveLength(2);
+  });
+
+  it('drops a question about an action it has no path for', () => {
+    expect(clusterQuestions([q('ghost_action', 'body.x')], PATHS)).toEqual([]);
   });
 });
 
