@@ -174,8 +174,8 @@ function scoreGenericMatch(
   producer: ProducerField,
   consumer: ConsumerField,
   sharedResource: boolean,
+  titleMatch: boolean,
 ): { score: number; why: LineageSignal[] } | null {
-  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
   if (titleMatch) return { score: HIGH + 10, why: ['generic_name', 'title_match'] };
 
   if (enumOverlap(producer.field, consumer.field)) {
@@ -233,6 +233,11 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
 
   if (!exactName && !foreignKey) return null; // names must relate somehow; nothing else is evidence enough
 
+  // An identical schema title is PROVABLE type identity — the one signal that
+  // legitimately says "these two differently-named things are the same type".
+  // Computed once here because both the generic and the distinctive path need it.
+  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
+
   // Resource affinity. For a foreign-key match the resource came from the field
   // name; otherwise compare the two operations' paths.
   const sharedResource = foreignKey
@@ -240,12 +245,11 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
     : producer.resources.some((r) => consumer.resources.includes(r)) ||
       (fkResource !== null && producer.resources.includes(fkResource));
 
-  if (exactName && generic) return scoreGenericMatch(producer, consumer, sharedResource);
+  if (exactName && generic) return scoreGenericMatch(producer, consumer, sharedResource, titleMatch);
 
   const why: LineageSignal[] = [exactName ? 'distinctive_name' : 'foreign_key_name'];
   let score = exactName ? WEIGHTS.distinctive_name : WEIGHTS.foreign_key_name;
 
-  const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
   if (titleMatch) {
     why.push('title_match');
     score += WEIGHTS.title_match;
