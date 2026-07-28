@@ -305,11 +305,21 @@ export function reconcileOpenQuestions(considered: ConsideredField[], result: En
   for (const f of result.fields) explained.add(`${f.tool} ${f.field}`);
   for (const q of result.openQuestions) explained.add(`${q.tool} ${q.fieldPath ?? ''}`);
 
+  // Producers the model disputed, keyed exactly as knownProducers renders them.
+  // produced_by_api rests entirely on those producers, so a field whose every
+  // producer is disputed is no longer explained by structure and earns an honest
+  // field-level question — the legitimate replacement for the "your heuristic
+  // looks wrong" question we no longer put to the owner.
+  const disputed = new Set<string>();
+  for (const d of result.lineageDisputes ?? []) disputed.add(`${d.tool} ${d.field} ${d.producer}`);
+
   const auto: OpenQuestion[] = [];
   for (const f of considered) {
     if (auto.length + result.openQuestions.length >= MAX_AUTO_CLARIFICATIONS) break;
-    if (f.origin !== 'caller_supplied') continue; // enum/constant/server_generated/produced_by_api are already explained by structure
-    if (f.knownProducers.length) continue; // heuristics already found a producer
+    const live = f.knownProducers.filter((p) => !disputed.has(`${f.action} ${f.field} ${p}`));
+    const stillExplained = f.origin === 'produced_by_api' ? live.length > 0 : f.origin !== 'caller_supplied';
+    if (stillExplained) continue; // enum/constant/server_generated, or a producer that survived
+    if (live.length) continue; // heuristics found a producer the model did not dispute
     if (explained.has(`${f.action} ${f.field}`)) continue; // LLM already covered this one
     auto.push({
       tool: f.action,
