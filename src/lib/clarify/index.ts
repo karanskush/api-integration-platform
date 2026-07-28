@@ -12,6 +12,8 @@ import { classify, type Classification } from './archetypes';
 
 export * from './archetypes';
 export * from './answers';
+export * from './evidence';
+export * from './triage';
 
 export type QuestionRef = {
   tool: string;
