@@ -34,13 +34,25 @@ export class AskInputError extends Error {
   }
 }
 
-// Either an explicit Gateway key (local dev, non-Vercel deploys), or running
-// on Vercel itself, where the Gateway authenticates via OIDC with no key to
-// configure. Every other xReady() in this codebase needs an explicit secret
-// regardless of platform; this is the one integration where the platform
-// itself is a valid credential source, so both are accepted.
+// Every other xReady() in this codebase demands an explicit secret. This is the
+// one integration where the platform itself is a credential source, so it
+// accepts any of the three ways the Gateway can actually authenticate:
+//
+//   AI_GATEWAY_API_KEY  explicit key — local dev, non-Vercel deploys
+//   VERCEL              running on Vercel, which injects an OIDC token
+//   VERCEL_OIDC_TOKEN   a token pulled locally by `vercel env pull`
+//
+// The third was missing, and its absence was not theoretical: with a freshly
+// pulled .env.local the Gateway answers a real generateText call while
+// aiReady() reported "not configured", so the enrichment pass silently ran in
+// its heuristic-only fallback and both ask routes returned 503. A readiness
+// check that is stricter than reality is just a feature flag stuck off.
+//
+// Note OIDC tokens are short-lived (~12h). An expired one is a runtime failure,
+// not a readiness question — callers already treat a model error as a degraded
+// pass rather than a dead end.
 export function aiReady(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY) || Boolean(process.env.VERCEL);
+  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL || process.env.VERCEL_OIDC_TOKEN);
 }
 
 export function askModel(): string {

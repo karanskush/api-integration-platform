@@ -9,7 +9,7 @@ import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
 
-const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'SPOTCHECK_ASK_MODEL'] as const;
+const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL'] as const;
 const originals = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -98,7 +98,7 @@ function toolCallResult(toolCallId: string, toolName: string, input: Record<stri
 }
 
 describe('aiReady', () => {
-  it('is false with neither a gateway key nor a Vercel runtime', () => {
+  it('is false with no credential of any kind', () => {
     expect(aiReady()).toBe(false);
   });
 
@@ -113,6 +113,15 @@ describe('aiReady', () => {
   // platform.
   it('is true when running on Vercel with no explicit key', () => {
     process.env.VERCEL = '1';
+    expect(aiReady()).toBe(true);
+  });
+
+  // `vercel env pull` writes a short-lived OIDC token into .env.local, which the
+  // Gateway accepts on its own. Missing this case is what left every
+  // model-backed feature dark in local development while the Gateway was in
+  // fact answering calls.
+  it('is true with a pulled OIDC token and nothing else', () => {
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
     expect(aiReady()).toBe(true);
   });
 });
