@@ -144,6 +144,48 @@ describe('schema constraints', () => {
     ).rejects.toThrow();
   });
 
+  // The enriched spec derives x-spotcheck-human-verified from answered rows, so
+  // "only a human can answer" has to hold at the database level rather than by
+  // convention in whichever code path happens to do the update.
+  it('refuses to mark a clarification answered by anything but a human', async () => {
+    const { org } = await makeOrgWithUser(db, 'clarify');
+    const [api] = await db.insert(schema.apis).values({ orgId: org.id, slug: 'clarify-api', name: 'Clarify' }).returning();
+    const [specVersion] = await db
+      .insert(schema.specVersions)
+      .values({ apiId: api.id, contentHash: 'hash-clarify', source: 'openapi', parseStatus: 'parsed' })
+      .returning();
+
+    const row = { apiId: api.id, specVersionId: specVersion.id, kind: 'ambiguous_origin', question: 'Where from?' };
+
+    await expect(
+      db.insert(schema.clarifications).values({ ...row, status: 'answered', answerSource: 'llm', answer: 'guessed' }),
+    ).rejects.toThrow();
+
+    // A human answer, and a non-human row left unanswered, are both fine.
+    await db.insert(schema.clarifications).values({ ...row, status: 'answered', answerSource: 'human', answer: 'the server assigns it' });
+    await db.insert(schema.clarifications).values({ ...row, status: 'pending', answerSource: 'llm' });
+  });
+
+  it('allows one clarification group per spec version, so a retried job cannot duplicate it', async () => {
+    const { org } = await makeOrgWithUser(db, 'groups');
+    const [api] = await db.insert(schema.apis).values({ orgId: org.id, slug: 'group-api', name: 'Groups' }).returning();
+    const [specVersion] = await db
+      .insert(schema.specVersions)
+      .values({ apiId: api.id, contentHash: 'hash-groups', source: 'openapi', parseStatus: 'parsed' })
+      .returning();
+
+    const row = { apiId: api.id, specVersionId: specVersion.id, kind: 'ambiguous_origin', question: 'Where from?' };
+
+    await db.insert(schema.clarifications).values({ ...row, groupKey: 'ambiguous_origin|pet|pet_id' });
+    await expect(
+      db.insert(schema.clarifications).values({ ...row, groupKey: 'ambiguous_origin|pet|pet_id' }),
+    ).rejects.toThrow();
+
+    // The index is partial, so unclustered rows are still free to repeat.
+    await db.insert(schema.clarifications).values(row);
+    await db.insert(schema.clarifications).values(row);
+  });
+
   it('getOrCreateSystemOrg is idempotent and creates exactly one system org', async () => {
     const first = await getOrCreateSystemOrg(db);
     const second = await getOrCreateSystemOrg(db);
