@@ -81,6 +81,45 @@ describe('buildEnrichedSpec', () => {
       expect(after['x-spotcheck-origin']).not.toBe('produced_by_api');
     });
 
+    it('applies an assumption but never lets it claim a human confirmed it', () => {
+      const field = petIdOf({
+        assumptions: new Map([
+          [
+            'get_pet path.petId',
+            {
+              origin: 'caller_supplied' as const,
+              quote: 'callers supply the pet identifier themselves',
+              sourceKind: 'docs',
+              sourceUrl: 'https://petstore.test/docs',
+            },
+          ],
+        ]),
+      });
+      expect(field['x-spotcheck-origin']).toBe('caller_supplied');
+      expect(field['x-spotcheck-origin-source']).toBe('assumed');
+      // The line that matters: evidence is not confirmation.
+      expect(field['x-spotcheck-human-verified']).toBe(false);
+      // And it carries its receipt, so a consumer can judge the inference.
+      expect(field['x-spotcheck-assumed']).toEqual({
+        quote: 'callers supply the pet identifier themselves',
+        source: 'docs',
+        url: 'https://petstore.test/docs',
+      });
+    });
+
+    it('lets a person override an assumption about the same field', () => {
+      const field = petIdOf({
+        answers: new Map([['get_pet path.petId', { origin: 'server_generated' as const }]]),
+        assumptions: new Map([
+          ['get_pet path.petId', { origin: 'caller_supplied' as const, quote: 'q'.repeat(30), sourceKind: 'docs' }],
+        ]),
+      });
+      expect(field['x-spotcheck-origin']).toBe('server_generated');
+      expect(field['x-spotcheck-origin-source']).toBe('human');
+      expect(field['x-spotcheck-human-verified']).toBe(true);
+      expect(field['x-spotcheck-assumed']).toBeUndefined();
+    });
+
     it('keeps accepting the legacy set of verified keys', () => {
       const field = petIdOf(new Set(['get_pet path.petId']));
       expect(field['x-spotcheck-human-verified']).toBe(true);

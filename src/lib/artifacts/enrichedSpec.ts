@@ -26,9 +26,15 @@ export type HumanVerifiedLookup = (tool: string, field: string) => boolean;
 // PUT's merge semantics confirms the field without reclassifying it.
 export type HumanAnswer = { origin?: FieldOrigin };
 
+// What triage concluded from evidence, with the sentence it relied on. Applied
+// to the origin like a human answer, but never counted as one.
+export type AssumedAnswer = { origin?: FieldOrigin; quote: string; sourceKind: string; sourceUrl?: string };
+
 export type EnrichedSpecInput = {
   // Answered by a person. The key set doubles as x-spotcheck-human-verified.
   answers?: Map<string, HumanAnswer>;
+  // Concluded from evidence by the triage pass, not confirmed by anyone.
+  assumptions?: Map<string, AssumedAnswer>;
   // Explicitly skipped: we asked, nobody could say. An honest unknown, and
   // deliberately distinct from never having asked.
   unresolved?: Set<string>;
@@ -48,12 +54,15 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
   );
 
   const answer = input.answers?.get(key);
+  // Only consulted when no person answered. A human answer always wins over an
+  // inference drawn from the same evidence that produced the question.
+  const assumption = answer ? undefined : input.assumptions?.get(key);
   const heuristicOrigin = originOf(field, producers.length > 0);
   // A person who knows the API outranks our inference about it. Without this the
   // owner could answer "the server assigns this, ignore what I send" and the
   // published spec would still read caller_supplied — now stamped
   // human-verified, which is worse than never having asked.
-  const origin = answer?.origin ?? heuristicOrigin;
+  const origin = answer?.origin ?? assumption?.origin ?? heuristicOrigin;
 
   return {
     type: field.nullable ? [field.type, 'null'] : field.type,
@@ -61,9 +70,10 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
     ...(field.enum ? { enum: field.enum } : {}),
     ...(field.description ? { description: field.description } : {}),
     'x-spotcheck-origin': origin,
-    // Which of the two produced the value above, so a consumer never has to
-    // guess whether it is reading a person's answer or our heuristic.
-    'x-spotcheck-origin-source': answer?.origin ? 'human' : 'heuristic',
+    // Which of the three produced the value above, so a consumer never has to
+    // guess whether it is reading a person's answer, an inference from the
+    // provider's own documentation, or our structural heuristic.
+    'x-spotcheck-origin-source': answer?.origin ? 'human' : assumption?.origin ? 'assumed' : 'heuristic',
     ...(producers.length
       ? {
           'x-spotcheck-produced-by': producers.map((p) => ({
@@ -73,7 +83,21 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
           })),
         }
       : {}),
+    // Strictly a person. An assumption never sets this, no matter how well
+    // evidenced — that is the line between "someone who knows this API told us"
+    // and "we read it somewhere", and it is the whole value of the marker.
     'x-spotcheck-human-verified': input.answers?.has(key) ?? false,
+    // Carries its own receipt: the sentence relied on and where it came from, so
+    // a consumer can judge the inference instead of taking it on faith.
+    ...(assumption
+      ? {
+          'x-spotcheck-assumed': {
+            quote: assumption.quote,
+            source: assumption.sourceKind,
+            ...(assumption.sourceUrl ? { url: assumption.sourceUrl } : {}),
+          },
+        }
+      : {}),
     // Asked and unanswerable. Distinct from an absent marker, which only means
     // we never asked.
     ...(input.unresolved?.has(key) ? { 'x-spotcheck-unresolved': true } : {}),
