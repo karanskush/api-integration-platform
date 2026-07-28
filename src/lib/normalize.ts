@@ -230,6 +230,29 @@ function cleanDescription(op: OASOperation, method: string, path: string): strin
   return raw.replace(/\s+/g, ' ').slice(0, 500);
 }
 
+// The body description must name what the endpoint actually accepts. Petstore's
+// POST /pet/{petId}/uploadImage declares ONLY application/octet-stream with
+// {type: string, format: binary}; calling that "JSON request body" is a factual
+// error, and the deep-analysis pass duly raised it as a clarification for a
+// human to answer — a question Spotcheck manufactured for itself.
+function describeBody(mediaType: string, schema: Record<string, unknown>): string {
+  if (isJsonMediaType(mediaType)) return 'JSON request body';
+  if (mediaType === 'application/x-www-form-urlencoded') return 'Form-encoded request body';
+  if (mediaType === 'multipart/form-data') return 'Multipart form-data request body';
+  if (schema.format === 'binary' || mediaType === 'application/octet-stream' || /^(image|audio|video)\//.test(mediaType)) {
+    return `Binary request body (${mediaType})`;
+  }
+  return `Request body (${mediaType})`;
+}
+
+// `application/json` plus the structured-suffix family every modern API uses:
+// application/vnd.api+json, application/merge-patch+json, application/ld+json.
+// A literal === 'application/json' lookup silently treats all of those as
+// "whatever key happened to be first".
+function isJsonMediaType(mediaType: string): boolean {
+  return mediaType === 'application/json' || /\+json$/.test(mediaType);
+}
+
 export function classifySafety(method: string, name: string, path: string): Safety {
   const m = method.toLowerCase();
   if (m === 'get' || m === 'head' || m === 'options') return 'read';
@@ -287,12 +310,20 @@ function buildParamsSchema(
   const requestBody = op.requestBody as Record<string, unknown> | undefined;
   if (requestBody && typeof requestBody === 'object') {
     const content = (requestBody.content ?? {}) as Record<string, Record<string, unknown>>;
-    const media = content['application/json'] ?? Object.values(content)[0];
-    if (media) {
+    const keys = Object.keys(content);
+    const mediaType = keys.find(isJsonMediaType) ?? keys[0];
+    const media = mediaType ? content[mediaType] : undefined;
+    if (media && mediaType) {
       const bodySchema = sanitizeSchema((media.schema as Record<string, unknown>) ?? {});
       bodySchema['x-spotcheck-in'] = 'body';
+      // Same vendor-annotation convention as x-spotcheck-in above, and carried
+      // on the schema rather than promoted to Action so ir.ts, the actions table
+      // projection, persistentApi.ts's toAction() and every fixture stay
+      // unchanged. upstream.ts and snippets.ts read it to send the right
+      // Content-Type instead of hardcoding JSON.
+      bodySchema['x-spotcheck-content-type'] = mediaType;
       if (!bodySchema.description) {
-        bodySchema.description = 'JSON request body';
+        bodySchema.description = describeBody(mediaType, bodySchema);
       }
       properties.body = bodySchema;
       if (requestBody.required) required.push('body');
