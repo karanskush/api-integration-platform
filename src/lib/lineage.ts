@@ -243,6 +243,34 @@ function isDownstreamItemRead(producerPath: string, consumerAction: Action): boo
   return params.some((raw) => collectionPathFor(producerPath, raw.slice(1, -1)) === consumerAction.path);
 }
 
+// Rejects a pair whose two sides identify DIFFERENT entities.
+//
+// Both endpoints previously carried only the operation's resources, so
+// add_pet.response.id, add_pet.response.category.id and
+// add_pet.response.tags[].id were indistinguishable — all three `['pet']`, all
+// three scoring 105 for get_pet_by_id.path.petId, all three returned HIGH. That
+// is the exact class of wrong edge this module exists to prevent: it points an
+// agent at a Tag id when it asked where to get a Pet id.
+//
+// A HARD REJECT rather than a penalty, deliberately. type_mismatch is -20
+// because integer-vs-string on the same concept is usually a spec bug; "a
+// Category id is not a Pet id" is not a bug, it is a different thing. And no
+// penalty can be sized safely: a foreign-key match scores 105, so it would take
+// -46 to fall out of HIGH and -71 to fall out of MEDIUM, and -71 would destroy
+// every legitimate edge the moment the entity resolver misfires. The module
+// header's rule applies — silence beats a wrong call.
+//
+// When only one side is definite, the other's operation-path resources are the
+// fallback, which is why this is a containment test and not equality.
+function entityConflict(producer: ProducerField, consumer: ConsumerField): boolean {
+  const p = producer.entity;
+  const c = consumer.entity;
+  if (p && c) return p !== c; // both known, and they disagree
+  if (p) return !consumer.resources.includes(p);
+  if (c) return !producer.resources.includes(c);
+  return false; // neither side knows — leave it to the existing signals
+}
+
 function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
   if (isDownstreamItemRead(producer.action.path, consumer.action)) return null;
 
@@ -262,6 +290,12 @@ function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: n
   // legitimately says "these two differently-named things are the same type".
   // Computed once here because both the generic and the distinctive path need it.
   const titleMatch = Boolean(producer.field.title && consumer.field.title && producer.field.title === consumer.field.title);
+
+  // titleMatch is the escape hatch: an identical title is provable type
+  // identity, and legitimately outranks a name-derived entity guess (an `owner`
+  // that really is a `user`). Petstore declares no titles, so this changes
+  // nothing there; specs that do declare them keep working.
+  if (!titleMatch && entityConflict(producer, consumer)) return null;
 
   // Resource affinity. For a foreign-key match the resource came from the field
   // name; otherwise compare the two operations' paths.
