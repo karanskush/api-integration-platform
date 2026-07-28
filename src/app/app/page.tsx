@@ -36,6 +36,11 @@ export default function AppHome() {
             </li>
           </ol>
           <p className="app-privacy">Anonymous workspaces expire after 24 hours. Credentials are never stored.</p>
+          <p className="app-privacy">
+            Want it verified in depth instead — every field traced, the provider&apos;s own docs
+            folded in, a human loop for anything ambiguous?{' '}
+            <a href="/analyze">Try deep analysis →</a>
+          </p>
         </aside>
       </div>
     </div>

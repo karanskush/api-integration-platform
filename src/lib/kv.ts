@@ -30,11 +30,24 @@ function upstashDriver(): KV {
     async setImport(rec, ttlSecs) {
       await redis.set(IMPORT_KEY(rec.id), JSON.stringify(rec), { ex: ttlSecs });
     },
+    // Base64-wrapped, deliberately: @upstash/redis's get() auto-attempts
+    // JSON.parse() on whatever it reads back, with no way to opt out. A raw
+    // spec is itself JSON text for the (overwhelmingly common) JSON-format
+    // case, so storing it verbatim meant get() silently handed back a PARSED
+    // OBJECT instead of the original string — persist.ts's createHash(...).
+    // update(rawText) then threw "data argument must be of type string",
+    // crashing every claim of a JSON-format import. Base64 text can never be
+    // valid JSON syntax on its own (no top-level production in the JSON
+    // grammar matches an unquoted run of base64 characters), so this is
+    // immune to the auto-parse regardless of what the original text looked
+    // like — found live, in production, the first time this path ever ran
+    // end-to-end (Clerk had blocked every earlier attempt this session).
     async getRawSpec(id) {
-      return (await redis.get<string>(RAW_SPEC_KEY(id))) ?? null;
+      const stored = await redis.get<string>(RAW_SPEC_KEY(id));
+      return stored == null ? null : Buffer.from(stored, 'base64').toString('utf8');
     },
     async setRawSpec(id, rawText, ttlSecs) {
-      await redis.set(RAW_SPEC_KEY(id), rawText, { ex: ttlSecs });
+      await redis.set(RAW_SPEC_KEY(id), Buffer.from(rawText, 'utf8').toString('base64'), { ex: ttlSecs });
     },
     async addWaitlist(entry) {
       const added = await redis.sadd(WAITLIST_SET, entry.email);

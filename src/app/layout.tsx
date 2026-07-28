@@ -81,6 +81,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <a className="nav-link" href="/dashboard">
                       Dashboard
                     </a>
+                    <a className="nav-link" href="/analyze">
+                      Deep analysis
+                    </a>
                     <UserButton />
                   </Show>
                 </>
