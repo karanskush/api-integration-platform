@@ -53,10 +53,21 @@ export function buildUpstreamRequest(
         headers[name] = String(value).replace(/[\r\n]/g, '');
         break;
       }
-      case 'body':
-        body = typeof value === 'string' ? value : JSON.stringify(value);
-        headers['content-type'] = 'application/json';
+      case 'body': {
+        // The media type the operation actually declares, captured at import
+        // time by normalize.ts. This was hardcoded to application/json, which
+        // sent JSON to endpoints that accept none — Petstore's
+        // POST /pet/{petId}/uploadImage declares only application/octet-stream.
+        const declared = String(props[name]?.['x-spotcheck-content-type'] ?? 'application/json');
+        headers['content-type'] = declared;
+        if (typeof value === 'string') body = value;
+        else if (declared === 'application/x-www-form-urlencoded') {
+          body = new URLSearchParams(
+            Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, String(v)]),
+          ).toString();
+        } else body = JSON.stringify(value);
         break;
+      }
     }
   }
 
