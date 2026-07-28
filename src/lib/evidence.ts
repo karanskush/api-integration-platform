@@ -30,6 +30,11 @@ export type EvidenceKind =
   // 'llm' source value rather than reusing 'parser'.
   | 'llm.doc_grounding'
   | 'llm.field_semantics'
+  // The LLM's disagreement with a structural lineage edge. Deliberately NOT a
+  // clarification: it is a claim about Spotcheck's own heuristics, which an API
+  // owner has no way to adjudicate. Recording it downgrades the edge at the
+  // artifact boundary; it never becomes a question.
+  | 'llm.lineage_dispute'
   // A clarification the human answered — the highest trust tier, above both
   // 'parser' and 'llm' sourced facts, since a person confirmed it directly.
   | 'human.clarification';
@@ -101,6 +106,16 @@ const fieldSemanticsPayload = z.object({
   sourcedFrom: z.enum(['spec', 'docs']),
 });
 
+// One disputed lineage edge. `producer` is the exact knownProducers string the
+// model was shown ("tool.field (confidence)"), so the dispute can be matched
+// back to the edge it refers to without trusting the model to restructure it.
+const lineageDisputePayload = z.object({
+  tool: z.string(),
+  field: z.string(),
+  producer: z.string(),
+  reason: z.string(),
+});
+
 // A clarification question's human-provided answer, materialized as a fact.
 const humanClarificationPayload = z.object({
   clarificationId: z.string(),
@@ -122,6 +137,7 @@ const evidenceSchemas = {
   'graph.field_lineage': fieldLineagePayload,
   'llm.doc_grounding': docGroundingPayload,
   'llm.field_semantics': fieldSemanticsPayload,
+  'llm.lineage_dispute': lineageDisputePayload,
   'human.clarification': humanClarificationPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
