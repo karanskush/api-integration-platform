@@ -659,3 +659,126 @@ describe('computeLineage — robustness', () => {
     }
   });
 });
+
+// The real Swagger Petstore, reduced to the shape that broke: Pet, Category and
+// Tag each declare a bare int64 `id`, and NONE of them declares a schema title.
+// Dereferencing inlines the $refs, so by the time lineage sees these fields the
+// only thing distinguishing a Category id from a Pet id is the field's own path.
+describe('lineage across nested entities that share an id field name', () => {
+  const PET_SCHEMA = {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', format: 'int64' },
+      name: { type: 'string' },
+      category: { type: 'object', properties: { id: { type: 'integer', format: 'int64' }, name: { type: 'string' } } },
+      tags: {
+        type: 'array',
+        items: { type: 'object', properties: { id: { type: 'integer', format: 'int64' }, name: { type: 'string' } } },
+      },
+      photoUrls: { type: 'array', items: { type: 'string' } },
+      status: { type: 'string', enum: ['available', 'pending', 'sold'] },
+    },
+  };
+
+  const PETSTORE = [
+    action({
+      name: 'add_pet',
+      method: 'POST',
+      path: '/pet',
+      safety: 'write',
+      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-spotcheck-in': 'body' } } },
+      responseSchema: PET_SCHEMA,
+    }),
+    action({
+      name: 'update_pet',
+      method: 'PUT',
+      path: '/pet',
+      safety: 'write',
+      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-spotcheck-in': 'body' } } },
+      responseSchema: PET_SCHEMA,
+    }),
+    action({
+      name: 'get_pet_by_id',
+      method: 'GET',
+      path: '/pet/{petId}',
+      paramsSchema: {
+        type: 'object',
+        required: ['petId'],
+        properties: { petId: param('path', { type: 'integer', format: 'int64' }) },
+      },
+      responseSchema: PET_SCHEMA,
+    }),
+    action({
+      name: 'delete_pet',
+      method: 'DELETE',
+      path: '/pet/{petId}',
+      safety: 'destructive',
+      paramsSchema: {
+        type: 'object',
+        required: ['petId'],
+        properties: { petId: param('path', { type: 'integer', format: 'int64' }) },
+      },
+    }),
+  ];
+
+  it('does not offer a tag or category id as the source of a petId', () => {
+    const graph = computeLineage(record(PETSTORE));
+    const producers = producersFor(graph, 'get_pet_by_id', 'path.petId');
+
+    expect(producers.length).toBeGreaterThan(0); // the real edge still exists
+    for (const edge of producers) {
+      expect(edge.from.field).not.toContain('category');
+      expect(edge.from.field).not.toContain('tags');
+    }
+    // Every surviving producer is a pet's own id, at the top of the response.
+    expect(new Set(producers.map((e) => e.from.field))).toEqual(new Set(['response.id']));
+  });
+
+  it('keeps petId traceable from the create, at high confidence', () => {
+    const graph = computeLineage(record(PETSTORE));
+    const fromAdd = producersFor(graph, 'get_pet_by_id', 'path.petId').find((e) => e.from.tool === 'add_pet');
+    expect(fromAdd).toBeDefined();
+    expect(fromAdd!.from.field).toBe('response.id');
+    expect(fromAdd!.confidence).toBe('high');
+  });
+
+  it('resolves a nested category id to a category producer, not the pet root', () => {
+    const graph = computeLineage(record(PETSTORE));
+    const producers = producersFor(graph, 'update_pet', 'body.category.id');
+    for (const edge of producers) {
+      expect(edge.from.field).toContain('category');
+    }
+  });
+
+  it('resolves a nested tag id to a tag producer, not the pet root or a category', () => {
+    const graph = computeLineage(record(PETSTORE));
+    const producers = producersFor(graph, 'update_pet', 'body.tags[].id');
+    for (const edge of producers) {
+      expect(edge.from.field).toContain('tags');
+      expect(edge.from.field).not.toContain('category');
+    }
+  });
+
+  it("does not offer a nested entity's id as the source of the pet's own id", () => {
+    const graph = computeLineage(record(PETSTORE));
+    for (const edge of producersFor(graph, 'update_pet', 'body.id')) {
+      expect(edge.from.field).not.toContain('category');
+      expect(edge.from.field).not.toContain('tags');
+    }
+  });
+
+  it('still refuses to link two genuinely unrelated resources by a bare id', () => {
+    const graph = computeLineage(
+      record([
+        ...PETSTORE,
+        action({
+          name: 'get_store_inventory',
+          method: 'GET',
+          path: '/store/inventory',
+          responseSchema: { type: 'object', properties: { id: { type: 'integer', format: 'int64' } } },
+        }),
+      ]),
+    );
+    expect(edgeLabels(graph).filter((l) => l.startsWith('get_store_inventory.'))).toEqual([]);
+  });
+});
