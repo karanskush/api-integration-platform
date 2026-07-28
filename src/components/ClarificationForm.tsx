@@ -19,12 +19,32 @@ export type QuizOption = {
   detail?: string;
 };
 
+export type QuizSuggestion = {
+  value: string;
+  meaning: string;
+  provenance: 'spec' | 'docs' | 'heuristic' | 'model_guess';
+  sourceUrl?: string;
+};
+
 export type QuizAnswerSpec = {
   kind: 'single_choice' | 'open_values' | 'free_text';
   options: QuizOption[];
   allowOther: boolean;
   why?: string;
   unlocks?: string;
+  // Candidate value/meaning pairs proposed for an undocumented code. Pre-filled
+  // so the owner confirms or corrects rather than typing from scratch, and never
+  // pre-selected — a suggestion is a proposal, not an answer.
+  suggestions?: QuizSuggestion[];
+};
+
+// What triage concluded, with the sentence it relied on. Shown rather than
+// applied silently: the owner decides whether the inference holds.
+export type QuizAssumption = {
+  answer: string;
+  quote: string;
+  sourceKind: string;
+  sourceUrl?: string;
 };
 
 export type ClarificationQuestion = {
@@ -33,6 +53,7 @@ export type ClarificationQuestion = {
   fieldPath?: string;
   answerSpec?: QuizAnswerSpec;
   appliesTo?: Array<{ tool: string; fieldPath: string }>;
+  assumption?: QuizAssumption;
 };
 
 const OTHER = '__other__';
@@ -234,8 +255,15 @@ function QuestionCard({
   const whyId = `why-${question.id}`;
   const sites = question.appliesTo ?? [];
 
-  // A question about a code's meanings is the one space we cannot enumerate.
-  const pairs = draft?.mode === 'values' ? draft.pairs : [{ value: '', meaning: '' }];
+  // A question about a code's meanings is the one space we cannot enumerate, so
+  // it is the one place a model proposes candidates. Pre-filled rather than
+  // pre-selected: the owner is confirming or correcting, and an untouched
+  // suggestion is only submitted because they left it standing.
+  const suggested = spec?.suggestions ?? [];
+  const seeded = suggested.length
+    ? suggested.map((s) => ({ value: s.value, meaning: s.meaning }))
+    : [{ value: '', meaning: '' }];
+  const pairs = draft?.mode === 'values' ? draft.pairs : seeded;
   const setPairs = (next: Array<{ value: string; meaning: string }>) => onChange({ mode: 'values', pairs: next });
 
   const selected = draft?.mode === 'choice' ? draft.value : draft?.mode === 'other' ? OTHER : '';
@@ -273,6 +301,13 @@ function QuestionCard({
 
       {spec?.kind === 'open_values' ? (
         <div className="quiz-pairs">
+          {suggested.length > 0 && (
+            <p className="quiz-suggested-note">
+              {suggested.every((s) => s.provenance === 'model_guess')
+                ? 'Suggested from convention — we could not find these documented. Correct anything that is wrong.'
+                : 'Suggested from your documentation. Correct anything that is wrong.'}
+            </p>
+          )}
           {pairs.map((pair, i) => (
             <div className="quiz-pair" key={i}>
               <input

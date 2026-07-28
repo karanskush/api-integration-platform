@@ -1,7 +1,8 @@
 import { auth } from '@clerk/nextjs/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import AssumptionsPanel, { type PanelAssumption } from '@/components/AssumptionsPanel';
 import ClarificationForm, { type QuizAnswerSpec } from '@/components/ClarificationForm';
 import { verifyAnalysisAccessToken } from '@/lib/analysisAccess';
 import { dbReady, getDb } from '@/lib/db';
@@ -65,11 +66,36 @@ export default async function CompletePage({
   // Ordered explicitly: with one question at a time, an unordered read means a
   // refresh reshuffles the quiz mid-way. created_at already reflects the
   // archetype rank the enrich job inserted in, so concrete questions come first.
-  const pending = await db
+  const rows = await db
     .select()
     .from(clarifications)
-    .where(and(eq(clarifications.apiId, api.id), eq(clarifications.status, 'pending')))
+    .where(and(eq(clarifications.apiId, api.id), inArray(clarifications.status, ['pending', 'assumed'])))
     .orderBy(clarifications.createdAt, clarifications.id);
+
+  const pending = rows.filter((r) => r.status === 'pending');
+
+  // Assumed rows are not blocking and are not part of the quiz — they render
+  // below it, with the sentence relied on, so the owner can disagree in one
+  // click. An assumption whose answer no longer matches its recorded options is
+  // dropped rather than shown with a raw value: if we cannot say what we
+  // concluded in the owner's own words, we have no business claiming it.
+  const assumptions: PanelAssumption[] = rows.flatMap((r) => {
+    if (r.status !== 'assumed') return [];
+    const spec = r.answerSpec as QuizAnswerSpec | null;
+    const basis = r.assumedBasis as { quote?: string; sourceKind?: string; sourceUrl?: string } | null;
+    const chosen = typeof r.assumedAnswer === 'string' ? r.assumedAnswer : null;
+    const label = spec?.options?.find((o) => o.value === chosen)?.label;
+    if (!basis?.quote || !label) return [];
+    return [{
+      id: r.id,
+      question: r.question,
+      ...(r.fieldPath ? { fieldPath: r.fieldPath } : {}),
+      answerLabel: label,
+      quote: basis.quote,
+      sourceKind: basis.sourceKind ?? 'spec_field',
+      ...(basis.sourceUrl ? { sourceUrl: basis.sourceUrl } : {}),
+    }];
+  });
 
   return (
     <div className="wrap" style={{ padding: '40px 0', display: 'grid', gap: 20, maxWidth: 640, margin: '0 auto' }}>
@@ -80,7 +106,9 @@ export default async function CompletePage({
         </h1>
         <p style={{ color: 'var(--fg-dim)', fontSize: 13.5, marginTop: 8 }}>
           {pending.length === 0
-            ? "Everything's answered — this API is fully analyzed."
+            ? assumptions.length > 0
+              ? 'Nothing needs answering. Have a look at what we worked out below, in case any of it is wrong.'
+              : "Everything's answered — this API is fully analyzed."
             : `We couldn't confidently resolve ${pending.length} thing${pending.length === 1 ? '' : 's'} on our own. Your answers become the authoritative record for this API.`}
         </p>
       </header>
@@ -97,6 +125,7 @@ export default async function CompletePage({
           }))}
         />
       )}
+      <AssumptionsPanel slug={slug} token={tokenValid ? token : undefined} assumptions={assumptions} />
     </div>
   );
 }
