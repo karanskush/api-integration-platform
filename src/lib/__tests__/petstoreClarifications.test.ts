@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { classifyQuestion } from '../clarify';
+import { fieldMapFor } from '../fieldMap';
 import { clusterQuestions, consideredFieldsFor, reconcileOpenQuestions, type OpenQuestion } from '../deepEnrich';
 import { parseOpenApi } from '../importer/openapi';
 import type { ImportRecord } from '../ir';
@@ -102,6 +103,37 @@ describe('petstore lineage no longer conflates distinct entity ids', () => {
     // GET /pet/findByStatus?status= lists its own legal values; nothing produces it.
     const graph = lineageFor(await petstore());
     expect(producersFor(graph, 'find_pets_by_status', 'query.status')).toEqual([]);
+  });
+});
+
+describe('the whole API is considered, not just the first slice of it', () => {
+  // consideredFieldsFor takes a prompt budget, and reconciliation has no prompt.
+  // Passing enrichRecord's per-chunk cap here silently cost reconciliation most
+  // of the API: 40 of 64 writable fields and 12 of 19 operations, so every
+  // user-facing operation was invisible to clarification. Nothing failed — the
+  // questions simply were never considered.
+  it('sees every writable field across every operation', async () => {
+    const record = await petstore();
+    const considered = consideredFieldsFor(record, record.actions);
+
+    let writable = 0;
+    for (const action of record.actions) {
+      writable += fieldMapFor(action).request.filter((f) => !f.readOnly && !f.container).length;
+    }
+
+    expect(considered).toHaveLength(writable);
+    expect(writable).toBeGreaterThan(40); // the cap that used to truncate this
+
+    // Operations at the end of the spec are represented, not just the first few.
+    const seen = new Set(considered.map((c) => c.action));
+    for (const name of ['create_user', 'update_user', 'get_user_by_name']) {
+      expect(seen.has(name), `${name} was not considered`).toBe(true);
+    }
+  });
+
+  it('still honours an explicit budget when one is given', async () => {
+    const record = await petstore();
+    expect(consideredFieldsFor(record, record.actions, 10)).toHaveLength(10);
   });
 });
 
