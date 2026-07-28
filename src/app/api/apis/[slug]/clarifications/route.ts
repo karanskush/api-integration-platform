@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { verifyAnalysisAccessToken } from '@/lib/analysisAccess';
 import { resolveAnswer, type AnswerSpec } from '@/lib/clarify';
 import { getDb } from '@/lib/db';
@@ -69,11 +69,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   let specVersionId: string | null = null;
   let answeredCount = 0;
   let skippedCount = 0;
+  let reopenedCount = 0;
   const rejected: Array<{ clarificationId: string; reason: string }> = [];
 
   for (const raw of answers) {
     if (typeof raw !== 'object' || raw === null) continue;
-    const entry = raw as { clarificationId?: unknown; choice?: unknown; other?: unknown; values?: unknown; skip?: unknown };
+    const entry = raw as {
+      clarificationId?: unknown;
+      choice?: unknown;
+      other?: unknown;
+      values?: unknown;
+      skip?: unknown;
+      reopen?: unknown;
+    };
     const clarificationId = typeof entry.clarificationId === 'string' ? entry.clarificationId : '';
     if (!clarificationId) continue;
 
@@ -81,12 +89,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       .select()
       .from(clarifications)
       .where(
-        and(eq(clarifications.id, clarificationId), eq(clarifications.apiId, api.id), eq(clarifications.status, 'pending')),
+        and(
+          eq(clarifications.id, clarificationId),
+          eq(clarifications.apiId, api.id),
+          // An assumption is answerable too: triage downgraded the question, it
+          // did not settle it. Anything already answered or skipped is not.
+          inArray(clarifications.status, ['pending', 'assumed']),
+        ),
       )
       .limit(1);
-    if (!row) continue; // already answered, skipped, or belongs to a different API — silently ignored, not an error
+    if (!row) continue; // already resolved, or belongs to a different API — silently ignored, not an error
 
     specVersionId = row.specVersionId;
+
+    // "That inference is wrong — put the question back to me." Clears the
+    // assumption entirely rather than recording a negative, so the field falls
+    // back to its heuristic origin and the question returns to the quiz.
+    if (entry.reopen === true) {
+      await db
+        .update(clarifications)
+        .set({ status: 'pending', answerSource: 'human', assumedAnswer: null, assumedBasis: null })
+        .where(eq(clarifications.id, clarificationId));
+      reopenedCount++;
+      continue;
+    }
 
     // A skip is a real answer — "we asked, nobody could say" — and the honest
     // way to unblock an analysis pinned on a question no one can resolve. It
@@ -114,6 +140,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
         answerSource: 'human',
         answeredBy: answeredByUserId,
         answeredAt: new Date(),
+        // A person's answer supersedes whatever triage inferred, so the stale
+        // assumption is cleared rather than left to contradict it.
+        assumedAnswer: null,
+        assumedBasis: null,
       })
       .where(eq(clarifications.id, clarificationId));
     // Highest-trust evidence tier — a person confirmed this directly, above
@@ -133,7 +163,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   // answered + skipped, not answered alone. Rejections are reported rather than
   // silently dropped: previously a malformed entry produced a bare 404 that gave
   // the client nothing to show.
-  if (!answeredCount && !skippedCount) {
+  if (!answeredCount && !skippedCount && !reopenedCount) {
     return Response.json(
       rejected.length
         ? { error: 'No answer could be accepted', rejected }
@@ -158,6 +188,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     ok: true,
     answered: answeredCount,
     skipped: skippedCount,
+    reopened: reopenedCount,
     remaining: remaining.length,
     ...(rejected.length ? { rejected } : {}),
   });
