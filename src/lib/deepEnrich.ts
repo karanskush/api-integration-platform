@@ -17,7 +17,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { askModel } from './ask';
 import { asData } from './advisor/types';
-import { fieldMapFor, originOf } from './fieldMap';
+import { fieldMapFor, originOf, type FieldLocation } from './fieldMap';
 import type { Action, ImportRecord } from './ir';
 import { lineageFor, producersFor } from './lineage';
 import { pathResources } from './resource';
@@ -93,6 +93,9 @@ export type ConsideredField = {
   action: string;
   field: string;
   type: string;
+  // Optional so existing ConsideredField literals (tests, callers) still
+  // typecheck. Present for every field consideredFieldsFor() builds.
+  location?: FieldLocation;
   origin: ReturnType<typeof originOf>;
   required: boolean;
   enum?: unknown[];
@@ -116,6 +119,10 @@ function consideredFieldsFor(record: ImportRecord, actions: Action[]): Considere
         action: action.name,
         field: field.path,
         type: field.type,
+        // Without this the model cannot tell `query.status` (a filter the caller
+        // chooses) from `body.status` (a value that may flow from a prior call),
+        // which is half of why it questioned the origin of the former.
+        location: field.location,
         origin: originOf(field, producers.length > 0),
         required: field.required,
         ...(field.enum ? { enum: field.enum } : {}),
