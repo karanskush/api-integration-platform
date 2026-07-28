@@ -767,6 +767,70 @@ describe('lineage across nested entities that share an id field name', () => {
     }
   });
 
+  // A list read of the same collection a POST creates into returns the very
+  // shape that POST's body declares. Every attribute lines up perfectly, which
+  // is exactly why it scored HIGH — and exactly why it is a mirror, not a source.
+  describe('echoes of the entity being created', () => {
+    const WITH_LIST = [
+      ...PETSTORE,
+      action({
+        name: 'find_pets_by_status',
+        method: 'GET',
+        path: '/pet/findByStatus',
+        paramsSchema: {
+          type: 'object',
+          required: ['status'],
+          properties: { status: param('query', { type: 'string', enum: ['available', 'pending', 'sold'] }) },
+        },
+        responseSchema: { type: 'array', items: PET_SCHEMA },
+      }),
+      action({
+        name: 'place_order',
+        method: 'POST',
+        path: '/store/order',
+        safety: 'write',
+        paramsSchema: {
+          type: 'object',
+          required: ['body'],
+          properties: {
+            body: {
+              'x-spotcheck-in': 'body',
+              type: 'object',
+              properties: { id: { type: 'integer', format: 'int64' }, petId: { type: 'integer', format: 'int64' }, quantity: { type: 'integer' } },
+            },
+          },
+        },
+      }),
+    ];
+
+    it('does not treat a list read as the source of a created entity attribute', () => {
+      const graph = computeLineage(record(WITH_LIST));
+      expect(producersFor(graph, 'add_pet', 'body.photoUrls[]')).toEqual([]);
+    });
+
+    it('does not treat an update as the source either', () => {
+      // A PUT returning the same Pet is as much a mirror as a GET: you cannot
+      // update a pet that does not exist yet to learn its creation values.
+      const graph = computeLineage(record(WITH_LIST));
+      const fromUpdate = producersFor(graph, 'add_pet', 'body.photoUrls[]').filter((e) => e.from.tool === 'update_pet');
+      expect(fromUpdate).toEqual([]);
+    });
+
+    it('keeps the list -> create foreign-key flow, which is the common correct case', () => {
+      const graph = computeLineage(record(WITH_LIST));
+      const producers = producersFor(graph, 'place_order', 'body.petId');
+      expect(producers.length).toBeGreaterThan(0);
+      expect(producers.every((e) => e.from.field.endsWith('id'))).toBe(true);
+    });
+
+    it('still lets an update read-modify-write the entity it updates', () => {
+      // A PUT legitimately reads the current value first, so the echo guard is
+      // scoped to POST consumers and must not touch this.
+      const graph = computeLineage(record(WITH_LIST));
+      expect(producersFor(graph, 'update_pet', 'body.photoUrls[]').length).toBeGreaterThan(0);
+    });
+  });
+
   it('still refuses to link two genuinely unrelated resources by a bare id', () => {
     const graph = computeLineage(
       record([
