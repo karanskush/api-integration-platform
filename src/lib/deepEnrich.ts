@@ -397,14 +397,38 @@ export function reconcileOpenQuestions(
     if (stillExplained) continue; // enum/constant/server_generated, or a producer that survived
     if (live.length) continue; // heuristics found a producer the model did not dispute
     if (explained.has(fieldKey(f.action, f.field))) continue; // LLM already covered this one
-    auto.push({
+
+    const actionPath = actionPathByName?.get(f.action);
+    if (actionPath === undefined) {
+      auto.push({ tool: f.action, fieldPath: f.field, kind: 'ambiguous_origin', question: questionFor(f.field, f.action) });
+      continue;
+    }
+
+    // Fold this site into an existing cluster rather than spending another of
+    // the fifteen slots re-asking a question already on the list.
+    const key = clusterKeyFor('ambiguous_origin', f.field, actionPath);
+    const existing = byGroup.get(key);
+    if (existing) {
+      existing.appliesTo!.push({ tool: f.action, fieldPath: f.field });
+      explained.add(fieldKey(f.action, f.field));
+      continue;
+    }
+    const seeded: OpenQuestion = {
       tool: f.action,
       fieldPath: f.field,
       kind: 'ambiguous_origin',
-      question: `What does "${f.field}" on ${f.action} represent, and where would a caller normally get this value?`,
-    });
+      question: questionFor(f.field, f.action),
+      groupKey: key,
+      appliesTo: [{ tool: f.action, fieldPath: f.field }],
+    };
+    byGroup.set(key, seeded);
+    auto.push(seeded);
   }
   return auto;
+}
+
+function questionFor(field: string, action: string): string {
+  return `What does "${field}" on ${action} represent, and where would a caller normally get this value?`;
 }
 
 export { consideredFieldsFor };
