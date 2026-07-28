@@ -6,6 +6,7 @@
 // already serializes AuthScheme/Safety as plain string unions, and avoids
 // `ALTER TYPE` ceremony every time Phase 2 introduces a new evidence kind.
 
+import { sql } from 'drizzle-orm';
 import {
   bigserial,
   boolean,
@@ -298,12 +299,35 @@ export const clarifications = pgTable('clarifications', {
   kind: text('kind').notNull(), // ambiguous_origin|ambiguous_enum|unclear_scope|conflicting_signal
   question: text('question').notNull(),
   options: jsonb('options'), // string[] when multiple-choice; null for free text
+  // One question, N sites. `petId` appears on four Petstore operations and the
+  // owner's single answer is true for all four, so we ask once and record every
+  // site it covers. groupKey is deepEnrich's cluster key (kind|entity|field
+  // name); appliesTo is Array<{ tool, fieldPath }>, keyed by action NAME because
+  // that is what finalize matches against when marking fields verified.
+  groupKey: text('group_key'),
+  appliesTo: jsonb('applies_to'),
+  // Which archetype's answer space this question uses (see lib/clarify).
+  // Defaulted rather than nullable so every row — including the ones already in
+  // the table — has a renderable shape.
+  archetype: text('archetype').notNull().default('origin_unknown'),
+  answerSpec: jsonb('answer_spec'), // { kind, options: [{label, value, ...}], allowOther }
+  // Who produced the answer. Only ever 'human' today; the column and the CHECK
+  // below exist so that when an LLM triage pass lands it is structurally unable
+  // to mark anything answered, rather than merely not doing so.
+  answerSource: text('answer_source').notNull().default('human'),
   status: text('status').notNull().default('pending'), // pending|answered|skipped
   answer: jsonb('answer'),
   answeredBy: uuid('answered_by').references(() => users.id),
   answeredAt: timestamp('answered_at', { withTimezone: true }),
   createdAt: createdAt(),
-}, (t) => [index('clarifications_api_id_status_idx').on(t.apiId, t.status)]);
+}, (t) => [
+  index('clarifications_api_id_status_idx').on(t.apiId, t.status),
+  // Makes the collapse enforceable rather than merely intended: a retried enrich
+  // job cannot re-insert a group that already exists for this spec version.
+  uniqueIndex('clarifications_spec_version_group_key_idx')
+    .on(t.specVersionId, t.groupKey)
+    .where(sql`${t.groupKey} is not null`),
+]);
 
 // Zero rows in Phase 1 (everything here is pre-claimed at creation) — exists
 // for schema stability ahead of Phase 2's real claim flow.
