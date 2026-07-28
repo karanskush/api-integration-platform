@@ -73,6 +73,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <a className="nav-link" href="/sign-in">
                       Sign in
                     </a>
+                    <a className="nav-link" href="/sign-up">
+                      Sign up
+                    </a>
                   </Show>
                   <Show when="signed-in">
                     <a className="nav-link" href="/dashboard">
