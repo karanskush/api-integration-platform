@@ -28,6 +28,7 @@ import { buildFieldIndex, type ApiFieldIndex, type FieldNode } from './fieldMap'
 import type { Action, ImportRecord } from './ir';
 import {
   collectionPathFor,
+  entityFromFieldPath,
   isGenericFieldName,
   isIdLike,
   normalizeFieldName,
@@ -98,16 +99,22 @@ const MAX_EDGES_PER_FIELD = 5;
 const MAX_TOTAL_EDGES = 5000;
 const MAX_BUCKET_SCAN = 200;
 
+// `resources` is the OPERATION's path resources — a fallback, and deliberately
+// not the same thing as `entity`. `entity` is what this FIELD's value
+// identifies, when that can be known for certain; null means unknown, and
+// callers fall back to `resources`. See definiteEntity().
 type ProducerField = {
   action: Action;
   field: FieldNode;
   resources: string[];
+  entity: string | null;
 };
 
 type ConsumerField = {
   action: Action;
   field: FieldNode;
   resources: string[];
+  entity: string | null;
 };
 
 // Scalar leaves only. A container has no value to flow — `body.customer` is
@@ -126,6 +133,24 @@ function typesCompatible(a: FieldNode, b: FieldNode): boolean {
   const numeric = new Set(['integer', 'number']);
   if (numeric.has(a.type) && numeric.has(b.type)) return true;
   return a.type === 'unknown' || b.type === 'unknown';
+}
+
+// Two definite sources for the entity a field's value identifies, in order:
+//
+//   1. its own path prefix — `response.category.id` is a Category id no matter
+//      which operation happened to return it;
+//   2. its foreign-key-shaped name — `petId` is a Pet id, `ownerId` an Owner id.
+//
+// Anything else is unknown, and callers fall back to the operation's path
+// resources. The operation path is deliberately NOT a source here: that is
+// precisely what made Pet, Category and Tag ids interchangeable.
+//
+// Source 2 must apply to producers as well as consumers. Without it
+// `get_pet.response.ownerId -> transfer_pet.body.ownerId` resolves to 'pet' on
+// the producer side and 'owner' on the consumer side, and the entity gate below
+// would reject a real edge.
+function definiteEntity(field: FieldNode): string | null {
+  return entityFromFieldPath(field.path) ?? resourceFromFieldName(field.name);
 }
 
 function enumOverlap(a: FieldNode, b: FieldNode): boolean {
@@ -319,7 +344,7 @@ export function computeLineage(record: ImportRecord, options: LineageOptions = {
 
     for (const field of map.response) {
       if (!isFlowable(field)) continue;
-      const entry: ProducerField = { action, field, resources };
+      const entry: ProducerField = { action, field, resources, entity: definiteEntity(field) };
       producers.push(entry);
       const key = normalizeFieldName(field.name);
       const bucket = byName.get(key);
@@ -331,7 +356,7 @@ export function computeLineage(record: ImportRecord, options: LineageOptions = {
       // A readOnly request field is documentation of a server-assigned value,
       // not something a caller supplies — tracing it would be noise.
       if (!isFlowable(field) || field.readOnly) continue;
-      consumers.push({ action, field, resources });
+      consumers.push({ action, field, resources, entity: definiteEntity(field) });
     }
   }
 
