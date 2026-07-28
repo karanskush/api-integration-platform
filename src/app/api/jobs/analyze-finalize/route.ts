@@ -3,9 +3,10 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { stringify as stringifyYaml } from 'yaml';
 import { analysisAccessTokenFor } from '@/lib/analysisAccess';
 import { buildArazzoDocument } from '@/lib/artifacts/arazzo';
-import { buildEnrichedSpec } from '@/lib/artifacts/enrichedSpec';
+import { buildEnrichedSpec, type HumanAnswer } from '@/lib/artifacts/enrichedSpec';
+import { originForAnswer, type AnswerSpec } from '@/lib/clarify';
 import { getDb } from '@/lib/db';
-import { actions as actionsTable, analysisRuns, apis, clarifications, specVersions, users } from '@/lib/db/schema';
+import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts, specVersions, users } from '@/lib/db/schema';
 import { emailReady, sendAnalysisReadyEmail, sendClarificationNeededEmail } from '@/lib/email';
 import { loadRecordForVersion } from '@/lib/persistentApi';
 import { putArazzoArtifact, putEnrichedSpecArtifact } from '@/lib/specStore';
@@ -89,24 +90,29 @@ async function handler(req: Request) {
       // NOT what record.actions[].id holds (that's the stable actionKey, see
       // persistentApi.ts's toAction), so resolving the name needs its own
       // lookup rather than matching against the record directly.
-      const answeredRows = await db
+      const resolvedRows = await db
         .select({
           actionId: clarifications.actionId,
           fieldPath: clarifications.fieldPath,
           appliesTo: clarifications.appliesTo,
+          status: clarifications.status,
+          answer: clarifications.answer,
+          answerSpec: clarifications.answerSpec,
         })
         .from(clarifications)
         .where(
           and(
             eq(clarifications.apiId, apiId),
             eq(clarifications.specVersionId, specVersionId),
-            eq(clarifications.status, 'answered'),
+            inArray(clarifications.status, ['answered', 'skipped']),
             // Only a human's answer may mark a field verified. The DB CHECK
             // already makes any other source unrepresentable while answered;
             // this keeps the read side honest on its own terms too.
             eq(clarifications.answerSource, 'human'),
           ),
         );
+      const answeredRows = resolvedRows.filter((r) => r.status === 'answered');
+      const skippedRows = resolvedRows.filter((r) => r.status === 'skipped');
       const answeredActionIds = [...new Set(answeredRows.map((r) => r.actionId).filter((id): id is string => id !== null))];
       const nameById = answeredActionIds.length
         ? new Map(
@@ -120,17 +126,48 @@ async function handler(req: Request) {
       // rows skip the action_id -> name round-trip entirely. Without this the
       // owner answers about petId and only one of the four operations that
       // actually asked gets marked.
-      const humanVerifiedFields = new Set(
-        answeredRows.flatMap((r) => {
-          const sites = r.appliesTo as Array<{ tool: string; fieldPath: string }> | null;
-          if (Array.isArray(sites) && sites.length) return sites.map((s) => `${s.tool} ${s.fieldPath}`);
-          if (r.actionId && r.fieldPath && nameById.has(r.actionId)) return [`${nameById.get(r.actionId)} ${r.fieldPath}`];
-          return [];
+      const sitesOf = (r: (typeof resolvedRows)[number]): string[] => {
+        const sites = r.appliesTo as Array<{ tool: string; fieldPath: string }> | null;
+        if (Array.isArray(sites) && sites.length) return sites.map((s) => `${s.tool} ${s.fieldPath}`);
+        if (r.actionId && r.fieldPath && nameById.has(r.actionId)) return [`${nameById.get(r.actionId)} ${r.fieldPath}`];
+        return [];
+      };
+
+      // The answer's meaning for the artifact, resolved against the exact option
+      // set the question was asked with — never against whatever the client sent.
+      const answers = new Map<string, HumanAnswer>();
+      for (const r of answeredRows) {
+        const spec = r.answerSpec as AnswerSpec | null;
+        const chosen = typeof r.answer === 'string' ? r.answer : null;
+        const origin = spec && chosen ? originForAnswer(spec, chosen) : null;
+        for (const site of sitesOf(r)) answers.set(site, origin ? { origin } : {});
+      }
+      const unresolved = new Set(skippedRows.flatMap(sitesOf));
+
+      // Lineage edges the enrichment pass disagreed with. Withheld from the
+      // artifact, kept in evidence_facts.
+      const disputeRows = await db
+        .select({ payload: evidenceFacts.payload })
+        .from(evidenceFacts)
+        .where(
+          and(
+            eq(evidenceFacts.apiId, apiId),
+            eq(evidenceFacts.specVersionId, specVersionId),
+            eq(evidenceFacts.kind, 'llm.lineage_dispute'),
+          ),
+        );
+      const disputed = new Set(
+        disputeRows.flatMap((row) => {
+          const p = row.payload as { tool?: string; field?: string; producer?: string } | null;
+          if (!p?.tool || !p.field || !p.producer) return [];
+          // knownProducers renders as "tool.field (confidence)"; the artifact
+          // keys on "tool field tool.field", so drop the confidence suffix.
+          return [`${p.tool} ${p.field} ${p.producer.replace(/\s*\([^)]*\)\s*$/, '')}`];
         }),
       );
 
       const arazzoDoc = buildArazzoDocument(record, record.sourceUrl ?? `${appOrigin()}/${api.slug}`);
-      const enrichedSpec = buildEnrichedSpec(record, humanVerifiedFields);
+      const enrichedSpec = buildEnrichedSpec(record, { answers, unresolved, disputed });
 
       const [arazzoResult, enrichedResult] = await Promise.all([
         putArazzoArtifact(specVersionId, stringifyYaml(arazzoDoc)),
