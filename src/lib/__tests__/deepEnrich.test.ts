@@ -308,6 +308,50 @@ describe('reconcileOpenQuestions', () => {
     expect(auto.some((q) => q.fieldPath === 'body.discountCode')).toBe(true);
   });
 
+  it('asks about a field whose only producer the model disputed', () => {
+    // body.customerId is produced_by_api solely because of the
+    // list_customers edge. If the model disputes that edge the classification no
+    // longer holds, so the field needs a real question rather than silence.
+    const r = record();
+    const createOrder = r.actions.find((a) => a.name === 'create_order')!;
+    const considered = consideredFieldsFor(r, [createOrder]);
+    const customerId = considered.find((f) => f.field === 'body.customerId')!;
+    expect(customerId.origin).toBe('produced_by_api');
+
+    const disputedAll = reconcileOpenQuestions(considered, {
+      fields: [],
+      openQuestions: [],
+      lineageDisputes: customerId.knownProducers.map((producer) => ({
+        tool: 'create_order',
+        field: 'body.customerId',
+        producer,
+        reason: 'The docs call this a merchant-scoped alias.',
+      })),
+      chunksProcessed: 1,
+      chunksTotal: 1,
+      truncated: false,
+    });
+    expect(disputedAll.some((q) => q.fieldPath === 'body.customerId')).toBe(true);
+  });
+
+  it('stays quiet when a producer survives the dispute', () => {
+    const r = record();
+    const createOrder = r.actions.find((a) => a.name === 'create_order')!;
+    const considered = consideredFieldsFor(r, [createOrder]);
+
+    const auto = reconcileOpenQuestions(considered, {
+      fields: [],
+      openQuestions: [],
+      lineageDisputes: [
+        { tool: 'create_order', field: 'body.customerId', producer: 'some_other.field (high)', reason: 'unrelated' },
+      ],
+      chunksProcessed: 1,
+      chunksTotal: 1,
+      truncated: false,
+    });
+    expect(auto.some((q) => q.fieldPath === 'body.customerId')).toBe(false);
+  });
+
   it('does not re-raise a field the LLM already explained', () => {
     const r = record();
     const createOrder = r.actions.find((a) => a.name === 'create_order')!;
