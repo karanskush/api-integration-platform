@@ -831,6 +831,80 @@ describe('lineage across nested entities that share an id field name', () => {
     });
   });
 
+  // Petstore's GET /pet/findByStatus?status= declares its own enum. The legal
+  // values are printed in the spec, so nothing "produces" it — but it shared the
+  // name and the vocabulary with add_pet.response.status and picked up an
+  // enum-overlap edge, which made describe_fields tell an agent to call add_pet
+  // first to learn a value it could already read off the enum.
+  describe('caller-chosen enum filters', () => {
+    const filterAction = (where: 'query' | 'header', method: string) =>
+      action({
+        name: `find_by_${where}_${method.toLowerCase()}`,
+        method,
+        path: '/pet/findByStatus',
+        paramsSchema: {
+          type: 'object',
+          required: ['status'],
+          properties: { status: param(where, { type: 'string', enum: ['available', 'pending', 'sold'] }) },
+        },
+      });
+
+    it('has no producer for an enum query filter on a read', () => {
+      const graph = computeLineage(record([...PETSTORE, filterAction('query', 'GET')]));
+      expect(producersFor(graph, 'find_by_query_get', 'query.status')).toEqual([]);
+    });
+
+    it('has no producer for an enum header filter on a read', () => {
+      const graph = computeLineage(record([...PETSTORE, filterAction('header', 'GET')]));
+      expect(producersFor(graph, 'find_by_header_get', 'header.status')).toEqual([]);
+    });
+
+    it('still traces the same enum in a request body, which a prior call can supply', () => {
+      const graph = computeLineage(
+        record([
+          ...PETSTORE,
+          action({
+            name: 'set_pet_status',
+            method: 'POST',
+            path: '/pet/status',
+            safety: 'write',
+            paramsSchema: {
+              type: 'object',
+              required: ['body'],
+              properties: {
+                body: {
+                  'x-spotcheck-in': 'body',
+                  type: 'object',
+                  properties: { status: { type: 'string', enum: ['available', 'pending', 'sold'] } },
+                },
+              },
+            },
+          }),
+        ]),
+      );
+      expect(producersFor(graph, 'set_pet_status', 'body.status').length).toBeGreaterThan(0);
+    });
+
+    it('still traces a query filter that carries no enum of its own', () => {
+      const graph = computeLineage(
+        record([
+          ...PETSTORE,
+          action({
+            name: 'find_pets_by_owner',
+            method: 'GET',
+            path: '/pet/findByOwner',
+            paramsSchema: {
+              type: 'object',
+              required: ['petId'],
+              properties: { petId: param('query', { type: 'integer', format: 'int64' }) },
+            },
+          }),
+        ]),
+      );
+      expect(producersFor(graph, 'find_pets_by_owner', 'query.petId').length).toBeGreaterThan(0);
+    });
+  });
+
   it('still refuses to link two genuinely unrelated resources by a bare id', () => {
     const graph = computeLineage(
       record([
