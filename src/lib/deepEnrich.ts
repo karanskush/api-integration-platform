@@ -20,7 +20,7 @@ import { asData } from './advisor/types';
 import { fieldMapFor, originOf, type FieldLocation } from './fieldMap';
 import type { Action, ImportRecord } from './ir';
 import { lineageFor, producersFor } from './lineage';
-import { pathResources } from './resource';
+import { entityFromFieldPath, normalizeFieldName, pathResources, resourceFromFieldName } from './resource';
 
 export type DocExcerpt = { url: string; title?: string; excerpt: string };
 
@@ -41,6 +41,10 @@ export type OpenQuestion = {
   kind: OpenQuestionKind;
   question: string;
   options?: string[];
+  // Set by clusterQuestions. Optional so callers constructing OpenQuestion
+  // literals (including tests) still typecheck.
+  groupKey?: string;
+  appliesTo?: Array<{ tool: string; fieldPath: string }>;
 };
 
 // The model's disagreement with a structural lineage edge. This is where a
@@ -290,6 +294,59 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
     chunksTotal: groups.length,
     truncated: truncatedByChunkCap,
   };
+}
+
+// One question, N sites.
+//
+// On the Swagger Petstore `petId` appears on four operations (get, update,
+// delete, uploadImage) and produced four near-identical rows. It is one question
+// — the owner's single answer is true for all four — and asking it four times
+// spends their patience on nothing.
+//
+// The key is what makes two questions the SAME question: the same kind, about
+// the same entity, about a field with the same name. Entity comes from the
+// field's own path or its foreign-key-shaped name, falling back to the
+// operation's most specific path resource. That fallback is load-bearing:
+// without it `add_pet.body.id` and `place_order.body.id` both key as a bare
+// `id` and one answer about Pet ids would silently be applied to Order ids.
+export function clusterKeyFor(kind: OpenQuestionKind, fieldPath: string | undefined, actionPath: string): string {
+  if (!fieldPath) return `${kind}|${actionPath}|-`; // API-level question: scoped to its operation
+  const leaf = fieldPath.slice(fieldPath.lastIndexOf('.') + 1).replace(/\[\]$/, '');
+  const resources = pathResources(actionPath);
+  const entity =
+    entityFromFieldPath(fieldPath) ?? resourceFromFieldName(leaf) ?? resources[resources.length - 1] ?? '-';
+  return `${kind}|${entity}|${normalizeFieldName(leaf)}`;
+}
+
+export type ClusterSite = { tool: string; fieldPath: string };
+
+// Collapses questions that share a cluster key. The first occurrence's wording
+// survives verbatim — we never rewrite model output — and every site is recorded
+// in appliesTo so one answer can mark them all.
+export function clusterQuestions(questions: OpenQuestion[], actionPathByName: Map<string, string>): OpenQuestion[] {
+  const byKey = new Map<string, OpenQuestion>();
+  const out: OpenQuestion[] = [];
+
+  for (const q of questions) {
+    const actionPath = actionPathByName.get(q.tool);
+    if (actionPath === undefined) continue; // unknown action; the admit-list should already have caught it
+    const key = clusterKeyFor(q.kind, q.fieldPath, actionPath);
+    const existing = byKey.get(key);
+    if (!existing) {
+      const seeded: OpenQuestion = {
+        ...q,
+        groupKey: key,
+        ...(q.fieldPath ? { appliesTo: [{ tool: q.tool, fieldPath: q.fieldPath }] } : {}),
+      };
+      byKey.set(key, seeded);
+      out.push(seeded);
+      continue;
+    }
+    if (q.fieldPath && existing.appliesTo && !existing.appliesTo.some((s) => s.tool === q.tool && s.fieldPath === q.fieldPath)) {
+      existing.appliesTo.push({ tool: q.tool, fieldPath: q.fieldPath });
+    }
+  }
+  return out;
 }
 
 const MAX_AUTO_CLARIFICATIONS = 15;
