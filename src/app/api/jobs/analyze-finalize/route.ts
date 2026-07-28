@@ -3,7 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { stringify as stringifyYaml } from 'yaml';
 import { analysisAccessTokenFor } from '@/lib/analysisAccess';
 import { buildArazzoDocument } from '@/lib/artifacts/arazzo';
-import { buildEnrichedSpec, type HumanAnswer } from '@/lib/artifacts/enrichedSpec';
+import { buildEnrichedSpec, type AssumedAnswer, type HumanAnswer } from '@/lib/artifacts/enrichedSpec';
 import { originForAnswer, type AnswerSpec } from '@/lib/clarify';
 import { getDb } from '@/lib/db';
 import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts, specVersions, users } from '@/lib/db/schema';
@@ -98,24 +98,28 @@ async function handler(req: Request) {
           actionId: clarifications.actionId,
           fieldPath: clarifications.fieldPath,
           appliesTo: clarifications.appliesTo,
+          answerSource: clarifications.answerSource,
           status: clarifications.status,
           answer: clarifications.answer,
           answerSpec: clarifications.answerSpec,
+          assumedAnswer: clarifications.assumedAnswer,
+          assumedBasis: clarifications.assumedBasis,
         })
         .from(clarifications)
         .where(
           and(
             eq(clarifications.apiId, apiId),
             eq(clarifications.specVersionId, specVersionId),
-            inArray(clarifications.status, ['answered', 'skipped']),
-            // Only a human's answer may mark a field verified. The DB CHECK
-            // already makes any other source unrepresentable while answered;
-            // this keeps the read side honest on its own terms too.
-            eq(clarifications.answerSource, 'human'),
+            inArray(clarifications.status, ['answered', 'skipped', 'assumed']),
           ),
         );
-      const answeredRows = resolvedRows.filter((r) => r.status === 'answered');
+      // Only a human's answer may mark a field verified. The DB CHECK already
+      // makes any other source unrepresentable while answered; splitting on it
+      // here keeps the read side honest on its own terms too, and is what stops
+      // an assumption from ever reaching the verified set.
+      const answeredRows = resolvedRows.filter((r) => r.status === 'answered' && r.answerSource === 'human');
       const skippedRows = resolvedRows.filter((r) => r.status === 'skipped');
+      const assumedRows = resolvedRows.filter((r) => r.status === 'assumed');
       const answeredActionIds = [...new Set(answeredRows.map((r) => r.actionId).filter((id): id is string => id !== null))];
       const nameById = answeredActionIds.length
         ? new Map(
@@ -147,6 +151,27 @@ async function handler(req: Request) {
       }
       const unresolved = new Set(skippedRows.flatMap(sitesOf));
 
+      // What triage concluded, resolved through the same option set a human
+      // answer goes through, so a model can never introduce a meaning the
+      // archetype did not define. Applied to the origin, never to the verified
+      // marker — see enrichedSpec.ts.
+      const assumptions = new Map<string, AssumedAnswer>();
+      for (const r of assumedRows) {
+        const spec = r.answerSpec as AnswerSpec | null;
+        const chosen = typeof r.assumedAnswer === 'string' ? r.assumedAnswer : null;
+        const basis = r.assumedBasis as { quote?: string; sourceKind?: string; sourceUrl?: string } | null;
+        if (!basis?.quote) continue; // an assumption without its receipt is not usable
+        const origin = spec && chosen ? originForAnswer(spec, chosen) : null;
+        for (const site of sitesOf(r)) {
+          assumptions.set(site, {
+            ...(origin ? { origin } : {}),
+            quote: basis.quote,
+            sourceKind: basis.sourceKind ?? 'spec_field',
+            ...(basis.sourceUrl ? { sourceUrl: basis.sourceUrl } : {}),
+          });
+        }
+      }
+
       // Lineage edges the enrichment pass disagreed with. Withheld from the
       // artifact, kept in evidence_facts.
       const disputeRows = await db
@@ -170,7 +195,7 @@ async function handler(req: Request) {
       );
 
       const arazzoDoc = buildArazzoDocument(record, record.sourceUrl ?? `${appOrigin()}/${api.slug}`);
-      const enrichedSpec = buildEnrichedSpec(record, { answers, unresolved, disputed });
+      const enrichedSpec = buildEnrichedSpec(record, { answers, assumptions, unresolved, disputed });
 
       const [arazzoResult, enrichedResult] = await Promise.all([
         putArazzoArtifact(specVersionId, stringifyYaml(arazzoDoc)),
