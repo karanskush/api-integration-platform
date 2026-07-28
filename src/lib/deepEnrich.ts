@@ -349,6 +349,17 @@ export function clusterQuestions(questions: OpenQuestion[], actionPathByName: Ma
   return out;
 }
 
+// (tool, field) as one map key. The separator is a NUL because it is the one
+// byte that cannot occur in an operation name or a field path, so two different
+// pairs can never collide on it. Written as an escape rather than a literal: an
+// invisible control character in a template literal is indistinguishable from a
+// space when read, and a mismatched separator here would silently disable
+// deduplication rather than fail.
+const KEY_SEP = '\u0000';
+function fieldKey(tool: string, field: string): string {
+  return `${tool}${KEY_SEP}${field}`;
+}
+
 const MAX_AUTO_CLARIFICATIONS = 15;
 
 // Fields the LLM pass neither explained nor explicitly questioned, but which
@@ -357,10 +368,17 @@ const MAX_AUTO_CLARIFICATIONS = 15;
 // the plan calls out; auto-raising them (rather than only surfacing what the
 // model happened to mention) is what makes the clarification loop trustworthy
 // rather than dependent on the model remembering to ask.
-export function reconcileOpenQuestions(considered: ConsideredField[], result: EnrichResult): OpenQuestion[] {
+export function reconcileOpenQuestions(
+  considered: ConsideredField[],
+  result: EnrichResult,
+  // Optional: without it the cap counts sites, which is the pre-clustering
+  // behaviour. With it the cap counts CLUSTERS, so four petId sites cost one of
+  // the fifteen slots rather than four.
+  actionPathByName?: Map<string, string>,
+): OpenQuestion[] {
   const explained = new Set<string>();
-  for (const f of result.fields) explained.add(`${f.tool} ${f.field}`);
-  for (const q of result.openQuestions) explained.add(`${q.tool} ${q.fieldPath ?? ''}`);
+  for (const f of result.fields) explained.add(fieldKey(f.tool, f.field));
+  for (const q of result.openQuestions) explained.add(fieldKey(q.tool, q.fieldPath ?? ''));
 
   // Producers the model disputed, keyed exactly as knownProducers renders them.
   // produced_by_api rests entirely on those producers, so a field whose every
@@ -371,13 +389,14 @@ export function reconcileOpenQuestions(considered: ConsideredField[], result: En
   for (const d of result.lineageDisputes ?? []) disputed.add(`${d.tool} ${d.field} ${d.producer}`);
 
   const auto: OpenQuestion[] = [];
+  const byGroup = new Map<string, OpenQuestion>();
   for (const f of considered) {
     if (auto.length + result.openQuestions.length >= MAX_AUTO_CLARIFICATIONS) break;
     const live = f.knownProducers.filter((p) => !disputed.has(`${f.action} ${f.field} ${p}`));
     const stillExplained = f.origin === 'produced_by_api' ? live.length > 0 : f.origin !== 'caller_supplied';
     if (stillExplained) continue; // enum/constant/server_generated, or a producer that survived
     if (live.length) continue; // heuristics found a producer the model did not dispute
-    if (explained.has(`${f.action} ${f.field}`)) continue; // LLM already covered this one
+    if (explained.has(fieldKey(f.action, f.field))) continue; // LLM already covered this one
     auto.push({
       tool: f.action,
       fieldPath: f.field,
