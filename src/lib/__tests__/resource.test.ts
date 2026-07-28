@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   collectionPathFor,
+  entityFromFieldPath,
   isGenericFieldName,
   isIdLike,
   normalizeFieldName,
@@ -146,6 +147,48 @@ describe('collectionPathFor / resourceOf', () => {
   it('names the resource from a collection path', () => {
     expect(resourceOf('/v1/pets')).toBe('pet');
     expect(resourceOf('/v1/pets/{petId}/toys')).toBe('toy');
+  });
+});
+
+describe('entityFromFieldPath', () => {
+  // The Petstore case this was written for: Pet, Category and Tag all declare a
+  // bare `id`, none declares a schema title, and dereferencing erases the
+  // component name. The field's own path prefix is the only surviving evidence
+  // of which entity an id belongs to.
+  it('names the entity that owns the leaf', () => {
+    expect(entityFromFieldPath('response.category.id')).toBe('category');
+    expect(entityFromFieldPath('body.category.id')).toBe('category');
+    expect(entityFromFieldPath('response.tags[].id')).toBe('tag');
+    expect(entityFromFieldPath('body.tags[].name')).toBe('tag');
+  });
+
+  it('walks outward, so the nearest container wins', () => {
+    expect(entityFromFieldPath('response.order.customer.id')).toBe('customer');
+  });
+
+  it('returns null when only a section root contains the leaf', () => {
+    for (const path of ['response.id', 'response[].id', 'path.petId', 'query.status', 'body.name', 'header.x_trace']) {
+      expect(entityFromFieldPath(path)).toBeNull();
+    }
+  });
+
+  // An envelope is not an entity: Stripe's response.data[].id is a Customer id.
+  // Returning 'data' here would be worse than returning nothing, because the
+  // caller's operation-path fallback gets it right.
+  it('skips payload envelopes', () => {
+    for (const path of ['response.data[].id', 'response.items[].id', 'response.results[].id', 'response.nodes[].id']) {
+      expect(entityFromFieldPath(path)).toBeNull();
+    }
+  });
+
+  it('singularizes conservatively, matching pathResources', () => {
+    expect(entityFromFieldPath('response.companies[].id')).toBe('company');
+    expect(entityFromFieldPath('response.addresses[].id')).toBe('address');
+    expect(entityFromFieldPath('response.status.code')).toBe('status'); // must survive intact
+  });
+
+  it('is case-insensitive about the container name', () => {
+    expect(entityFromFieldPath('response.Category.id')).toBe('category');
   });
 });
 
