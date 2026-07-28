@@ -62,9 +62,12 @@ export async function sendClarificationNeededEmail(
 // Sent by the analyze-finalize job when the deep-analysis pipeline resolved
 // everything on its own — no clarification needed — or by the clarification
 // answer route once the last open question is answered.
-export async function sendAnalysisReadyEmail(to: string, input: { apiName: string; pageUrl: string }): Promise<void> {
+export async function sendAnalysisReadyEmail(
+  to: string,
+  input: { apiName: string; pageUrl: string; unresolvedCount?: number },
+): Promise<void> {
   const resend = getResend();
-  const { apiName, pageUrl } = input;
+  const { apiName, pageUrl, unresolvedCount = 0 } = input;
   await resend.emails.send({
     from: FROM,
     to,
@@ -72,6 +75,19 @@ export async function sendAnalysisReadyEmail(to: string, input: { apiName: strin
     text: [
       `The deep analysis of ${apiName} is complete — every field has been traced, and the provider's own docs`,
       "were folded in wherever they helped explain something the spec alone didn't.",
+      // Naming the gaps rather than quietly shipping a record that reads as
+      // complete. A skipped question is an honest unknown, and the owner should
+      // know it stayed one.
+      ...(unresolvedCount > 0
+        ? [
+            '',
+            `${unresolvedCount} question${unresolvedCount === 1 ? '' : 's'} went unanswered, so ${
+              unresolvedCount === 1 ? 'that field is' : 'those fields are'
+            } marked unresolved rather than guessed at. You can still answer ${
+              unresolvedCount === 1 ? 'it' : 'them'
+            } later.`,
+          ]
+        : []),
       '',
       `View it here: ${pageUrl}`,
     ].join('\n'),
