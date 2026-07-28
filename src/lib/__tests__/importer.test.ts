@@ -107,6 +107,66 @@ describe('normalizeOpenApi', () => {
   });
 });
 
+describe('normalizeOpenApi request body media types', () => {
+  const bodyOf = (spec: ReturnType<typeof normalizeOpenApi>, name: string) =>
+    (spec.actions.find((a) => a.name === name)!.paramsSchema.properties as Record<string, Record<string, unknown>>).body;
+
+  const docWith = (content: Record<string, unknown>) => ({
+    openapi: '3.0.3',
+    info: { title: 'Body Media API', version: '1.0.0' },
+    servers: [{ url: 'https://api.example.com' }],
+    paths: {
+      '/thing': { post: { operationId: 'postThing', requestBody: { content }, responses: { '200': { description: 'ok' } } } },
+    },
+  });
+
+  it('does not call a binary upload a JSON body', async () => {
+    // Petstore's POST /pet/{petId}/uploadImage, verbatim.
+    const doc = await parseOpenApi(
+      structuredClone(docWith({ 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } })) as never,
+    );
+    const body = bodyOf(normalizeOpenApi(doc), 'post_thing');
+    expect(body['x-spotcheck-content-type']).toBe('application/octet-stream');
+    expect(body.description).toBe('Binary request body (application/octet-stream)');
+  });
+
+  it('prefers the +json family over an unrelated sibling type', async () => {
+    const doc = await parseOpenApi(
+      structuredClone(
+        docWith({
+          'text/plain': { schema: { type: 'string' } },
+          'application/vnd.api+json': { schema: { type: 'object', properties: { name: { type: 'string' } } } },
+        }),
+      ) as never,
+    );
+    const body = bodyOf(normalizeOpenApi(doc), 'post_thing');
+    expect(body['x-spotcheck-content-type']).toBe('application/vnd.api+json');
+    expect(body.description).toBe('JSON request body');
+    expect((body.properties as Record<string, unknown>).name).toBeDefined();
+  });
+
+  it('names form and multipart bodies', async () => {
+    const form = await parseOpenApi(
+      structuredClone(docWith({ 'application/x-www-form-urlencoded': { schema: { type: 'object' } } })) as never,
+    );
+    expect(bodyOf(normalizeOpenApi(form), 'post_thing').description).toBe('Form-encoded request body');
+
+    const multipart = await parseOpenApi(
+      structuredClone(docWith({ 'multipart/form-data': { schema: { type: 'object' } } })) as never,
+    );
+    expect(bodyOf(normalizeOpenApi(multipart), 'post_thing').description).toBe('Multipart form-data request body');
+  });
+
+  it('keeps a description the spec already supplied', async () => {
+    const doc = await parseOpenApi(
+      structuredClone(
+        docWith({ 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: 'The raw image bytes' } } }),
+      ) as never,
+    );
+    expect(bodyOf(normalizeOpenApi(doc), 'post_thing').description).toBe('The raw image bytes');
+  });
+});
+
 describe('normalizeOpenApi response/error schemas', () => {
   const DOC = {
     openapi: '3.0.3',
