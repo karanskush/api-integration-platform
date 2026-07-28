@@ -135,11 +135,18 @@ export type ConsideredField = {
   knownProducers: string[]; // "tool.field (confidence)" — what heuristics already found
 };
 
-// Every non-readOnly, non-container field a chunk's actions accept — the
-// entire candidate surface the enrichment pass (and later, reconciliation)
-// reasons over. Capped per chunk so one huge resource group can't blow past
-// the prompt budget silently.
-function consideredFieldsFor(record: ImportRecord, actions: Action[]): ConsideredField[] {
+// Every non-readOnly, non-container field the given actions accept — the entire
+// candidate surface the enrichment pass and reconciliation reason over.
+//
+// `limit` is a PROMPT budget, and only enrichRecord has one: it chunks by
+// resource group and must keep any single group from blowing past the context.
+// Reconciliation has no prompt at all, and passing it the same cap silently cost
+// it most of the API — on a 64-field spec it saw 40 fields and 12 of 19
+// operations, so every user-facing operation was invisible to clarification and
+// two of the questions a real run should have raised were never even considered.
+// A cap that is right for one caller is a silent data loss for the other, so it
+// is now the caller's to state.
+function consideredFieldsFor(record: ImportRecord, actions: Action[], limit?: number): ConsideredField[] {
   const graph = lineageFor(record);
   const out: ConsideredField[] = [];
   outer: for (const action of actions) {
@@ -161,7 +168,7 @@ function consideredFieldsFor(record: ImportRecord, actions: Action[]): Considere
         ...(field.description ? { description: asData(field.description, 160) } : {}),
         knownProducers: producers.map((p) => `${p.from.tool}.${p.from.field} (${p.confidence})`),
       });
-      if (out.length >= MAX_FIELDS_PER_CHUNK) break outer;
+      if (limit !== undefined && out.length >= limit) break outer;
     }
   }
   return out;
@@ -224,7 +231,7 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
   const lineageDisputes: LineageDispute[] = [];
 
   for (const group of processed) {
-    const chunkFields = consideredFieldsFor(input.record, group.actions);
+    const chunkFields = consideredFieldsFor(input.record, group.actions, MAX_FIELDS_PER_CHUNK);
     if (!chunkFields.length) continue;
 
     // Every (action, field) pair the model was actually shown. A question about
