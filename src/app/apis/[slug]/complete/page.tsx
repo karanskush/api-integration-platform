@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import ClarificationForm from '@/components/ClarificationForm';
+import ClarificationForm, { type QuizAnswerSpec } from '@/components/ClarificationForm';
 import { verifyAnalysisAccessToken } from '@/lib/analysisAccess';
 import { dbReady, getDb } from '@/lib/db';
 import { apis, clarifications, orgMembers, users } from '@/lib/db/schema';
@@ -62,10 +62,14 @@ export default async function CompletePage({
     );
   }
 
+  // Ordered explicitly: with one question at a time, an unordered read means a
+  // refresh reshuffles the quiz mid-way. created_at already reflects the
+  // archetype rank the enrich job inserted in, so concrete questions come first.
   const pending = await db
     .select()
     .from(clarifications)
-    .where(and(eq(clarifications.apiId, api.id), eq(clarifications.status, 'pending')));
+    .where(and(eq(clarifications.apiId, api.id), eq(clarifications.status, 'pending')))
+    .orderBy(clarifications.createdAt, clarifications.id);
 
   return (
     <div className="wrap" style={{ padding: '40px 0', display: 'grid', gap: 20, maxWidth: 640, margin: '0 auto' }}>
@@ -87,8 +91,9 @@ export default async function CompletePage({
           questions={pending.map((q) => ({
             id: q.id,
             question: q.question,
-            options: (q.options as string[] | null) ?? undefined,
             fieldPath: q.fieldPath ?? undefined,
+            answerSpec: (q.answerSpec as QuizAnswerSpec | null) ?? undefined,
+            appliesTo: (q.appliesTo as Array<{ tool: string; fieldPath: string }> | null) ?? undefined,
           }))}
         />
       )}
