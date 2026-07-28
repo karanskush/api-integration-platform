@@ -90,10 +90,22 @@ async function handler(req: Request) {
       // persistentApi.ts's toAction), so resolving the name needs its own
       // lookup rather than matching against the record directly.
       const answeredRows = await db
-        .select({ actionId: clarifications.actionId, fieldPath: clarifications.fieldPath })
+        .select({
+          actionId: clarifications.actionId,
+          fieldPath: clarifications.fieldPath,
+          appliesTo: clarifications.appliesTo,
+        })
         .from(clarifications)
         .where(
-          and(eq(clarifications.apiId, apiId), eq(clarifications.specVersionId, specVersionId), eq(clarifications.status, 'answered')),
+          and(
+            eq(clarifications.apiId, apiId),
+            eq(clarifications.specVersionId, specVersionId),
+            eq(clarifications.status, 'answered'),
+            // Only a human's answer may mark a field verified. The DB CHECK
+            // already makes any other source unrepresentable while answered;
+            // this keeps the read side honest on its own terms too.
+            eq(clarifications.answerSource, 'human'),
+          ),
         );
       const answeredActionIds = [...new Set(answeredRows.map((r) => r.actionId).filter((id): id is string => id !== null))];
       const nameById = answeredActionIds.length
@@ -103,10 +115,18 @@ async function handler(req: Request) {
             ),
           )
         : new Map<string, string>();
+      // A clustered question was asked once and answered once, but covers every
+      // site in applies_to — which stores the action NAME directly, so those
+      // rows skip the action_id -> name round-trip entirely. Without this the
+      // owner answers about petId and only one of the four operations that
+      // actually asked gets marked.
       const humanVerifiedFields = new Set(
-        answeredRows
-          .filter((r) => r.actionId && r.fieldPath && nameById.has(r.actionId))
-          .map((r) => `${nameById.get(r.actionId!)} ${r.fieldPath}`),
+        answeredRows.flatMap((r) => {
+          const sites = r.appliesTo as Array<{ tool: string; fieldPath: string }> | null;
+          if (Array.isArray(sites) && sites.length) return sites.map((s) => `${s.tool} ${s.fieldPath}`);
+          if (r.actionId && r.fieldPath && nameById.has(r.actionId)) return [`${nameById.get(r.actionId)} ${r.fieldPath}`];
+          return [];
+        }),
       );
 
       const arazzoDoc = buildArazzoDocument(record, record.sourceUrl ?? `${appOrigin()}/${api.slug}`);
