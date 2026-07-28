@@ -243,6 +243,38 @@ function isDownstreamItemRead(producerPath: string, consumerAction: Action): boo
   return params.some((raw) => collectionPathFor(producerPath, raw.slice(1, -1)) === consumerAction.path);
 }
 
+// isDownstreamItemRead above catches the circular case — a GET-by-id on the very
+// collection a POST creates into. It misses the LIST read of the same
+// collection, which is the identical echo: find_pets_by_status returns the Pet
+// shape add_pet's own body declares, so `photoUrls[]` scored 85 HIGH as a
+// "producer" of the photoUrls you are about to send. A mirror, not a source.
+//
+// The line between an echo and a real flow is IDENTITY, not shape. "Read a list,
+// feed an id into a create" is the single most common CORRECT sequence in any
+// API (list_customers -> create_order.body.customerId) and must survive
+// untouched. So this excludes only NON-identifier fields: an attribute of the
+// entity being created can only be an echo of it, while an identifier — of that
+// entity or any other — can genuinely flow forward.
+//
+// The producer is excluded unless it is itself a POST. A GET reads the entity, a
+// PUT/PATCH modifies one that already exists, a DELETE removes one — none of
+// them can be the origin of an attribute of an entity that does not exist yet.
+// Only a POST genuinely allocates a value that can flow forward
+// (chat_post_message.response.messageTs -> chat_delete.body.messageTs).
+//
+// NOTE the interaction with the meterReading case in lineage.test.ts: a
+// non-id-like body field on a POST survives only because the created entity is
+// taken from the LAST path resource ('report' for /meters/report), not from
+// anywhere the producer's own resources overlap.
+function isSameEntityEcho(producer: ProducerField, consumer: ConsumerField): boolean {
+  if (consumer.action.method !== 'POST') return false;
+  if (producer.action.method === 'POST') return false;
+  if (isIdLike(consumer.field.name)) return false;
+  const created = consumer.resources[consumer.resources.length - 1];
+  if (!created) return false;
+  return producer.resources.includes(created);
+}
+
 // Rejects a pair whose two sides identify DIFFERENT entities.
 //
 // Both endpoints previously carried only the operation's resources, so
@@ -273,6 +305,7 @@ function entityConflict(producer: ProducerField, consumer: ConsumerField): boole
 
 function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
   if (isDownstreamItemRead(producer.action.path, consumer.action)) return null;
+  if (isSameEntityEcho(producer, consumer)) return null;
 
   const producerName = normalizeFieldName(producer.field.name);
   const consumerName = normalizeFieldName(consumer.field.name);
