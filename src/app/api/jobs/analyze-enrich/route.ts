@@ -90,6 +90,24 @@ async function handler(req: Request) {
       );
     }
 
+    // Recorded as evidence, never as a clarification: a disputed producer is a
+    // claim about our own heuristics, which the API's owner cannot adjudicate.
+    // confidence 0.5 because it is one model's read against a structural signal
+    // — enough to downgrade the edge at the artifact boundary, not enough to
+    // erase it from the record.
+    if (result.lineageDisputes?.length) {
+      await db.insert(evidenceFacts).values(
+        result.lineageDisputes.map((d) => ({
+          apiId,
+          specVersionId,
+          kind: 'llm.lineage_dispute' as const,
+          source: 'llm',
+          confidence: 0.5,
+          payload: { tool: d.tool, field: d.field, producer: d.producer, reason: d.reason },
+        })),
+      );
+    }
+
     if (allQuestions.length) {
       // actionId is a nice-to-have FK for the completion UI to link straight
       // to an operation — resolved by name since that's what the enrichment
