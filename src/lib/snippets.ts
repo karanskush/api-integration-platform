@@ -43,6 +43,7 @@ export function buildSampleParts(action: Action, baseUrl: string, authIn?: AuthP
   const query: Array<[string, string]> = [];
   const headers: Array<[string, string]> = [];
   let body: unknown;
+  let bodyContentType = 'application/json';
 
   for (const [name, schema] of Object.entries(props)) {
     const where = schema['x-spotcheck-in'];
@@ -50,7 +51,13 @@ export function buildSampleParts(action: Action, baseUrl: string, authIn?: AuthP
     if (where === 'path') path = path.replace(`{${name}}`, encodeURIComponent(String(value)));
     else if (where === 'query') query.push([name, String(value)]);
     else if (where === 'header') headers.push([name, String(value)]);
-    else if (where === 'body') body = value;
+    else if (where === 'body') {
+      body = value;
+      // Emitting Content-Type: application/json for a body the operation
+      // declares as octet-stream or multipart produces a snippet that fails
+      // against the real API. normalize.ts records the declared type.
+      bodyContentType = String(schema['x-spotcheck-content-type'] ?? 'application/json');
+    }
   }
 
   switch (action.auth) {
@@ -67,7 +74,7 @@ export function buildSampleParts(action: Action, baseUrl: string, authIn?: AuthP
       break;
   }
 
-  if (body !== undefined) headers.push(['Content-Type', 'application/json']);
+  if (body !== undefined) headers.push(['Content-Type', bodyContentType]);
 
   const qs = query.length ? `?${query.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}` : '';
   return { url: `${baseUrl}${path}${qs}`, query, headers, body };
