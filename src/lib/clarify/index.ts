@@ -11,6 +11,7 @@ import type { OpenQuestionKind } from '../deepEnrich';
 import { classify, type Classification } from './archetypes';
 
 export * from './archetypes';
+export * from './answers';
 
 export type QuestionRef = {
   tool: string;
