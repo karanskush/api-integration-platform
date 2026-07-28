@@ -52,6 +52,51 @@ export function resourceOf(collectionPath: string): string | null {
   return last ? singularize(last) : null;
 }
 
+// Segments that WRAP a payload rather than name an entity. Stripe's
+// `response.data[].id` is a Customer id, not a "data" id; a GitHub search's
+// `response.items[].id` is a repository id. Treating these as entities would be
+// strictly worse than the operation-path fallback callers hand back to.
+const ENVELOPE_SEGMENTS = new Set([
+  'data', 'items', 'item', 'results', 'result', 'records', 'record', 'list',
+  'values', 'rows', 'entries', 'elements', 'nodes', 'edges', 'objects',
+  'content', 'payload',
+]);
+
+// fieldMap.ts's own section roots (see fieldMapFor/requestFields): not entities.
+const SECTION_ROOTS = new Set(['response', 'request', 'body', 'path', 'query', 'header', 'error']);
+
+// The entity a FIELD PATH's own prefix names — the thing that OWNS the leaf.
+//
+//   response.category.id -> 'category'
+//   response.tags[].id   -> 'tag'      (singularized)
+//   response.data[].id   -> null       (envelope; caller falls back)
+//   response.id | response[].id | path.petId -> null  (no owner but the root)
+//
+// This exists because lineage.ts previously derived a producer field's entity
+// from its OPERATION path, which made `add_pet.response.id`,
+// `add_pet.response.category.id` and `add_pet.response.tags[].id` all "pet" and
+// therefore interchangeable sources for a `petId`. A Category id is not a Pet
+// id, and the field's own path is the only place that says so — Petstore
+// declares no schema `title`, and dereferencing inlines the $ref, so the
+// component name is gone by the time we see it.
+//
+// Walks outward from the leaf, so `response.order.customer.id` is a customer
+// id, not an order id.
+export function entityFromFieldPath(path: string): string | null {
+  const segments = path.split('.');
+  segments.pop(); // the leaf is the value; we want what contains it
+  for (let i = segments.length - 1; i >= 0; i--) {
+    // fieldMap.ts appends the collection marker to the SAME segment, so the
+    // segment is literally `tags[]`, not `tags` followed by `[]`.
+    const bare = segments[i].replace(/\[\]$/, '').replace(/\{\*\}$/, '');
+    if (!bare) continue;
+    const lower = bare.toLowerCase();
+    if (SECTION_ROOTS.has(lower) || ENVELOPE_SEGMENTS.has(lower)) continue;
+    return singularize(bare);
+  }
+  return null;
+}
+
 // Version prefixes and RPC verb segments are not resources; treating them as
 // such would make every operation on a `/v1/...` API look related.
 const NON_RESOURCE_SEGMENT = /^(v\d+|api|rest|graphql|json|rpc|latest|current)$/i;
