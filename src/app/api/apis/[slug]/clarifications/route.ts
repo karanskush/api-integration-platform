@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import { verifyAnalysisAccessToken } from '@/lib/analysisAccess';
+import { resolveAnswer, type AnswerSpec } from '@/lib/clarify';
 import { getDb } from '@/lib/db';
 import { apis, clarifications, evidenceFacts, orgMembers, users } from '@/lib/db/schema';
 import { publishJob, queueReady } from '@/lib/queue';
@@ -67,12 +68,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
 
   let specVersionId: string | null = null;
   let answeredCount = 0;
+  let skippedCount = 0;
+  const rejected: Array<{ clarificationId: string; reason: string }> = [];
 
   for (const raw of answers) {
     if (typeof raw !== 'object' || raw === null) continue;
-    const entry = raw as { clarificationId?: unknown; answer?: unknown };
+    const entry = raw as { clarificationId?: unknown; choice?: unknown; other?: unknown; values?: unknown; skip?: unknown };
     const clarificationId = typeof entry.clarificationId === 'string' ? entry.clarificationId : '';
-    if (!clarificationId || entry.answer === undefined) continue;
+    if (!clarificationId) continue;
 
     const [row] = await db
       .select()
@@ -84,9 +87,34 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     if (!row) continue; // already answered, skipped, or belongs to a different API — silently ignored, not an error
 
     specVersionId = row.specVersionId;
+
+    // A skip is a real answer — "we asked, nobody could say" — and the honest
+    // way to unblock an analysis pinned on a question no one can resolve. It
+    // records no evidence, because not knowing is not a fact about the API.
+    if (entry.skip === true) {
+      await db
+        .update(clarifications)
+        .set({ status: 'skipped', answeredBy: answeredByUserId, answeredAt: new Date() })
+        .where(eq(clarifications.id, clarificationId));
+      skippedCount++;
+      continue;
+    }
+
+    const resolved = resolveAnswer(row.answerSpec as AnswerSpec | null, entry);
+    if ('reason' in resolved) {
+      rejected.push({ clarificationId, reason: resolved.reason });
+      continue;
+    }
+
     await db
       .update(clarifications)
-      .set({ status: 'answered', answer: entry.answer, answeredBy: answeredByUserId, answeredAt: new Date() })
+      .set({
+        status: 'answered',
+        answer: resolved.answer,
+        answerSource: 'human',
+        answeredBy: answeredByUserId,
+        answeredAt: new Date(),
+      })
       .where(eq(clarifications.id, clarificationId));
     // Highest-trust evidence tier — a person confirmed this directly, above
     // both heuristic (source: 'parser') and LLM-inferred (source: 'llm') facts.
@@ -96,13 +124,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       kind: 'human.clarification',
       source: 'human',
       confidence: 1,
-      payload: { clarificationId: row.id, question: row.question, answer: entry.answer },
+      payload: { clarificationId: row.id, question: row.question, answer: resolved.answer },
     });
     answeredCount++;
   }
 
-  if (!answeredCount) {
-    return Response.json({ error: 'No matching pending clarifications were found' }, { status: 404 });
+  // A skip-only submission is a legitimate one, so the "nothing matched" case is
+  // answered + skipped, not answered alone. Rejections are reported rather than
+  // silently dropped: previously a malformed entry produced a bare 404 that gave
+  // the client nothing to show.
+  if (!answeredCount && !skippedCount) {
+    return Response.json(
+      rejected.length
+        ? { error: 'No answer could be accepted', rejected }
+        : { error: 'No matching pending clarifications were found' },
+      { status: rejected.length ? 400 : 404 },
+    );
   }
 
   const remaining = await db
@@ -117,5 +154,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     await publishJob('/api/jobs/analyze-finalize', { apiId: api.id, specVersionId });
   }
 
-  return Response.json({ ok: true, answered: answeredCount, remaining: remaining.length });
+  return Response.json({
+    ok: true,
+    answered: answeredCount,
+    skipped: skippedCount,
+    remaining: remaining.length,
+    ...(rejected.length ? { rejected } : {}),
+  });
 }
