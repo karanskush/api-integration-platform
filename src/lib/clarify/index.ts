@@ -14,6 +14,7 @@ export * from './archetypes';
 export * from './answers';
 export * from './evidence';
 export * from './triage';
+export * from './synthesize';
 
 export type QuestionRef = {
   tool: string;
