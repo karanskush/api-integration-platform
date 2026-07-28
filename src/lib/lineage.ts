@@ -243,6 +243,33 @@ function isDownstreamItemRead(producerPath: string, consumerAction: Action): boo
   return params.some((raw) => collectionPathFor(producerPath, raw.slice(1, -1)) === consumerAction.path);
 }
 
+// A query/header parameter on a READ that declares its own enum is a
+// caller-chosen SELECTOR, not a value that flows from a previous call: the legal
+// values are printed right there in the spec.
+//
+// Petstore's GET /pet/findByStatus takes `status` with enum
+// [available, pending, sold] and default 'available', and it picked up a
+// producer from add_pet.response.status through scoreGenericMatch's enum-overlap
+// branch purely because both are called `status` and share the vocabulary. The
+// resulting origin `produced_by_api` then made describe_fields tell an agent to
+// call add_pet first in order to learn a value the enum already lists — a wrong
+// call sequence, which this module's header rates worse than no guidance at all.
+//
+// Refusing the EDGE rather than relabelling the origin is deliberate: origin is
+// derived from producer count in three separate places (advisor/fields.ts,
+// artifacts/enrichedSpec.ts, deepEnrich.ts), and with no edge all three agree for
+// free and originOf falls through to enum_constrained on its own.
+//
+// Scoped tightly. A `?ownerId=` filter with no enum still traces to list_owners,
+// and a body enum a prior call legitimately yields — an order `status` you read
+// back before a PUT — is untouched.
+function isSelfDescribingFilter(consumer: ConsumerField): boolean {
+  const where = consumer.field.location;
+  if (where !== 'query' && where !== 'header') return false;
+  if (!consumer.field.enum?.length) return false;
+  return consumer.action.method === 'GET' || consumer.action.method === 'HEAD';
+}
+
 // isDownstreamItemRead above catches the circular case — a GET-by-id on the very
 // collection a POST creates into. It misses the LIST read of the same
 // collection, which is the identical echo: find_pets_by_status returns the Pet
@@ -306,6 +333,7 @@ function entityConflict(producer: ProducerField, consumer: ConsumerField): boole
 function scoreEdge(producer: ProducerField, consumer: ConsumerField): { score: number; why: LineageSignal[] } | null {
   if (isDownstreamItemRead(producer.action.path, consumer.action)) return null;
   if (isSameEntityEcho(producer, consumer)) return null;
+  if (isSelfDescribingFilter(consumer)) return null;
 
   const producerName = normalizeFieldName(producer.field.name);
   const consumerName = normalizeFieldName(consumer.field.name);
