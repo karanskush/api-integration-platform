@@ -112,6 +112,101 @@ describe('consideredFieldsFor', () => {
   });
 });
 
+// Questions reach the API's owner verbatim. Nothing previously checked that a
+// question named a real field, or that it was even answerable by a person who
+// has never seen this tool.
+describe('enrichRecord question containment', () => {
+  const questionModel = (...openQuestions: unknown[]) =>
+    new MockLanguageModelV4({ doGenerate: objectResult({ fields: [], openQuestions }) });
+
+  const ok = { action: 'create_order', fieldPath: 'body.discountCode', kind: 'ambiguous_origin' };
+
+  it('drops a question about a field that does not exist', async () => {
+    const result = await enrichRecord({
+      record: record(),
+      docExcerpts: [],
+      model: questionModel(
+        { ...ok, fieldPath: 'body.nonexistentField', question: 'What is this?' },
+        { ...ok, question: 'Where does a valid discountCode come from?' },
+      ),
+    });
+    expect(result.openQuestions.map((q) => q.fieldPath)).toEqual(['body.discountCode']);
+  });
+
+  it('drops a question about an action that does not exist', async () => {
+    const result = await enrichRecord({
+      record: record(),
+      docExcerpts: [],
+      model: questionModel({ action: 'drop_all_orders', kind: 'unclear_scope', question: 'What does this do?' }),
+    });
+    expect(result.openQuestions).toEqual([]);
+  });
+
+  it('drops questions about our own inference, which an owner cannot answer', async () => {
+    const internal = [
+      'knownProducers for body.id list tag ids too. Is this heuristic noise?',
+      'Is the lineage confidence score for this field intentional?',
+      'Should Spotcheck treat these as interchangeable?',
+      'Why did the structural heuristic pick this producer?',
+    ];
+    const result = await enrichRecord({
+      record: record(),
+      docExcerpts: [],
+      model: questionModel(
+        ...internal.map((question) => ({ ...ok, question })),
+        { ...ok, question: 'Where does a valid discountCode come from?' },
+      ),
+    });
+    expect(result.openQuestions).toHaveLength(1);
+    expect(result.openQuestions[0].question).toContain('discountCode');
+  });
+
+  it('keeps a question that merely mentions a field named like a confidence value', async () => {
+    // The filter must not be so broad that it eats real questions about the
+    // API's own vocabulary.
+    const result = await enrichRecord({
+      record: record(),
+      docExcerpts: [],
+      model: questionModel({ ...ok, question: 'Is discountCode case-sensitive when applied at checkout?' }),
+    });
+    expect(result.openQuestions).toHaveLength(1);
+  });
+
+  it('collects a disputed producer as a dispute rather than a question', async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: objectResult({
+        fields: [],
+        openQuestions: [],
+        lineageDisputes: [
+          {
+            action: 'create_order',
+            field: 'body.customerId',
+            producer: 'list_customers.response.data[].customerId (high)',
+            reason: 'The docs describe this as a merchant-scoped alias, not the customer id.',
+          },
+        ],
+      }),
+    });
+    const result = await enrichRecord({ record: record(), docExcerpts: [], model });
+    expect(result.openQuestions).toEqual([]);
+    expect(result.lineageDisputes).toHaveLength(1);
+    expect(result.lineageDisputes![0].tool).toBe('create_order');
+    expect(result.lineageDisputes![0].producer).toContain('list_customers');
+  });
+
+  it('drops a dispute about a field that does not exist', async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: objectResult({
+        fields: [],
+        openQuestions: [],
+        lineageDisputes: [{ action: 'create_order', field: 'body.ghost', producer: 'x.y (high)', reason: 'nope' }],
+      }),
+    });
+    const result = await enrichRecord({ record: record(), docExcerpts: [], model });
+    expect(result.lineageDisputes).toEqual([]);
+  });
+});
+
 describe('enrichRecord', () => {
   it('parses structured findings and open questions from the model', async () => {
     const model = new MockLanguageModelV4({
