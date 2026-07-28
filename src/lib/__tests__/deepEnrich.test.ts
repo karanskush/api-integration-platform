@@ -432,6 +432,31 @@ describe('reconcileOpenQuestions', () => {
     expect(auto.some((q) => q.fieldPath === 'body.customerId')).toBe(false);
   });
 
+  it('spends one of the fifteen slots per cluster, not per site', () => {
+    // Four operations each taking an undocumented petId is one question. Before
+    // clustering it cost four of the fifteen auto-clarification slots.
+    const petPaths = new Map([
+      ['get_pet_by_id', '/pet/{petId}'],
+      ['update_pet_with_form', '/pet/{petId}'],
+      ['delete_pet', '/pet/{petId}'],
+      ['upload_file', '/pet/{petId}/uploadImage'],
+    ]);
+    const considered = [...petPaths.keys()].map((tool) => ({
+      action: tool,
+      field: 'path.petId',
+      type: 'integer',
+      origin: 'caller_supplied' as const,
+      required: true,
+      knownProducers: [],
+    }));
+    const empty = { fields: [], openQuestions: [], chunksProcessed: 1, chunksTotal: 1, truncated: false };
+
+    expect(reconcileOpenQuestions(considered, empty)).toHaveLength(4); // without paths: one per site
+    const clustered = reconcileOpenQuestions(considered, empty, petPaths);
+    expect(clustered).toHaveLength(1);
+    expect(clustered[0].appliesTo).toHaveLength(4);
+  });
+
   it('does not re-raise a field the LLM already explained', () => {
     const r = record();
     const createOrder = r.actions.find((a) => a.name === 'create_order')!;
