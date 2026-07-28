@@ -44,7 +44,15 @@ function upstashDriver(): KV {
     // end-to-end (Clerk had blocked every earlier attempt this session).
     async getRawSpec(id) {
       const stored = await redis.get<string>(RAW_SPEC_KEY(id));
-      return stored == null ? null : Buffer.from(stored, 'base64').toString('utf8');
+      // Migration window: entries written before the base64 wrap (≤24h TTL)
+      // are raw spec text. A JSON-format one comes back auto-parsed as an
+      // object — its original bytes are unrecoverable, so report "gone" and
+      // let the claim route ask for a re-import. A non-JSON one comes back as
+      // the raw string; base64's alphabet can't express spec syntax (:, {,
+      // whitespace), so the regex cleanly separates it from wrapped values —
+      // without this check Buffer.from would silently decode it to garbage.
+      if (stored == null || typeof stored !== 'string') return null;
+      return /^[A-Za-z0-9+/]+={0,2}$/.test(stored) ? Buffer.from(stored, 'base64').toString('utf8') : stored;
     },
     async setRawSpec(id, rawText, ttlSecs) {
       await redis.set(RAW_SPEC_KEY(id), Buffer.from(rawText, 'utf8').toString('base64'), { ex: ttlSecs });

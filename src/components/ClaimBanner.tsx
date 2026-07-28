@@ -19,8 +19,10 @@ export default function ClaimBanner({ ephemeralId }: { ephemeralId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ephemeralId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not save this API');
+      // A crashed route or middleware rewrite returns an empty or HTML body —
+      // surface a readable message instead of a JSON parse error.
+      const data: { error?: string; pageUrl?: string } = await res.json().catch(() => ({}));
+      if (!res.ok || !data.pageUrl) throw new Error(data.error || `Could not save this API (HTTP ${res.status})`);
       setPageUrl(data.pageUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save this API');
