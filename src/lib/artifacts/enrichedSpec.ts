@@ -15,16 +15,45 @@
 // not a nested JSON Schema `properties` tree — calling it `properties` would
 // misrepresent it as spec-compliant nesting it does not attempt to be.
 
-import { fieldMapFor, originOf, type FieldNode } from '../fieldMap';
+import { fieldMapFor, originOf, type FieldNode, type FieldOrigin } from '../fieldMap';
 import type { Action, ImportRecord } from '../ir';
 import { lineageFor, producersFor } from '../lineage';
 
 export type HumanVerifiedLookup = (tool: string, field: string) => boolean;
 
-function annotateField(action: Action, field: FieldNode, record: ImportRecord, verified: HumanVerifiedLookup) {
+// What a human told us, keyed by "tool field". `origin` is present only when
+// their answer actually resolved to one — an answer about a field's format or a
+// PUT's merge semantics confirms the field without reclassifying it.
+export type HumanAnswer = { origin?: FieldOrigin };
+
+export type EnrichedSpecInput = {
+  // Answered by a person. The key set doubles as x-spotcheck-human-verified.
+  answers?: Map<string, HumanAnswer>;
+  // Explicitly skipped: we asked, nobody could say. An honest unknown, and
+  // deliberately distinct from never having asked.
+  unresolved?: Set<string>;
+  // Lineage edges the LLM pass disputed, keyed "tool field fromTool.fromField".
+  disputed?: Set<string>;
+};
+
+function annotateField(action: Action, field: FieldNode, record: ImportRecord, input: EnrichedSpecInput) {
   const graph = lineageFor(record);
-  const producers = producersFor(graph, action.name, field.path);
-  const origin = originOf(field, producers.length > 0);
+  const key = `${action.name} ${field.path}`;
+  const disputed = input.disputed ?? new Set<string>();
+
+  // A producer the model disputed is withheld from the artifact but kept in
+  // evidence_facts, so the claim disappears without the audit trail doing so.
+  const producers = producersFor(graph, action.name, field.path).filter(
+    (p) => !disputed.has(`${key} ${p.from.tool}.${p.from.field}`),
+  );
+
+  const answer = input.answers?.get(key);
+  const heuristicOrigin = originOf(field, producers.length > 0);
+  // A person who knows the API outranks our inference about it. Without this the
+  // owner could answer "the server assigns this, ignore what I send" and the
+  // published spec would still read caller_supplied — now stamped
+  // human-verified, which is worse than never having asked.
+  const origin = answer?.origin ?? heuristicOrigin;
 
   return {
     type: field.nullable ? [field.type, 'null'] : field.type,
@@ -32,6 +61,9 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, v
     ...(field.enum ? { enum: field.enum } : {}),
     ...(field.description ? { description: field.description } : {}),
     'x-spotcheck-origin': origin,
+    // Which of the two produced the value above, so a consumer never has to
+    // guess whether it is reading a person's answer or our heuristic.
+    'x-spotcheck-origin-source': answer?.origin ? 'human' : 'heuristic',
     ...(producers.length
       ? {
           'x-spotcheck-produced-by': producers.map((p) => ({
@@ -41,15 +73,23 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, v
           })),
         }
       : {}),
-    'x-spotcheck-human-verified': verified(action.name, field.path),
+    'x-spotcheck-human-verified': input.answers?.has(key) ?? false,
+    // Asked and unanswerable. Distinct from an absent marker, which only means
+    // we never asked.
+    ...(input.unresolved?.has(key) ? { 'x-spotcheck-unresolved': true } : {}),
   };
 }
 
 export function buildEnrichedSpec(
   record: ImportRecord,
-  humanVerifiedFields: Set<string> = new Set(),
+  // Accepts the legacy bare Set of verified keys so existing callers and tests
+  // keep working; the object form is what carries answers, skips and disputes.
+  verifiedOrInput: Set<string> | EnrichedSpecInput = new Set(),
 ): Record<string, unknown> {
-  const verified: HumanVerifiedLookup = (tool, field) => humanVerifiedFields.has(`${tool} ${field}`);
+  const input: EnrichedSpecInput =
+    verifiedOrInput instanceof Set
+      ? { answers: new Map([...verifiedOrInput].map((k) => [k, {} as HumanAnswer])) }
+      : verifiedOrInput;
   const paths: Record<string, Record<string, unknown>> = {};
 
   for (const action of record.actions) {
@@ -57,7 +97,7 @@ export function buildEnrichedSpec(
     const requestFields: Record<string, unknown> = {};
     for (const field of map.request) {
       if (field.container) continue;
-      requestFields[field.path] = annotateField(action, field, record, verified);
+      requestFields[field.path] = annotateField(action, field, record, input);
     }
 
     const pathEntry = paths[action.path] ?? {};
