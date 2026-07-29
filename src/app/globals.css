@@ -1089,6 +1089,95 @@ table.params td.desc { color: var(--fg-dim); }
 }
 
 /* ============================================================
+   LANDING — provenance: the specimen table
+
+   A ruled data table is the most document-like thing on the page and it
+   does real work: five origins with their consequence and their evidence
+   is a spec sheet, and a spec sheet is more persuasive here than three
+   feature cards would be.
+   ============================================================ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.spec-table thead th {
+  padding: 0 16px 9px 0;
+  border-bottom: 2px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  vertical-align: bottom;
+}
+.spec-table tbody th,
+.spec-table tbody td {
+  padding: 15px 16px 15px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+  font-weight: 400;
+}
+.spec-table tbody tr:last-child th,
+.spec-table tbody tr:last-child td { border-bottom-color: var(--ink-3); }
+.spec-table tbody th { width: 22%; }
+.spec-table tbody th code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--measure);
+  overflow-wrap: anywhere;
+}
+.spec-table tbody td { color: var(--ink-2); line-height: 1.55; }
+.spec-table td.by {
+  width: 26%;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+.prov-note {
+  margin-top: clamp(28px, 3.4vw, 42px);
+  padding-left: 20px;
+  border-left: 2px solid var(--measure);
+  max-width: 72ch;
+}
+.prov-note p { color: var(--ink-2); font-size: 14.5px; line-height: 1.65; }
+.prov-note em { font-style: italic; color: var(--ink); }
+.prov-note code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: rgba(22, 19, 15, 0.055);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+@media (max-width: 760px) {
+  /* A three-column ruled table cannot survive a phone, so each row becomes
+     its own labelled block rather than a horizontal scroll nobody finds. */
+  .spec-table thead { display: none; }
+  .spec-table tbody tr { display: block; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .spec-table tbody th,
+  .spec-table tbody td { display: block; width: auto; padding: 0; border: 0; }
+  .spec-table tbody td { margin-top: 6px; }
+  .spec-table td.by { margin-top: 8px; }
+  .spec-table td.by::before { content: 'Decided by — '; color: var(--ink-3); }
+}
+
+/* ============================================================
    LANDING — statement + surfaces
    ============================================================ */
 .statement { text-align: center; }

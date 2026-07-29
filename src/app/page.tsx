@@ -4,12 +4,40 @@ import LandingEffects from '@/components/landing/LandingEffects';
 import ScoreGauge from '@/components/landing/ScoreGauge';
 import VerificationStamp from '@/components/landing/VerificationStamp';
 import WaitlistForm from '@/components/landing/WaitlistForm';
+import { FIELD_ORIGINS } from '@/lib/fieldMap';
 
 // The masthead states the terms of the report before it makes any claim —
 // what gets assessed, how, and how often. Each line is a fact about the
 // pipeline, not a promise: read-safe is the actual probe constraint
 // (src/lib/probes/run.ts), and re-issue on spec change is what ciSync and
 // the reverify cron really do.
+// Keyed off the real union rather than restated, so the page cannot claim a
+// set of origins the engine no longer has. landingClaims.test.ts pins this.
+const ORIGIN_COPY: Record<(typeof FIELD_ORIGINS)[number], { means: string; by: string }> = {
+  server_generated: {
+    means: 'The API produces it. Anything you send is ignored or rejected.',
+    by: 'readOnly in the schema',
+  },
+  constant: {
+    means: 'Exactly one legal value, so there is nothing to decide.',
+    by: 'const in the schema',
+  },
+  produced_by_api: {
+    means: 'Another operation returns it — and we name which one, per field.',
+    by: 'Lineage, § 03',
+  },
+  enum_constrained: {
+    means: 'Pick from a fixed list. We can show you the list.',
+    by: 'enum in the schema',
+  },
+  caller_supplied: {
+    means: 'Genuinely yours to choose. This is the only one that needs you.',
+    by: 'Nothing else matched',
+  },
+};
+
+const ORIGINS = FIELD_ORIGINS.map((key) => ({ key, ...ORIGIN_COPY[key] }));
+
 const MASTHEAD = [
   { label: 'Subject', value: 'Any HTTP API — OpenAPI, Postman, or a single cURL command' },
   { label: 'Method', value: 'Read-safe operations executed against the running service' },
@@ -137,6 +165,51 @@ export default function Home() {
             <p className="fig-cap">
               <span className="n">Fig. 1</span>
               <span>Import replay — scripted. The importer above is live.</span>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ PROVENANCE — where every value comes from ============ */}
+      <section className="section band prov-section" id="provenance">
+        <div className="landing-wrap">
+          <SectionMark n="02" title="Provenance" note={`${FIELD_ORIGINS.length} origins`} />
+          <div className="section-head reveal">
+            <h2 className="display">Every field says where its value is supposed to come from.</h2>
+            <p className="lead">
+              The single most expensive question when integrating an API is &ldquo;what do I put
+              here?&rdquo; — and a spec answers it for almost nothing. Spotcheck classifies every
+              writable field into one of {FIELD_ORIGINS.length} origins, and records how it knows.
+            </p>
+          </div>
+
+          <table className="spec-table reveal">
+            <caption className="sr-only">The five field origins Spotcheck classifies into</caption>
+            <thead>
+              <tr>
+                <th scope="col">Origin</th>
+                <th scope="col">What it means for a caller</th>
+                <th scope="col">Decided by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ORIGINS.map((origin) => (
+                <tr key={origin.key}>
+                  <th scope="row"><code>{origin.key}</code></th>
+                  <td>{origin.means}</td>
+                  <td className="by">{origin.by}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="prov-note reveal">
+            <p>
+              Each annotation also carries <em>how confident we are entitled to be</em>. A value the
+              owner confirmed is marked <code>human</code>; one inferred from a quote in their own
+              documentation is <code>assumed</code>, and carries that quote; one we worked out from
+              structure alone is <code>heuristic</code>. Only a person can set the human mark — a
+              database constraint makes anything else unrepresentable, not merely discouraged.
             </p>
           </div>
         </div>
