@@ -435,92 +435,198 @@ html:has(.report-page) :focus-visible {
 }
 .landing-hero {
   position: relative;
-  overflow: hidden;
-  border-bottom: 1px solid var(--hair);
-  isolation: isolate;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: clamp(40px, 6vh, 76px);
 }
-.hero-grid {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  opacity: 0.3;
-  background-image:
-    linear-gradient(var(--hair-soft) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hair-soft) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: linear-gradient(to bottom, black, transparent 92%);
+
+/* ---- masthead --------------------------------------------------------
+   The head of the form: what is assessed, how, and how often — stated
+   before the page makes any claim. The 2px rule under it is the heaviest
+   line on the page and the only one that reads as structural. */
+.masthead { padding-top: clamp(28px, 4.5vh, 52px); }
+.mh-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 11px;
 }
-.hero-signal {
-  position: absolute;
-  z-index: -1;
-  inset: 8% -8% 0 40%;
-  opacity: 0.32;
+.mh-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--ink);
 }
-.signal-line {
+.mh-no {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mh-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(18px, 3.5vw, 54px);
+  padding-top: 14px;
+}
+/* The top rule is a pseudo-element rather than a border so it can be drawn
+   on load — a border cannot be scaled independently of its box. */
+.mh-body::before {
+  content: '';
   position: absolute;
-  height: 1px;
-  background: var(--accent);
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--ink);
   transform-origin: left center;
+  animation: rule-draw 820ms var(--ease) both;
 }
-.signal-line-one { width: 70%; left: 8%; top: 38%; transform: rotate(18deg); }
-.signal-line-two { width: 58%; left: 24%; top: 66%; transform: rotate(-24deg); }
-.signal-node {
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--accent);
-  background: var(--bg);
+.mh-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.signal-node::after { content: ''; position: absolute; inset: 2px; background: var(--accent); }
-.signal-node-one { left: 12%; top: 35%; }
-.signal-node-two { left: 58%; top: 52%; }
-/* ornament stays in the instrument channels — green is earned, never decorative */
-.signal-node-three { left: 80%; top: 42%; border-color: var(--accent-blue); }
-.signal-node-three::after { background: var(--accent-blue); }
+.mh-field { padding: 4px 20px 6px 0; }
+.mh-field + .mh-field { padding-left: 20px; border-left: 1px solid var(--rule); }
+.mh-field dt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mh-field dd {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 34ch;
+}
+.mh-field { animation: field-in 560ms var(--ease) both; }
+.mh-field:nth-child(1) { animation-delay: 300ms; }
+.mh-field:nth-child(2) { animation-delay: 370ms; }
+.mh-field:nth-child(3) { animation-delay: 440ms; }
+
+/* ---- the seal --------------------------------------------------------
+   The one place --stamp is permitted. It lands last and it is the only
+   choreographed moment on the page; everything else merely arrives. */
+.stamp {
+  width: clamp(96px, 10.5vw, 132px);
+  height: auto;
+  color: var(--stamp);
+  flex-shrink: 0;
+  transform: rotate(-6deg);
+  animation: stamp-land 700ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
+  animation-delay: 780ms;
+}
+.stamp-ring { fill: none; stroke: currentColor; stroke-width: 3.4; }
+.stamp-ring.thin { stroke-width: 1.1; }
+.stamp-arc,
+.stamp-word,
+.stamp-sub {
+  fill: currentColor;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.stamp-arc { font-size: 12px; letter-spacing: 0.11em; }
+.stamp-word { font-size: 21px; letter-spacing: 0.09em; }
+.stamp-sub { font-size: 9.5px; letter-spacing: 0.19em; }
+.stamp-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 5.5;
+  stroke-linecap: square;
+}
+.stamp-rule { stroke: currentColor; stroke-width: 1.1; }
+
+@keyframes rule-draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes field-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes line-rise {
+  from { transform: translateY(108%); }
+  to { transform: none; }
+}
+@keyframes stamp-land {
+  0% { opacity: 0; transform: rotate(-15deg) scale(1.5); filter: blur(3px); }
+  70% { opacity: 1; transform: rotate(-4.5deg) scale(0.97); filter: blur(0); }
+  100% { opacity: 1; transform: rotate(-6deg) scale(1); filter: blur(0); }
+}
+
+/* ---- hero ------------------------------------------------------------ */
 .hero-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-  gap: clamp(36px, 5vw, 72px);
-  align-items: center;
-  min-height: min(680px, calc(100svh - 64px));
-  padding: clamp(48px, 8vh, 96px) 0 clamp(44px, 7vh, 80px);
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+  gap: clamp(36px, 5vw, 76px);
+  align-items: start;
+  padding: clamp(44px, 7vh, 84px) 0 0;
 }
-.hero-copy { max-width: 640px; }
+.hero-copy { max-width: 660px; }
 .hero-title {
-  margin-top: 18px;
-  font-size: clamp(30px, 3.5vw, 46px);
-  line-height: 1.12;
-  max-width: 20ch;
+  font-size: clamp(40px, 6.4vw, 76px);
+  line-height: 1.0;
+  letter-spacing: -0.03em;
+  /* WONK is reserved for exactly this headline: the angled terminals are
+     what make Fraunces itself, and they stop being a voice if used twice. */
+  font-variation-settings: 'opsz' 144, 'SOFT' 0, 'WONK' 1;
+  color: var(--ink);
+  max-width: 13ch;
 }
-.hero-tagline {
-  margin-top: 20px;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: clamp(18px, 1.7vw, 22px);
-  letter-spacing: -0.015em;
-  color: var(--fg);
-}
+.hero-title .hl { display: block; overflow: hidden; padding-bottom: 0.06em; }
+.hero-title .hl > span { display: block; animation: line-rise 820ms var(--ease) both; }
+.hero-title .hl:nth-child(1) > span { animation-delay: 90ms; }
+.hero-title .hl:nth-child(2) > span { animation-delay: 190ms; }
 .hero-lead {
-  max-width: 56ch;
-  margin-top: 14px;
-  color: var(--fg-dim);
-  font-size: 15.5px;
+  max-width: 54ch;
+  margin-top: 26px;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.62;
 }
-.hero-sub { display: flex; flex-wrap: wrap; gap: 12px 26px; margin-top: 28px; }
-.text-link { color: var(--accent); font-weight: 500; white-space: nowrap; }
-.text-link:hover { text-decoration: none; color: var(--accent-soft); }
-.text-link.steel { color: var(--fg-dim); }
-.text-link.steel:hover { color: var(--fg); }
+.hero-lead.second { margin-top: 14px; }
+.hero-lead em { font-style: italic; color: var(--ink); }
+.hero-sub { display: flex; flex-wrap: wrap; gap: 12px 26px; margin-top: 30px; }
+.text-link {
+  color: var(--measure);
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(28, 74, 122, 0.32);
+  padding-bottom: 1px;
+}
+.text-link:hover { text-decoration: none; border-bottom-color: var(--measure); }
+.text-link.steel { color: var(--ink-2); border-bottom-color: var(--rule); }
+.text-link.steel:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
 .hero-import .import-panel {
   max-width: none;
-  box-shadow: inset 0 1px 0 var(--edge-light), 0 24px 60px rgba(0, 0, 0, 0.55);
+  background: var(--field);
+  box-shadow: 0 1px 0 rgba(22, 19, 15, 0.06), 0 18px 40px -28px rgba(22, 19, 15, 0.5);
 }
 .hero-import-note {
   margin-top: 14px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--fg-mute);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
   text-align: center;
+}
+
+/* Nothing here is load-bearing for comprehension, so reduced motion drops
+   the choreography entirely rather than shortening it. */
+@media (prefers-reduced-motion: reduce) {
+  .mh-body::before,
+  .mh-field,
+  .hero-title .hl > span,
+  .stamp {
+    animation: none;
+  }
 }
 
 .app-home { display: grid; gap: 34px; }

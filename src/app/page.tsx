@@ -2,7 +2,19 @@ import ImportForm from '@/components/ImportForm';
 import LandingDemo from '@/components/landing/LandingDemo';
 import LandingEffects from '@/components/landing/LandingEffects';
 import ScoreGauge from '@/components/landing/ScoreGauge';
+import VerificationStamp from '@/components/landing/VerificationStamp';
 import WaitlistForm from '@/components/landing/WaitlistForm';
+
+// The masthead states the terms of the report before it makes any claim —
+// what gets assessed, how, and how often. Each line is a fact about the
+// pipeline, not a promise: read-safe is the actual probe constraint
+// (src/lib/probes/run.ts), and re-issue on spec change is what ciSync and
+// the reverify cron really do.
+const MASTHEAD = [
+  { label: 'Subject', value: 'Any HTTP API — OpenAPI, Postman, or a single cURL command' },
+  { label: 'Method', value: 'Read-safe operations executed against the running service' },
+  { label: 'Issued', value: 'On import, and re-issued whenever the spec changes' },
+];
 
 const LAYERS = [
   {
@@ -43,28 +55,46 @@ export default function Home() {
     <div className="landing report-page" id="top">
       <LandingEffects />
 
-      {/* ============ HERO — the promise beside the instrument ============ */}
+      {/* ============ MASTHEAD + HERO — the head of a printed form ============ */}
       <section className="landing-hero">
-        <div className="hero-grid" aria-hidden="true" />
-        <div className="hero-signal" aria-hidden="true">
-          <span className="signal-line signal-line-one" />
-          <span className="signal-line signal-line-two" />
-          <span className="signal-node signal-node-one" />
-          <span className="signal-node signal-node-two" />
-          <span className="signal-node signal-node-three" />
+        <div className="landing-wrap">
+          <div className="masthead">
+            <div className="mh-head">
+              <p className="mh-title">Field Report</p>
+              <p className="mh-no">Form SC&#8209;01</p>
+            </div>
+            <div className="mh-body">
+              <dl className="mh-fields">
+                {MASTHEAD.map((field) => (
+                  <div className="mh-field" key={field.label}>
+                    <dt>{field.label}</dt>
+                    <dd>{field.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <VerificationStamp className="mh-stamp" />
+            </div>
+          </div>
         </div>
+
         <div className="landing-wrap hero-content">
           <div className="hero-copy">
-            <p className="eyebrow">Hosted MCP · Live playground · Agent-Ready Score</p>
-            <h1 className="display hero-title">API spec into live endpoints you or your agent can talk to.</h1>
-            <p className="hero-tagline">Humans get a live integration page. Agents get a hosted MCP server.</p>
+            <h1 className="display hero-title">
+              <span className="hl"><span>A spec is a claim.</span></span>
+              <span className="hl"><span>We go and check.</span></span>
+            </h1>
             <p className="hero-lead">
-              Paste an OpenAPI spec, Postman collection, or cURL command. Spotcheck builds a shareable
-              integration page with a bring-your-own-key playground, mints a hosted MCP endpoint agents
-              call directly — and scores how well it all actually works.
+              Paste an OpenAPI spec, a Postman collection, or one cURL command. Spotcheck turns it
+              into typed tools, works out which call produces the id the next one needs, runs the
+              read-safe operations against your live service — and writes down what actually came
+              back, with the evidence attached.
+            </p>
+            <p className="hero-lead second">
+              Your readers get a working integration page. Their agents get a hosted MCP server.
+              Both are built from what the API <em>does</em>, not what the document says it does.
             </p>
             <div className="hero-sub">
-              <a className="text-link" href="#demo">Watch the 60-second demo <span aria-hidden="true">↓</span></a>
+              <a className="text-link" href="#method">Read the method <span aria-hidden="true">↓</span></a>
               <a className="text-link steel" href="/app">Open the full app <span aria-hidden="true">→</span></a>
             </div>
           </div>
