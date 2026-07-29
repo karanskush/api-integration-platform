@@ -2,33 +2,41 @@ import { ClerkProvider, Show, UserButton } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
 import { Geist, Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import './landing.css';
 
 // Without Clerk keys configured, auth UI is skipped entirely — the anonymous
 // Phase 0 flow must never depend on Clerk being set up. Mirrors kv.ts's
 // xReady() convention. See src/proxy.ts for the matching middleware gate.
 const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-const geist = Geist({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-geist',
-});
-
+// IRIDIUM type stack. No serif and no italics: this is an instrument, not a
+// document. A tight grotesk for assertions, a neutral UI sans for running
+// text, and a mono for anything that is a measurement. See globals.css.
+//
+// Instrument Sans is variable on weight, so the display cut and the semibold
+// UI weight come from one file.
 const instrumentSans = Instrument_Sans({
   subsets: ['latin'],
-  weight: ['500', '600'],
+  display: 'swap',
   variable: '--font-instrument-sans',
+});
+
+const geist = Geist({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-geist',
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
-  weight: ['400', '500'],
+  display: 'swap',
   variable: '--font-jetbrains-mono',
 });
 
-// Same mark as the landing page favicon.
+// The mark is the product in miniature: an outer frame (the claim) with a
+// solid core sitting inside it (the thing we actually went and checked).
 const FAVICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2305080a'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%234fc8e8' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%234fc8e8'/%3E%3C/svg%3E";
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308080c'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%237a5cff' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%237a5cff'/%3E%3C/svg%3E";
 
 export const metadata: Metadata = {
   title: 'Spotcheck — your API, agent-ready in 60 seconds',
@@ -38,7 +46,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#05080a',
+  themeColor: '#08080c',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

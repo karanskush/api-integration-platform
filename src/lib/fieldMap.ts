@@ -40,6 +40,22 @@ export type FieldOrigin =
   | 'produced_by_api' // another operation's response yields it (lineage.ts)
   | 'caller_supplied'; // genuinely originates with the caller
 
+// The same five as a runtime value, ordered the way a caller meets them:
+// what the server owns, what is fixed, what another call yields, what a list
+// constrains, and what is genuinely theirs to choose.
+//
+// The `satisfies Record<FieldOrigin, 0>` is the point of the indirection —
+// it is an exhaustiveness check, so adding a member to FieldOrigin without
+// adding it here fails the build rather than silently shortening any list
+// built from this.
+export const FIELD_ORIGINS = Object.keys({
+  server_generated: 0,
+  constant: 0,
+  produced_by_api: 0,
+  enum_constrained: 0,
+  caller_supplied: 0,
+} satisfies Record<FieldOrigin, 0>) as FieldOrigin[];
+
 export type FieldNode = {
   path: string; // 'body.customer.address.line1', 'response.data[].id'
   name: string; // leaf name only: 'line1'

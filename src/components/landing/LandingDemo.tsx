@@ -82,7 +82,7 @@ export default function LandingDemo() {
   const typing = chars < SPEC_URL.length && started.current;
 
   return (
-    <div className="demo-window" ref={rootRef}>
+    <div className="demo-window inst" ref={rootRef}>
       <div className="term-bar">
         <span className="term-title">spotcheck import · openapi.json</span>
         {!reduced && (
