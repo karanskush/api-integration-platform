@@ -1,6 +1,7 @@
 import ImportForm from '@/components/ImportForm';
 import LandingDemo from '@/components/landing/LandingDemo';
 import LandingEffects from '@/components/landing/LandingEffects';
+import LineageDiagram from '@/components/landing/LineageDiagram';
 import ScoreGauge from '@/components/landing/ScoreGauge';
 import VerificationStamp from '@/components/landing/VerificationStamp';
 import WaitlistForm from '@/components/landing/WaitlistForm';
@@ -211,6 +212,60 @@ export default function Home() {
               structure alone is <code>heuristic</code>. Only a person can set the human mark — a
               database constraint makes anything else unrepresentable, not merely discouraged.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ LINEAGE — which call produces the next call's id ============ */}
+      <section className="section lin-section" id="lineage">
+        <div className="landing-wrap">
+          <SectionMark n="03" title="Lineage" note="precision gate ≥ 0.95" />
+          <div className="section-head reveal">
+            <h2 className="display">Which call produces the id the next call needs.</h2>
+            <p className="lead">
+              An agent that invents an identifier fails, retries, and fails again. Spotcheck reads
+              every operation&rsquo;s output against every other operation&rsquo;s input and works
+              out what feeds what — weighing eleven signals, from a shared schema title down to a
+              type mismatch that argues against the link.
+            </p>
+          </div>
+
+          <div className="reveal">
+            <LineageDiagram />
+            <p className="fig-cap">
+              <span className="n">Fig. 2</span>
+              <span>Producer → consumer resolution, with the signals that carried each edge.</span>
+            </p>
+          </div>
+
+          <div className="lin-claims">
+            <article className="claim reveal">
+              <p className="claim-fig">≥ 0.95</p>
+              <h3>Precision, gate-enforced</h3>
+              <p>
+                Measured against four hand-labelled corpora built to the structural shapes that
+                break this — RPC paths with no resource hierarchy, pagination params, five
+                resources all exposing a bare <code>id</code>. The build fails below the gate.
+              </p>
+            </article>
+            <article className="claim reveal">
+              <p className="claim-fig">Silence</p>
+              <h3>The answer when we don&rsquo;t know</h3>
+              <p>
+                Recall is measured and printed, never asserted. Asserting on it would pressure the
+                engine toward guessing, which is the one failure this is built to avoid. A
+                low-confidence edge is withheld, not shown with a hedge.
+              </p>
+            </article>
+            <article className="claim reveal">
+              <p className="claim-fig">Every edge</p>
+              <h3>Carries its reasoning</h3>
+              <p>
+                No link is asserted without the signals that produced it. A pet&rsquo;s id and a
+                category&rsquo;s id are both bare integers named <code>id</code>; resolving which
+                is which is most of the work, and the reasoning is published with the answer.
+              </p>
+            </article>
           </div>
         </div>
       </section>

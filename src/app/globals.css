@@ -1178,6 +1178,119 @@ table.params td.desc { color: var(--fg-dim); }
 }
 
 /* ============================================================
+   LANDING — lineage: the drafting plate
+
+   Prussian on paper, not an .inst panel. Lineage is derived from the
+   document rather than measured from the running service, and keeping that
+   distinction sharp is what stops the dark-panel device from decaying into
+   "the parts we thought looked good".
+   ============================================================ */
+.lineage-fig {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 860px;
+  margin: 0 auto;
+  overflow: visible;
+}
+.lin-node rect {
+  fill: rgba(28, 74, 122, 0.035);
+  stroke: var(--measure);
+  stroke-width: 1;
+}
+.lin-node.consumer rect { fill: rgba(28, 74, 122, 0.06); stroke-width: 1.4; }
+.lin-op {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+.lin-field {
+  fill: var(--measure);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.lin-tag,
+.lin-why,
+.lin-origin,
+.lin-none {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.lin-tag { fill: var(--ink-3); }
+.lin-why { fill: var(--ink-3); letter-spacing: 0.1em; text-transform: none; font-size: 10px; }
+.lin-origin { fill: var(--ink-3); letter-spacing: 0.08em; text-transform: none; font-size: 10.5px; }
+/* The unresolved row is the honest one, so it is drawn as an absence rather
+   than dressed up: no rule to it, and the origin set in plain ink. */
+.lin-origin.open { fill: var(--ink-2); }
+.lin-none { fill: var(--ink-3); letter-spacing: 0.02em; text-transform: none; font-size: 10.5px; font-style: italic; }
+.lin-edge {
+  fill: none;
+  stroke: var(--measure);
+  stroke-width: 1.4;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+/* pathLength=1 on the paths normalises the dash maths, so one keyframe draws
+   every edge regardless of its actual length. */
+.js-landing .reveal .lin-edge { stroke-dashoffset: 1; }
+.js-landing .reveal.in .lin-edge {
+  animation: edge-draw 900ms var(--ease) forwards;
+}
+.js-landing .reveal.in .lin-edge:nth-of-type(2) { animation-delay: 160ms; }
+.js-landing .reveal .lin-why { opacity: 0; }
+.js-landing .reveal.in .lin-why { opacity: 1; transition: opacity 400ms var(--ease) 700ms; }
+@keyframes edge-draw { to { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .js-landing .reveal .lin-edge { stroke-dashoffset: 0; }
+  .js-landing .reveal .lin-why { opacity: 1; }
+  .js-landing .reveal.in .lin-edge { animation: none; }
+}
+
+.lin-claims {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: clamp(24px, 3vw, 40px);
+  margin-top: clamp(40px, 5vw, 64px);
+  padding-top: clamp(28px, 3.4vw, 40px);
+  border-top: 1px solid var(--rule);
+}
+.claim-fig {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'opsz' 72, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(28px, 3vw, 38px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--measure);
+  font-variant-numeric: tabular-nums;
+}
+.claim h3 {
+  margin-top: 12px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.claim p:last-child { margin-top: 8px; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
+.claim code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+@media (max-width: 700px) {
+  /* Below this the plate's text falls under 9px rendered. Let it scroll in
+     its own track rather than shrink into illegibility. */
+  .lineage-fig { min-width: 640px; }
+  .lin-section .reveal:has(.lineage-fig) { overflow-x: auto; padding-bottom: 8px; }
+}
+
+/* ============================================================
    LANDING — statement + surfaces
    ============================================================ */
 .statement { text-align: center; }
