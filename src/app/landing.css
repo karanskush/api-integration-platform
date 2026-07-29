@@ -42,6 +42,11 @@
   margin: 0 auto;
 }
 
+/* 64px sticky header + 20px of air. Everything that has to clear the header —
+   the pinned scene, anchor targets, the copy's optical top — measures from
+   this one value rather than each re-deriving it. */
+.landing { --pin-top: 84px; }
+
 /* ------------------------------------------------------------------
    TYPE
    ------------------------------------------------------------------ */
@@ -148,7 +153,7 @@
    backdrop, which reads as a faint rectangle around the scene; this dissolves
    that boundary and makes every scene sit *in* the page rather than on it. */
 .scene-pin .scene-canvas {
-  mask-image: radial-gradient(closest-side at 50% 50%, #000 74%, transparent 100%);
+  mask-image: radial-gradient(closest-side at 50% 50%, #000 86%, transparent 100%);
 }
 
 .poster { width: 100%; height: auto; max-height: 100%; overflow: visible; }
@@ -234,10 +239,10 @@
    ------------------------------------------------------------------ */
 .hero {
   position: relative;
-  min-height: clamp(680px, 100svh, 1000px);
+  min-height: 100svh;
   display: flex;
   align-items: center;
-  padding: clamp(80px, 12vh, 140px) 0 clamp(72px, 10vh, 120px);
+  padding: clamp(60px, 8.5vh, 112px) 0 clamp(44px, 6vh, 84px);
 }
 /* The lattice occupies the right of the hero, not the whole of it. Running it
    full-bleed behind the headline was legible on a mockup and unreadable in
@@ -254,11 +259,11 @@
 .hero-inner { position: relative; }
 .hero-title { max-width: 15ch; }
 .hero-title .hl { display: block; color: var(--iris-2); }
-.hero-lead { max-width: 56ch; margin-top: 26px; font-size: clamp(15.5px, 1.3vw, 18px); line-height: 1.62; color: var(--ink-dim); }
+.hero-lead { max-width: 56ch; margin-top: 22px; font-size: clamp(15.5px, 1.3vw, 18px); line-height: 1.62; color: var(--ink-dim); }
 .hero .kicker { margin-bottom: 20px; }
 
 .hero-import {
-  margin-top: 34px;
+  margin-top: 28px;
   max-width: 560px;
 }
 .hero-import .import-panel {
@@ -278,7 +283,7 @@
 }
 
 .hero-facts {
-  margin-top: clamp(38px, 5vh, 62px);
+  margin-top: clamp(24px, 3.2vh, 44px);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
@@ -336,9 +341,21 @@
   gap: clamp(32px, 5vw, 84px);
   width: min(100% - 48px, var(--maxw-landing));
   margin: 0 auto;
-  padding: clamp(72px, 10vh, 130px) 0;
+  padding: clamp(56px, 7vh, 96px) 0;
   align-items: start;
+  /* No chapter is ever a stub. Combined with the full-height pin, this is what
+     makes a chapter read as a screen you are moving through rather than a card
+     that happens to be 1.2 viewports tall. */
+  min-height: 100svh;
 }
+
+/* A chapter with a scene needs to be taller than its pin, or the pin has
+   nowhere to travel: at copy height alone it stuck for 194px and then scrolled
+   away, emptying the column for the rest of the chapter. The extra height buys
+   the scene a real hold, and centring the copy against it spends the surplus
+   as symmetric breathing room instead of one lopsided void. */
+.chapter:has(.chapter-scene) { min-height: calc(100svh + 380px); }
+.chapter:has(.chapter-scene) .chapter-copy { align-content: center; padding-top: 0; }
 /* The scene pins while its chapter's copy travels past it — which is what
    makes the scroll position meaningful to the scene in the first place. */
 /* Two elements, and both are load-bearing.
@@ -352,14 +369,46 @@
    than by `height: 100%`: that percentage is indeterminate inside an
    auto-sized row, so it silently fell back to `.scene`'s min-height and every
    canvas rendered into a 300px letterbox. */
-.chapter-scene { align-self: stretch; }
-.scene-pin { position: sticky; top: 84px; }
-.scene-pin .scene { height: min(58vh, 470px); }
-/* Odd chapters put the scene on the right, even on the left, so the page does
-   not become a column of identical rows. */
-.chapter:nth-of-type(even) .chapter-scene { order: 2; }
+/* The scene column bleeds to the right viewport edge. Inside the 1180px wrap
+   each column is only ~554px, which is portrait — and these figures are wide
+   (the lineage DAG is 7.2 world units across). The gutter is dead margin
+   anyway; spending it on the stage is free width. */
+.chapter-scene {
+  align-self: stretch;
+  margin-right: calc(-1 * max(24px, (100vw - var(--maxw-landing)) / 2));
+}
 
-.chapter-copy { display: grid; gap: 22px; align-content: start; padding-top: clamp(0px, 4vh, 40px); }
+/* The pin fills the screen it is pinned to and centres the scene in it, rather
+   than being a short card top-aligned in a tall column — that read as a gap
+   beside the copy instead of a stage. svh, not vh, so a collapsing mobile URL
+   bar does not resize the canvas mid-scroll. */
+.scene-pin {
+  position: sticky;
+  top: var(--pin-top);
+  height: calc(100svh - var(--pin-top) - 24px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+/* Capped rather than stretched: letting the canvas fill a full-height pin
+   makes its box portrait, and FitCamera would then pull every wide figure back
+   until its labels were unreadable. */
+.scene-pin .scene {
+  flex: 0 0 auto;
+  height: min(calc(100svh - var(--pin-top) - 24px), 480px);
+  min-height: 260px;
+}
+/* The scene is always on the right. The previous alternation keyed off
+   nth-of-type, which counted the copy-only chapters too and so alternated
+   arbitrarily — three scenes right, one left. A consistent rhythm reads as
+   deliberate where an accidental one reads as a bug, and it is what lets the
+   column bleed to a single edge. */
+.chapter .chapter-scene { order: 2; }
+
+/* Optically aligned with the pinned scene's top rather than the chapter's, so
+   the two columns start together instead of the copy sitting a header higher. */
+.chapter-copy { display: grid; gap: 22px; align-content: start; padding-top: clamp(0px, 2.4vh, 26px); }
 .chapter-copy > h2.display { max-width: 18ch; }
 
 .chapter.solo { grid-template-columns: minmax(0, 1fr); }
@@ -749,13 +798,17 @@
   .surfaces { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1180px) {
   .hero-scene { inset: -4% -14% 8% 30%; opacity: 0.7; }
-  .chapter { grid-template-columns: minmax(0, 1fr); gap: 34px; }
+  .chapter { grid-template-columns: minmax(0, 1fr); gap: 34px; min-height: 0; }
+  /* Stacked, there is no column to hold open — the extra height would just be
+     a gap, and the copy centres against nothing. */
+  .chapter:has(.chapter-scene) { min-height: 0; }
+  .chapter:has(.chapter-scene) .chapter-copy { align-content: start; }
   /* Below two columns a sticky scene would pin over its own copy. It becomes
      an inline figure at the top of the chapter instead. */
-  .chapter-scene { order: -1 !important; }
-  .scene-pin { position: static; }
+  .chapter-scene { order: -1 !important; margin-right: 0; }
+  .scene-pin { position: static; height: auto; }
   .scene-pin .scene { height: clamp(260px, 44vw, 400px); }
   .chapter-copy { padding-top: 0; }
   .clar-grid { grid-template-columns: 1fr; }
