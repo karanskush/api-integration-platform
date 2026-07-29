@@ -40,7 +40,7 @@ const SUBSCORES = [
 
 export default function Home() {
   return (
-    <div className="landing" id="top">
+    <div className="landing report-page" id="top">
       <LandingEffects />
 
       {/* ============ HERO — the promise beside the instrument ============ */}

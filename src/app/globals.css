@@ -282,19 +282,77 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .footer-inner a:hover { color: var(--fg); text-decoration: none; }
 
 /* ============================================================
+   FIELD REPORT — the document substrate, and the chrome on top of it
+
+   The token remap in :root already turns the shared chrome from gunmetal to
+   paper. What is left here is the handful of places that hardcoded a dark
+   value, plus the stock itself: paper is not a flat fill, it has uneven tone
+   and a tooth, and without them the page reads as "white background", which
+   is the one outcome this redesign is trying to avoid.
+   ============================================================ */
+.report-page {
+  position: relative;
+  background-color: var(--paper);
+  /* Uneven tone from three wide, very low-contrast radials, then a fine
+     diagonal tooth. All well under 3% so it survives a bad monitor without
+     ever becoming a visible pattern. */
+  background-image:
+    radial-gradient(120% 80% at 12% -10%, rgba(255, 252, 244, 0.9), transparent 60%),
+    radial-gradient(90% 60% at 88% 8%, rgba(203, 194, 176, 0.28), transparent 62%),
+    radial-gradient(140% 90% at 50% 108%, rgba(198, 189, 171, 0.3), transparent 66%),
+    repeating-linear-gradient(
+      58deg,
+      rgba(22, 19, 15, 0.016) 0 1px,
+      transparent 1px 4px
+    );
+}
+/* A pressed edge down both margins — the page sits on the stock rather than
+   floating over it. */
+.report-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(22, 19, 15, 0.05), transparent 3%),
+    linear-gradient(270deg, rgba(22, 19, 15, 0.05), transparent 3%);
+}
+.report-page > * { position: relative; z-index: 1; }
+
+/* The header hardcodes a gunmetal wash for its blur; paper needs its own. */
+html:has(.report-page) .site-header {
+  background: rgba(242, 239, 230, 0.78);
+  border-bottom-color: var(--rule);
+}
+html:has(.report-page) .brand { letter-spacing: -0.01em; }
+html:has(.report-page) .brand-mark { border-radius: 2px; border-width: 1.5px; }
+html:has(.report-page) .brand-mark::after { border-radius: 0; }
+/* ...and so does the nav CTA hover. */
+html:has(.report-page) .site-nav .nav-cta:hover {
+  border-color: rgba(28, 74, 122, 0.42);
+}
+html:has(.report-page) .site-footer { border-top-color: var(--rule); }
+
+/* ============================================================
    TYPE PRIMITIVES — mirror the landing's voice
    ============================================================ */
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fg-mute);
 }
+/* Fraunces is an old-style serif, so it does not want the tight tracking a
+   grotesk display face did. opsz drives the display cut; WONK is reserved for
+   the hero, where the angled terminals are the point. */
 .display {
   font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  font-variation-settings: 'opsz' 40, 'SOFT' 0, 'WONK' 0;
+  letter-spacing: -0.012em;
   line-height: 1.1;
   color: var(--fg);
   text-wrap: balance;
