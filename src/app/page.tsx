@@ -9,11 +9,6 @@ import WaitlistForm from '@/components/landing/WaitlistForm';
 import { ARCHETYPE_RANKS, MAX_QUOTE_CHARS, MIN_QUOTE_CHARS, type Archetype } from '@/lib/clarify';
 import { FIELD_ORIGINS } from '@/lib/fieldMap';
 
-// The masthead states the terms of the report before it makes any claim —
-// what gets assessed, how, and how often. Each line is a fact about the
-// pipeline, not a promise: read-safe is the actual probe constraint
-// (src/lib/probes/run.ts), and re-issue on spec change is what ciSync and
-// the reverify cron really do.
 // Keyed off the real union rather than restated, so the page cannot claim a
 // set of origins the engine no longer has. landingClaims.test.ts pins this.
 const ORIGIN_COPY: Record<(typeof FIELD_ORIGINS)[number], { means: string; by: string }> = {
@@ -27,7 +22,7 @@ const ORIGIN_COPY: Record<(typeof FIELD_ORIGINS)[number], { means: string; by: s
   },
   produced_by_api: {
     means: 'Another operation returns it — and we name which one, per field.',
-    by: 'Lineage, § 03',
+    by: 'Lineage, § 05',
   },
   enum_constrained: {
     means: 'Pick from a fixed list. We can show you the list.',
@@ -114,6 +109,11 @@ const GATES = [
   },
 ];
 
+// The masthead states the terms of the report before it makes any claim —
+// what gets assessed, how, and how often. Each line is a fact about the
+// pipeline, not a promise: read-safe is the actual probe constraint
+// (src/lib/probes/run.ts), and re-issue on spec change is what ciSync and
+// the reverify cron really do.
 const MASTHEAD = [
   { label: 'Subject', value: 'Any HTTP API — OpenAPI, Postman, or a single cURL command' },
   { label: 'Method', value: 'Read-safe operations executed against the running service' },
@@ -147,11 +147,43 @@ const LAYERS = [
   },
 ];
 
+// A worked example, and labelled as one on the page — these are not a reading
+// of any API. `basis` is the honest part: only errorQuality and docDrift issue
+// live requests (src/lib/probes/). authClarity grades the declared scheme and
+// idempotency greps parameter names, so claiming all four are measured live
+// would be false. A sub-score that cannot run is excluded and the total is
+// renormalised over the ones that did, so a missing response schema costs
+// nothing.
 const SUBSCORES = [
-  { name: 'Auth clarity', value: 92, why: 'Can an agent discover and satisfy auth without a human in the loop?' },
-  { name: 'Error quality', value: 78, why: 'Do failures explain themselves — or dead-end at an unlabeled 400?', warn: true },
-  { name: 'Doc drift', value: 84, why: 'Does the spec match what the API really returns, field for field?' },
-  { name: 'Idempotency', value: 95, why: 'Can a retried call ever double-charge? Agents retry. This matters.' },
+  {
+    name: 'Error quality',
+    value: 78,
+    live: true,
+    basis: 'Live — a read-safe call is deliberately malformed',
+    why: 'Do failures explain themselves, or dead-end at an unlabelled 400?',
+    warn: true,
+  },
+  {
+    name: 'Doc drift',
+    value: 84,
+    live: true,
+    basis: 'Live — real responses compared against the documented shape',
+    why: 'Do the top-level keys and types match what the spec promised?',
+  },
+  {
+    name: 'Auth clarity',
+    value: 92,
+    live: false,
+    basis: 'Static — graded from the declared scheme',
+    why: 'Can an agent discover and satisfy auth without a human in the loop?',
+  },
+  {
+    name: 'Idempotency',
+    value: 95,
+    live: false,
+    basis: 'Static — whether a retry key is offered at all',
+    why: 'Agents retry. Does the API give them a safe way to?',
+  },
 ];
 
 // A report indexes itself. The numbers are the page's spine — they run down
@@ -246,10 +278,80 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ============ STATEMENT — the question + two surfaces ============ */}
+      <section className="section band statement" id="surfaces">
+        <div className="landing-wrap">
+          <SectionMark n="02" title="Surfaces" note="one import, two readers" />
+          <h2 className="display reveal">
+            Every API company is getting the same question: &ldquo;Do you have an MCP server?&rdquo;
+          </h2>
+          <p className="lead reveal">
+            Humans read docs. Agents need tools. Most APIs can answer for only one of them — and the
+            agent traffic is already arriving. Spotcheck answers for both, from a single import.
+          </p>
+          <div className="surfaces">
+            <article className="surface reveal">
+              <p className="who">For humans</p>
+              <h3>A live integration page</h3>
+              <p>
+                A hosted, shareable page for your API — real docs, working examples, and a playground
+                where visitors test calls with their own key. Claimable by you, linkable by everyone.
+              </p>
+              <ul>
+                <li>Try-it playground — keys never stored, never logged</li>
+                <li>Generated snippets — cURL, TypeScript, Python</li>
+                <li>Always current — regenerated on every spec change</li>
+              </ul>
+            </article>
+            <article className="surface agents reveal">
+              <p className="who">For agents</p>
+              <h3>A hosted MCP server</h3>
+              <p>
+                The same import, exposed over the Model Context Protocol. Claude, Cursor, and Copilot
+                call it directly — typed tools, auth handled, every call checked against how your API
+                really behaves.
+              </p>
+              <ul>
+                <li>Drop-in endpoint — zero infra on your side</li>
+                <li>Verified tools, not spec echoes</li>
+                <li>Every tool annotated read or write — unsafe ops flagged</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ WHAT YOU GET — six-layer ledger ============ */}
+      <section className="section how-section" id="how">
+        <div className="landing-wrap">
+          <SectionMark n="03" title="Deliverables" note={`${LAYERS.length} surfaces`} />
+        </div>
+        <div className="landing-wrap how-grid">
+          <div className="how-head reveal">
+            <h2 className="display">One import. Everything an agent needs.</h2>
+            <p className="lead">
+              Paste a spec once. Spotcheck fans it out into six surfaces — generated together,
+              verified together, and kept in sync with every change you ship.
+            </p>
+          </div>
+          <div className="how-ledger reveal" role="list">
+            {LAYERS.map((layer, index) => (
+              <article className="layer-row" role="listitem" key={layer.title}>
+                <span className="n" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                <div>
+                  <h3>{layer.title}</h3>
+                  <p>{layer.body}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ============ PROVENANCE — where every value comes from ============ */}
       <section className="section band prov-section" id="provenance">
         <div className="landing-wrap">
-          <SectionMark n="02" title="Provenance" note={`${FIELD_ORIGINS.length} origins`} />
+          <SectionMark n="04" title="Provenance" note={`${FIELD_ORIGINS.length} origins`} />
           <div className="section-head reveal">
             <h2 className="display">Every field says where its value is supposed to come from.</h2>
             <p className="lead">
@@ -294,7 +396,7 @@ export default function Home() {
       {/* ============ LINEAGE — which call produces the next call's id ============ */}
       <section className="section lin-section" id="lineage">
         <div className="landing-wrap">
-          <SectionMark n="03" title="Lineage" note="precision gate ≥ 0.95" />
+          <SectionMark n="05" title="Lineage" note="precision gate ≥ 0.95" />
           <div className="section-head reveal">
             <h2 className="display">Which call produces the id the next call needs.</h2>
             <p className="lead">
@@ -348,7 +450,7 @@ export default function Home() {
       {/* ============ CLARIFICATIONS — the questions only an owner can answer ============ */}
       <section className="section band clar-section" id="clarifications">
         <div className="landing-wrap">
-          <SectionMark n="04" title="Clarifications" note={`${ARCHETYPE_COUNT} question types`} />
+          <SectionMark n="06" title="Clarifications" note={`${ARCHETYPE_COUNT} question types`} />
           <div className="section-head reveal">
             <h2 className="display">Some things a document genuinely cannot say.</h2>
             <p className="lead">
@@ -393,7 +495,7 @@ export default function Home() {
       {/* ============ THE GATE — what our own model is allowed to do ============ */}
       <section className="section gate-section" id="gate">
         <div className="landing-wrap">
-          <SectionMark n="05" title="The gate on our own model" note="downgrade only" />
+          <SectionMark n="07" title="The gate on our own model" note="downgrade only" />
           <div className="section-head reveal">
             <h2 className="display">We use an LLM. It is not allowed to tell you anything.</h2>
             <p className="lead">
@@ -425,86 +527,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ STATEMENT — the question + two surfaces ============ */}
-      <section className="section statement">
-        <div className="landing-wrap">
-          <h2 className="display reveal">
-            Every API company is getting the same question: &ldquo;Do you have an MCP server?&rdquo;
-          </h2>
-          <p className="lead reveal">
-            Humans read docs. Agents need tools. Most APIs can answer for only one of them — and the
-            agent traffic is already arriving. Spotcheck answers for both, from a single import.
-          </p>
-          <div className="surfaces">
-            <article className="surface reveal">
-              <p className="who">For humans</p>
-              <h3>A live integration page</h3>
-              <p>
-                A hosted, shareable page for your API — real docs, working examples, and a playground
-                where visitors test calls with their own key. Claimable by you, linkable by everyone.
-              </p>
-              <ul>
-                <li>Try-it playground — keys never stored, never logged</li>
-                <li>Generated snippets — cURL, TypeScript, Python</li>
-                <li>Always current — regenerated on every spec change</li>
-              </ul>
-            </article>
-            <article className="surface agents reveal">
-              <p className="who">For agents</p>
-              <h3>A hosted MCP server</h3>
-              <p>
-                The same import, exposed over the Model Context Protocol. Claude, Cursor, and Copilot
-                call it directly — typed tools, auth handled, every call checked against how your API
-                really behaves.
-              </p>
-              <ul>
-                <li>Drop-in endpoint — zero infra on your side</li>
-                <li>Verified tools, not spec echoes</li>
-                <li>Every tool annotated read or write — unsafe ops flagged</li>
-              </ul>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      {/* ============ WHAT YOU GET — six-layer ledger ============ */}
-      <section className="section how-section" id="how">
-        <div className="landing-wrap how-grid">
-          <div className="how-head reveal">
-            <p className="eyebrow">One import</p>
-            <h2 className="display">One import. Everything an agent needs.</h2>
-            <p className="lead">
-              Paste a spec once. Spotcheck fans it out into six surfaces — generated together,
-              verified together, and kept in sync with every change you ship.
-            </p>
-          </div>
-          <div className="how-ledger reveal" role="list">
-            {LAYERS.map((layer, index) => (
-              <article className="layer-row" role="listitem" key={layer.title}>
-                <span className="n" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                <div>
-                  <h3>{layer.title}</h3>
-                  <p>{layer.body}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ============ AGENT-READY SCORE ============ */}
       <section className="section score-section" id="score">
-        <div className="score-ruler cal-ruler" aria-hidden="true">
-          <span>00</span><span style={{ left: '25%' }}>25</span><span style={{ left: '50%' }}>50</span>
-          <span style={{ left: '75%' }}>75</span><span style={{ left: '100%' }}>100</span>
+        <div className="landing-wrap">
+          <SectionMark n="08" title="Score" note="0–100, renormalised" />
         </div>
         <div className="landing-wrap score-grid">
           <div className="score-copy reveal">
-            <p className="eyebrow">Agent-Ready Score</p>
             <h2 className="display">Lighthouse gave the web a number. This is yours.</h2>
             <p className="lead">
-              Every import gets scored 0–100 on how well an agent can actually drive the API — not by
-              reading the spec, but by executing the tools and grading what comes back.
+              A 0–100 grade of how well an agent can drive your API. Two of the four sub-scores are
+              earned by making real calls against the running service; two are graded from the
+              document. We label which is which, on the page and in the MCP tool that explains it.
             </p>
             <div className="subscores reveal">
               {SUBSCORES.map((subscore) => (
@@ -514,19 +548,32 @@ export default function Home() {
                     <span className="ss-val">{subscore.value}</span>
                   </div>
                   <div className="ss-bar"><i style={{ '--w': subscore.value } as React.CSSProperties} /></div>
-                {subscore.warn && <p className="ss-flag">! needs work</p>}
+                  <p className={`ss-basis${subscore.live ? ' live' : ''}`}>{subscore.basis}</p>
                   <p className="ss-why">{subscore.why}</p>
                 </div>
               ))}
             </div>
+            <p className="score-bands">
+              <span>Bands</span> 90+ excellent · 75+ good · 55+ mixed · 35+ weak · below that, the
+              spec alone is not enough to integrate reliably.
+            </p>
           </div>
           <div className="score-stage reveal">
-            <ScoreGauge />
-            <div className="g-meta">spotcheck.dev/your-api · <span className="ok-word">verified</span> today</div>
+            <div className="inst score-plate">
+              <ScoreGauge />
+              <div className="g-meta">spotcheck.dev/your-api</div>
+            </div>
             <div className="g-badge">
               <span className="gb-chip"><span className="gb-dot" aria-hidden="true" />Agent-Ready 87</span>
               <span className="gb-hint"><span aria-hidden="true">←</span> this badge, in your README</span>
             </div>
+            {/* The old page rendered these four numbers as though they were a
+                real reading. They are a worked example, and a page about not
+                overclaiming cannot be the one thing on the site that does. */}
+            <p className="fig-cap">
+              <span className="n">Fig. 4</span>
+              <span>Worked example — not a measurement of any API.</span>
+            </p>
           </div>
         </div>
       </section>
