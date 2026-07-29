@@ -2,9 +2,11 @@ import ImportForm from '@/components/ImportForm';
 import LandingDemo from '@/components/landing/LandingDemo';
 import LandingEffects from '@/components/landing/LandingEffects';
 import LineageDiagram from '@/components/landing/LineageDiagram';
+import QuizSpecimen from '@/components/landing/QuizSpecimen';
 import ScoreGauge from '@/components/landing/ScoreGauge';
 import VerificationStamp from '@/components/landing/VerificationStamp';
 import WaitlistForm from '@/components/landing/WaitlistForm';
+import { ARCHETYPE_RANKS, MAX_QUOTE_CHARS, MIN_QUOTE_CHARS, type Archetype } from '@/lib/clarify';
 import { FIELD_ORIGINS } from '@/lib/fieldMap';
 
 // The masthead states the terms of the report before it makes any claim —
@@ -38,6 +40,79 @@ const ORIGIN_COPY: Record<(typeof FIELD_ORIGINS)[number], { means: string; by: s
 };
 
 const ORIGINS = FIELD_ORIGINS.map((key) => ({ key, ...ORIGIN_COPY[key] }));
+
+// Same discipline as ORIGIN_COPY: Record<Archetype, …> means adding a question
+// shape without describing it here fails the build.
+const ARCHETYPE_COPY: Record<Archetype, { title: string; blurb: string }> = {
+  identifier_ownership: {
+    title: 'Identifier ownership',
+    blurb: 'On a create, does the server assign this id or honour the one I send?',
+  },
+  producer_disambiguation: {
+    title: 'Producer disambiguation',
+    blurb: 'Lineage found several plausible sources. Which should a caller actually use?',
+  },
+  description_contradicts_operation: {
+    title: 'Description contradicts operation',
+    blurb: 'The field says “delete”, but this is a read. Which one is stale?',
+  },
+  scope_of_effect: {
+    title: 'Scope of effect',
+    blurb: 'Does this PUT replace the record, or merge? Do omitted fields get wiped?',
+  },
+  format_or_shape: {
+    title: 'Format or shape',
+    blurb: 'A bare string named expiresAt with no declared format. Which format is it?',
+  },
+  optionality_in_practice: {
+    title: 'Optionality in practice',
+    blurb: 'Optional in the schema — but what actually happens if it is omitted?',
+  },
+  undocumented_code_semantics: {
+    title: 'Undocumented code semantics',
+    blurb: 'A status integer with no enum. What do 1 and 2 mean?',
+  },
+  origin_unknown: {
+    title: 'Origin unknown',
+    blurb: 'The fallback — still a closed choice over the five origins, never a blank box.',
+  },
+};
+
+const ARCHETYPES = (Object.keys(ARCHETYPE_COPY) as Archetype[])
+  .sort((a, b) => ARCHETYPE_RANKS[a] - ARCHETYPE_RANKS[b])
+  .map((key) => ({ key, ...ARCHETYPE_COPY[key] }));
+
+const ARCHETYPE_COUNT = ARCHETYPES.length;
+
+// Each of these is a constraint that exists in code, not a policy we intend
+// to follow. The numbers come from src/lib/clarify/{evidence,triage}.ts.
+const GATES = [
+  {
+    title: 'It may only downgrade a question, never answer one',
+    body:
+      'A triage verdict moves a question into an assumptions panel where you still see it, with the sentence it relied on and where that sentence came from. It cannot create a question, delete one, or mark one answered.',
+  },
+  {
+    title: `The quote must appear verbatim in the one source it named`,
+    body:
+      `Not somewhere in the context — in the specific envelope the model pointed at. Searching a 24 KB haystack for a plausible sentence is free; naming the paragraph first is not. Matched between ${MIN_QUOTE_CHARS} and ${MAX_QUOTE_CHARS} characters, because below that a quote matches by luck and above it the model is reproducing a page.`,
+  },
+  {
+    title: 'The answer must be one of the options we asked with',
+    body:
+      'Matched by index against the question’s own stored answer space. Option text never round-trips through the model or the browser, so neither can introduce a choice that was never offered.',
+  },
+  {
+    title: 'It refuses to run on a partial picture',
+    body:
+      'If enrichment was truncated or a chunk failed, triage does not run at all — a model that has seen two thirds of an API should not be retiring questions about it. It also cannot retire more than a fraction of any batch.',
+  },
+  {
+    title: 'Only a person can mark something human-verified',
+    body:
+      'Enforced three times over, including a database constraint that makes any other source unrepresentable while a question is answered. An assumption can set a field’s origin; it can never set the mark that says a human confirmed it.',
+  },
+];
 
 const MASTHEAD = [
   { label: 'Subject', value: 'Any HTTP API — OpenAPI, Postman, or a single cURL command' },
@@ -267,6 +342,86 @@ export default function Home() {
               </p>
             </article>
           </div>
+        </div>
+      </section>
+
+      {/* ============ CLARIFICATIONS — the questions only an owner can answer ============ */}
+      <section className="section band clar-section" id="clarifications">
+        <div className="landing-wrap">
+          <SectionMark n="04" title="Clarifications" note={`${ARCHETYPE_COUNT} question types`} />
+          <div className="section-head reveal">
+            <h2 className="display">Some things a document genuinely cannot say.</h2>
+            <p className="lead">
+              Whether the server honours the id you send. Whether a PUT replaces the record or
+              merges into it. What <code>userStatus: 2</code> means. Nobody can derive these — so
+              we ask you, once, and we never ask with a blank box.
+            </p>
+          </div>
+
+          <div className="clar-grid">
+            <div className="clar-copy reveal">
+              <p className="clar-lead">
+                Every question is one of {ARCHETYPE_COUNT} shapes, and each shape&rsquo;s answers
+                are enumerated from the field itself — its type, its enum, its position in the
+                path, what lineage already found. The options are not generated. They are what the
+                structure allows.
+              </p>
+              <ol className="arch-list">
+                {ARCHETYPES.map((a) => (
+                  <li key={a.key}>
+                    <span className="a-n">{String(ARCHETYPE_RANKS[a.key]).padStart(2, '0')}</span>
+                    <span className="a-body">
+                      <b>{a.title}</b>
+                      <span>{a.blurb}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="clar-foot">
+                Ordered easiest first, because someone who answers three quickly keeps going. One
+                answer applies to every operation the field appears on, and skipping is a real
+                answer — it publishes an honest <code>unresolved</code> rather than a guess.
+              </p>
+            </div>
+            <div className="clar-stage reveal">
+              <QuizSpecimen />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ THE GATE — what our own model is allowed to do ============ */}
+      <section className="section gate-section" id="gate">
+        <div className="landing-wrap">
+          <SectionMark n="05" title="The gate on our own model" note="downgrade only" />
+          <div className="section-head reveal">
+            <h2 className="display">We use an LLM. It is not allowed to tell you anything.</h2>
+            <p className="lead">
+              A model reads your published documentation and tries to answer the questions above
+              before we bother you with them. That is genuinely useful and genuinely dangerous, so
+              it operates inside constraints it cannot argue its way out of.
+            </p>
+          </div>
+
+          <ol className="gate-list">
+            {GATES.map((gate, i) => (
+              <li className="gate reveal" key={gate.title}>
+                <span className="g-n">{String(i + 1).padStart(2, '0')}</span>
+                <div>
+                  <h3>{gate.title}</h3>
+                  <p>{gate.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <p className="gate-foot reveal">
+            The honest ceiling: a document that plants <em>&ldquo;the server always overwrites
+            this&rdquo;</em> passes every one of these checks. That is why an assumption is shown
+            to you with its quote and its source rather than applied silently — the last line of
+            defence is a person reading it and disagreeing, so the whole surface is built to make
+            disagreeing take one click.
+          </p>
         </div>
       </section>
 
