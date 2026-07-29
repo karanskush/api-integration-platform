@@ -1,42 +1,42 @@
 import { ClerkProvider, Show, UserButton } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { Azeret_Mono, Fraunces, Public_Sans } from 'next/font/google';
+import { Geist, Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import './landing.css';
 
 // Without Clerk keys configured, auth UI is skipped entirely — the anonymous
 // Phase 0 flow must never depend on Clerk being set up. Mirrors kv.ts's
 // xReady() convention. See src/proxy.ts for the matching middleware gate.
 const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-// FIELD REPORT type stack. The pairing is the argument: an old-style serif for
-// assertions, an institutional sans for the running text, and a geometric mono
-// for anything that is a measurement. See the token block in globals.css.
+// IRIDIUM type stack. No serif and no italics: this is an instrument, not a
+// document. A tight grotesk for assertions, a neutral UI sans for running
+// text, and a mono for anything that is a measurement. See globals.css.
 //
-// Fraunces is variable on four axes. `opsz` lets the headline pick up display
-// proportions without loading a second cut, and `WONK` turns on the angled
-// terminals that give it its character — deliberately only used at hero sizes.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  axes: ['opsz', 'SOFT', 'WONK'],
-  display: 'swap',
-  variable: '--font-fraunces',
-});
-
-const publicSans = Public_Sans({
+// Instrument Sans is variable on weight, so the display cut and the semibold
+// UI weight come from one file.
+const instrumentSans = Instrument_Sans({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-public-sans',
+  variable: '--font-instrument-sans',
 });
 
-const azeretMono = Azeret_Mono({
+const geist = Geist({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-azeret-mono',
+  variable: '--font-geist',
 });
 
-// Same mark as the landing page favicon.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-jetbrains-mono',
+});
+
+// The mark is the product in miniature: an outer frame (the claim) with a
+// solid core sitting inside it (the thing we actually went and checked).
 const FAVICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2305080a'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%234fc8e8' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%234fc8e8'/%3E%3C/svg%3E";
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308080c'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%237a5cff' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%237a5cff'/%3E%3C/svg%3E";
 
 export const metadata: Metadata = {
   title: 'Spotcheck — your API, agent-ready in 60 seconds',
@@ -46,14 +46,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#05080a',
+  themeColor: '#08080c',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const page = (
     <html
       lang="en"
-      className={`${publicSans.variable} ${fraunces.variable} ${azeretMono.variable}`}
+      className={`${geist.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`}
     >
       <body>
         <header className="site-header">
