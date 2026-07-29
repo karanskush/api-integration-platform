@@ -70,7 +70,7 @@ export type Classification = {
 
 // Ranks drive question order. Easy, concrete questions first is most of the
 // perceived-ease win: someone who answers three quickly keeps going.
-const RANKS: Record<Archetype, number> = {
+export const ARCHETYPE_RANKS: Record<Archetype, number> = {
   identifier_ownership: 1,
   producer_disambiguation: 2,
   description_contradicts_operation: 3,
@@ -205,7 +205,7 @@ export function classify(
     answerSpec,
     why,
     unlocks,
-    rank: RANKS[archetype],
+    rank: ARCHETYPE_RANKS[archetype],
   });
 
   // 1. Who owns the identifier on a create? The one question the spec
