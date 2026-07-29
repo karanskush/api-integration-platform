@@ -1,6 +1,6 @@
 import { ClerkProvider, Show, UserButton } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { Geist, Instrument_Sans, JetBrains_Mono } from 'next/font/google';
+import { Azeret_Mono, Fraunces, Public_Sans } from 'next/font/google';
 import './globals.css';
 
 // Without Clerk keys configured, auth UI is skipped entirely — the anonymous
@@ -8,22 +8,30 @@ import './globals.css';
 // xReady() convention. See src/proxy.ts for the matching middleware gate.
 const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-const geist = Geist({
+// FIELD REPORT type stack. The pairing is the argument: an old-style serif for
+// assertions, an institutional sans for the running text, and a geometric mono
+// for anything that is a measurement. See the token block in globals.css.
+//
+// Fraunces is variable on four axes. `opsz` lets the headline pick up display
+// proportions without loading a second cut, and `WONK` turns on the angled
+// terminals that give it its character — deliberately only used at hero sizes.
+const fraunces = Fraunces({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-geist',
+  axes: ['opsz', 'SOFT', 'WONK'],
+  display: 'swap',
+  variable: '--font-fraunces',
 });
 
-const instrumentSans = Instrument_Sans({
+const publicSans = Public_Sans({
   subsets: ['latin'],
-  weight: ['500', '600'],
-  variable: '--font-instrument-sans',
+  display: 'swap',
+  variable: '--font-public-sans',
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const azeretMono = Azeret_Mono({
   subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-jetbrains-mono',
+  display: 'swap',
+  variable: '--font-azeret-mono',
 });
 
 // Same mark as the landing page favicon.
@@ -45,7 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const page = (
     <html
       lang="en"
-      className={`${geist.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`}
+      className={`${publicSans.variable} ${fraunces.variable} ${azeretMono.variable}`}
     >
       <body>
         <header className="site-header">

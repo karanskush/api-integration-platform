@@ -2,9 +2,9 @@
    "CALIBRATED" — gunmetal + calibration cyan; green is earned.
    Instrument Sans (display) + Geist (UI) + JetBrains Mono (labels/code). */
 :root {
-  --font-sans: var(--font-geist, 'Geist'), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-display: var(--font-instrument-sans, 'Instrument Sans'), 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--font-public-sans, 'Public Sans'), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: var(--font-fraunces, 'Fraunces'), 'Iowan Old Style', Georgia, serif;
+  --font-mono: var(--font-azeret-mono, 'Azeret Mono'), ui-monospace, SFMono-Regular, monospace;
 
   /* surfaces — cool gunmetal */
   --bg: #05080a;
