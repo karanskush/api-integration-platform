@@ -63,9 +63,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Spotcheck
             </a>
             <nav className="site-nav" aria-label="Primary">
-              <a className="nav-link" href="/#demo">
-                Demo
-              </a>
               <a className="nav-link" href="/#how">
                 What you get
               </a>

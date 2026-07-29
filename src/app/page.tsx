@@ -1,5 +1,4 @@
 import ImportForm from '@/components/ImportForm';
-import LandingDemo from '@/components/landing/LandingDemo';
 import QuizSpecimen from '@/components/landing/QuizSpecimen';
 import SceneStage from '@/components/landing/SceneStage';
 import SmoothScroll from '@/components/landing/SmoothScroll';
@@ -332,25 +331,6 @@ export default function Home() {
               </ul>
             </article>
           </div>
-        </div>
-      </section>
-
-      {/* ═══════════ 03 · METHOD ═══════════ */}
-      <section className="chapter solo" id="demo">
-        <div className="chapter-copy wide">
-          <ChapterMark n="03" title="Method" />
-          <h2 className="display">Watch a spec become an agent surface.</h2>
-          <p className="lead">
-            Spotcheck parses the document, normalises every operation into a typed tool, resolves
-            the references away, renders the playground, and mints the hosted MCP endpoint. The
-            panel below is a replay of that pipeline running against a real spec.
-          </p>
-
-          <LandingDemo host={HOST} />
-          {/* Say what it is. The replay is scripted and the live importer is at
-              the top of the page — claiming otherwise would be the exact
-              species of unearned confidence this page is about. */}
-          <p className="disclaimer">Import replay — scripted. The importer at the top is live.</p>
         </div>
       </section>
 
