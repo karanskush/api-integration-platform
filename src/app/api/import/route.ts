@@ -10,14 +10,12 @@ import { kv, storageReady } from '@/lib/kv';
 import { ttlSeconds } from '@/lib/ir';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { SsrfError, UpstreamError } from '@/lib/ssrf';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 60;
 
 const MAX_TEXT_BYTES = 1024 * 1024;
 
-function appOrigin(req: Request): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
-}
 
 export async function OPTIONS(req: Request) {
   return corsPreflight(req);

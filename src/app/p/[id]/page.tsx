@@ -12,6 +12,7 @@ import { aiReady } from '@/lib/ask';
 import { dbReady } from '@/lib/db';
 import { isValidId } from '@/lib/ids';
 import { kv } from '@/lib/kv';
+import { appOrigin } from '@/lib/origin';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,9 +28,6 @@ const SOURCE_LABEL: Record<string, string> = {
   curl: 'cURL import',
 };
 
-function appOrigin(): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;

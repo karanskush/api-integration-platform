@@ -6,6 +6,7 @@ import { orgs } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { billingReady, getStripe } from '@/lib/stripe';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 30;
 
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     await db.update(orgs).set({ stripeCustomerId: customerId }).where(eq(orgs.id, org.id));
   }
 
-  const origin = process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
+  const origin = appOrigin(req);
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,

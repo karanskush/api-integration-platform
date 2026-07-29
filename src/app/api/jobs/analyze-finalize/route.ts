@@ -10,14 +10,12 @@ import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFa
 import { emailReady, sendAnalysisReadyEmail, sendClarificationNeededEmail } from '@/lib/email';
 import { loadRecordForVersion } from '@/lib/persistentApi';
 import { putArazzoArtifact, putEnrichedSpecArtifact } from '@/lib/specStore';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 60;
 
 const qstashReady = Boolean(process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY);
 
-function appOrigin(): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
-}
 
 // The last stage of the deep-analysis chain — and, unlike crawl/enrich, one
 // that legitimately runs MORE THAN ONCE per spec version: once right after

@@ -15,6 +15,7 @@ import { getDb } from '@/lib/db';
 import { orgMembers, users } from '@/lib/db/schema';
 import { loadApiVerificationState, loadPersistentRecord } from '@/lib/persistentApi';
 import { canViewApi } from '@/lib/visibility';
+import { appOrigin } from '@/lib/origin';
 
 // ISR with on-demand purging: api/ci/sync and the verification run both call
 // revalidatePath() for this path now that a re-import write path exists, so the
@@ -33,9 +34,6 @@ const SOURCE_LABEL: Record<string, string> = {
   curl: 'cURL import',
 };
 
-function appOrigin(): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
-}
 
 // Best-effort hostname for pre-filling the claim form — mirrors claim/verify
 // route's own apiDomain() derivation.

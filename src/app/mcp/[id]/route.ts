@@ -26,6 +26,7 @@ import { can, limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { resolveCredential } from '@/lib/vaultStore';
 import { isPrivate } from '@/lib/visibility';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 60;
 
@@ -51,9 +52,6 @@ function jsonRpcError(status: number, message: string): Response {
   );
 }
 
-function appOrigin(req: Request): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
-}
 
 
 async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
