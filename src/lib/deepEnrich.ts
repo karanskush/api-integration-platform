@@ -15,7 +15,7 @@
 
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
-import { askModel } from './ask';
+import { askLanguageModel } from './ask';
 import { asData } from './advisor/types';
 import { fieldMapFor, originOf, type FieldLocation } from './fieldMap';
 import type { Action, ImportRecord } from './ir';
@@ -212,7 +212,7 @@ function buildChunkPrompt(resource: string, fields: ConsideredField[], docExcerp
 export type EnrichInput = {
   record: ImportRecord;
   docExcerpts: DocExcerpt[];
-  model?: LanguageModel; // injected in tests; defaults to askModel() via the Gateway
+  model?: LanguageModel; // injected in tests; defaults to askLanguageModel()
 };
 
 // Chunked by resource so cost/latency scale with resource-group count, not
@@ -224,7 +224,7 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
   const truncatedByChunkCap = groups.length > MAX_CHUNKS;
   const processed = groups.slice(0, MAX_CHUNKS);
   const docExcerpts = input.docExcerpts.slice(0, MAX_DOC_EXCERPTS);
-  const model = input.model ?? askModel();
+  const model = input.model ?? askLanguageModel();
 
   const fields: FieldSemanticsFinding[] = [];
   const openQuestions: OpenQuestion[] = [];

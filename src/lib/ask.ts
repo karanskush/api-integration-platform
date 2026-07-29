@@ -18,6 +18,7 @@
 // (callAdvisorTool) rather than round-tripping through a Streamable HTTP MCP
 // session with itself.
 
+import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, isStepCount, jsonSchema, tool, type LanguageModel, type ToolSet } from 'ai';
 import { ADVISOR_TOOLS, callAdvisorTool, type AdvisorContext } from './advisor';
 
@@ -34,9 +35,40 @@ export class AskInputError extends Error {
   }
 }
 
-// Every other xReady() in this codebase demands an explicit secret. This is the
-// one integration where the platform itself is a credential source, so it
-// accepts any of the three ways the Gateway can actually authenticate:
+// The configured model, as written. Always a Gateway-shaped "provider/model"
+// slug unless someone deliberately sets a bare OpenAI model name alongside
+// OPENAI_API_KEY (see directOpenAIModel below).
+export function askModel(): string {
+  return process.env.SPOTCHECK_ASK_MODEL?.trim() || 'anthropic/claude-sonnet-5';
+}
+
+const OPENAI_PREFIX = 'openai/';
+
+// The OpenAI model to call DIRECTLY, bypassing the Gateway, or null if this
+// configuration doesn't ask for that.
+//
+// The Gateway is still the default and the better answer — failover, spend
+// tracking and one credential for every provider. But routing your own OpenAI
+// key through it (BYOK) is gated behind purchased Gateway credits, so a team
+// holding nothing but an OpenAI key had no way to run any model-backed feature
+// at all. This is that way: set OPENAI_API_KEY, point SPOTCHECK_ASK_MODEL at an
+// OpenAI model, and the calls go straight to OpenAI on your own billing.
+//
+// Deliberately narrow. It engages ONLY when the key is present AND the
+// configured model is an OpenAI one, so setting the key while asking for
+// "anthropic/claude-sonnet-5" still goes to the Gateway rather than being
+// quietly rewritten into a model you didn't choose. A bare name with no "/" is
+// read as OpenAI's own naming ("gpt-5-mini"), since every Gateway slug has one.
+function directOpenAIModel(): string | null {
+  if (!process.env.OPENAI_API_KEY?.trim()) return null;
+  const slug = askModel();
+  if (slug.startsWith(OPENAI_PREFIX)) return slug.slice(OPENAI_PREFIX.length) || null;
+  return slug.includes('/') ? null : slug;
+}
+
+// Every other xReady() in this codebase demands an explicit secret. The Gateway
+// is the one integration where the platform itself is a credential source, so
+// it accepts any of the three ways the Gateway can actually authenticate:
 //
 //   AI_GATEWAY_API_KEY  explicit key — local dev, non-Vercel deploys
 //   VERCEL              running on Vercel, which injects an OIDC token
@@ -51,12 +83,30 @@ export class AskInputError extends Error {
 // Note OIDC tokens are short-lived (~12h). An expired one is a runtime failure,
 // not a readiness question — callers already treat a model error as a degraded
 // pass rather than a dead end.
-export function aiReady(): boolean {
+function gatewayReady(): boolean {
   return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL || process.env.VERCEL_OIDC_TOKEN);
 }
 
-export function askModel(): string {
-  return process.env.SPOTCHECK_ASK_MODEL?.trim() || 'anthropic/claude-sonnet-5';
+// Readiness is about the model we would ACTUALLY call, not about credentials in
+// general. An OpenAI key does not make an anthropic/* slug callable, and Gateway
+// OIDC does not make a bare "gpt-5-mini" callable — reporting ready in either
+// case would just move the failure from a clear 503 to a swallowed error inside
+// the enrichment pass, which is the one place this codebase can least afford it.
+export function aiReady(): boolean {
+  return directOpenAIModel() !== null || gatewayReady();
+}
+
+// What every generateText/generateObject call in this codebase passes as
+// `model`. A plain string routes through the Gateway (the AI SDK resolves
+// "provider/model" itself); a provider instance goes straight to OpenAI.
+//
+// Not memoized, unlike kv.ts/email.ts's clients: createOpenAI only closes over
+// config — there is no connection to reuse — and a cached instance would outlive
+// an OPENAI_API_KEY change within a single process.
+export function askLanguageModel(): LanguageModel {
+  const direct = directOpenAIModel();
+  if (!direct) return askModel();
+  return createOpenAI({ apiKey: process.env.OPENAI_API_KEY!.trim() })(direct);
 }
 
 // Wraps every advisor tool descriptor as an AI SDK tool bound to this
@@ -127,7 +177,7 @@ export async function askAboutApi(ctx: AdvisorContext, question: string, opts: A
   }
 
   const result = await generateText({
-    model: opts.model ?? askModel(),
+    model: opts.model ?? askLanguageModel(),
     system: systemInstructions(ctx.record.name),
     tools: buildAskTools(ctx),
     stopWhen: isStepCount(MAX_STEPS),

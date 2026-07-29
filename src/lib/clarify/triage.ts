@@ -25,7 +25,7 @@
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { asData } from '../advisor/types';
-import { askModel } from '../ask';
+import { askLanguageModel } from '../ask';
 import type { AnswerSpec } from './archetypes';
 import { buildEnvelopes, isRelevant, verifyQuote, type EvidenceEnvelope } from './evidence';
 
@@ -154,7 +154,7 @@ export async function triageQuestions(input: TriageInput): Promise<TriageResult>
   let verdicts: z.infer<typeof TriageOutputSchema>['verdicts'];
   try {
     const { object } = await generateObject({
-      model: input.model ?? askModel(),
+      model: input.model ?? askLanguageModel(),
       schema: TriageOutputSchema,
       system: systemInstructions(),
       prompt: buildPrompt(batch),

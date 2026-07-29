@@ -4,12 +4,12 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MockLanguageModelV4 } from 'ai/test';
-import { AskInputError, aiReady, askAboutApi, askModel } from '../ask';
+import { AskInputError, aiReady, askAboutApi, askLanguageModel, askModel } from '../ask';
 import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
 
-const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL'] as const;
+const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL', 'OPENAI_API_KEY'] as const;
 const originals = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -123,6 +123,53 @@ describe('aiReady', () => {
   it('is true with a pulled OIDC token and nothing else', () => {
     process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
     expect(aiReady()).toBe(true);
+  });
+
+  // Gateway BYOK is gated behind purchased credits, so an OpenAI key on its own
+  // has to be enough to run every model-backed feature.
+  it('is true with an OpenAI key and an OpenAI model, with no Gateway credential', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    expect(aiReady()).toBe(true);
+  });
+
+  // The key does not make a non-OpenAI model callable. Reporting ready here
+  // would turn a clear 503 into an error swallowed inside the enrichment pass.
+  it('is false with an OpenAI key but a model the Gateway would have to serve', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-sonnet-5';
+    expect(aiReady()).toBe(false);
+  });
+});
+
+describe('askLanguageModel', () => {
+  it('returns the slug itself when the Gateway is the credential', () => {
+    process.env.VERCEL = '1';
+    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    expect(askLanguageModel()).toBe('openai/gpt-5-mini');
+  });
+
+  it('returns a provider instance for the bare model when going direct', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    const model = askLanguageModel();
+    expect(typeof model).not.toBe('string');
+    expect((model as { modelId: string }).modelId).toBe('gpt-5-mini');
+  });
+
+  // Every Gateway slug carries a "/", so a bare name can only be OpenAI's own.
+  it('accepts a bare OpenAI model name', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.SPOTCHECK_ASK_MODEL = 'gpt-5-mini';
+    expect((askLanguageModel() as { modelId: string }).modelId).toBe('gpt-5-mini');
+  });
+
+  // The key is present but the model is not OpenAI's, so the Gateway still owns
+  // this call — the configured model is never quietly rewritten.
+  it('leaves a non-OpenAI model on the Gateway even with a key set', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-opus-5';
+    expect(askLanguageModel()).toBe('anthropic/claude-opus-5');
   });
 });
 
