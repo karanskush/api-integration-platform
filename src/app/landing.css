@@ -48,6 +48,37 @@
 .landing { --pin-top: 84px; }
 
 /* ------------------------------------------------------------------
+   SCROLL AFFORDANCE
+
+   macOS hides overlay scrollbars until you touch them, so on a dark page with
+   a full-bleed hero there is no standing signal that anything is below the
+   fold. The cue at the bottom of the hero only helps when the hero fits; this
+   is the signal that is always there, and it doubles as "how far in am I".
+
+   Sits directly under the 64px header rather than over it, so it needs no
+   z-index battle with the sticky chrome. Inside @supports because without a
+   scroll timeline the animation would otherwise run on a clock.
+   ------------------------------------------------------------------ */
+@supports (animation-timeline: scroll()) {
+  .landing::after {
+    content: '';
+    position: fixed;
+    top: 64px;
+    left: 0;
+    z-index: 1;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--iris), var(--iris-2));
+    transform: scaleX(0);
+    transform-origin: left center;
+    pointer-events: none;
+    animation: scroll-progress linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+@keyframes scroll-progress { to { transform: scaleX(1); } }
+
+/* ------------------------------------------------------------------
    TYPE
    ------------------------------------------------------------------ */
 .landing h1.display { font-size: clamp(42px, 6.6vw, 88px); line-height: 0.98; letter-spacing: -0.035em; }
@@ -239,10 +270,10 @@
    ------------------------------------------------------------------ */
 .hero {
   position: relative;
-  min-height: 100svh;
+  min-height: calc(100svh - 64px);
   display: flex;
   align-items: center;
-  padding: clamp(60px, 8.5vh, 112px) 0 clamp(44px, 6vh, 84px);
+  padding: clamp(44px, 6vh, 96px) 0 clamp(52px, 6vh, 84px);
 }
 /* The lattice occupies the right of the hero, not the whole of it. Running it
    full-bleed behind the headline was legible on a mockup and unreadable in
@@ -329,6 +360,30 @@
 @keyframes cue {
   0%, 100% { transform: scaleY(0.4); opacity: 0.5; }
   50% { transform: scaleY(1); opacity: 1; }
+}
+
+/* The hero has to survive a laptop with two browser toolbars and a bookmarks
+   bar — that is ~700px of usable height, not 900. Measured: unmodified, the
+   hero was 860-907px tall and overflowed every viewport under 1000px. */
+@media (max-height: 940px) {
+  .landing h1.display { font-size: clamp(38px, 4.6vw, 68px); }
+  .hero .kicker { margin-bottom: 14px; }
+  .hero-lead { margin-top: 16px; font-size: 15.5px; line-height: 1.55; }
+  .hero-import { margin-top: 22px; }
+  .hero-facts { margin-top: 20px; }
+  .hero-facts dd { font-size: 12px; margin-top: 5px; }
+}
+@media (max-height: 820px) {
+  /* Last to go, and only here: three supporting facts are worth less than a
+     hero that fits. They are restated by chapter 01's own copy. */
+  .hero-facts { display: none; }
+  .landing h1.display { font-size: clamp(34px, 4vw, 56px); }
+  .hero-lead { font-size: 15px; }
+}
+/* A cue anchored to the hero's bottom is only meaningful when the hero ends at
+   the fold. Below that it would sit off-screen or mid-content, so it goes. */
+@media (max-height: 700px) {
+  .scroll-cue { display: none; }
 }
 
 /* ------------------------------------------------------------------
