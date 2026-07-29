@@ -304,7 +304,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 04 · LINEAGE ═══════════ */}
+      {/* ═══════════ 03 · LINEAGE ═══════════ */}
       <section className="chapter" id="lineage">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -312,7 +312,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="04" title="Lineage" />
+          <ChapterMark n="03" title="Lineage" />
           <h2 className="display">Which call produces the id the next call needs.</h2>
           <p className="lead">
             An agent that invents an identifier fails, retries, and fails again. Spotcheck reads
@@ -353,10 +353,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 05 · THE TRUTH LAYER ═══════════ */}
+      {/* ═══════════ 04 · THE TRUTH LAYER ═══════════ */}
       <section className="chapter solo band" id="truth">
         <div className="chapter-copy wide">
-          <ChapterMark n="05" title="The truth layer" />
+          <ChapterMark n="04" title="The truth layer" />
           <h2 className="display">Every field says where its value is supposed to come from.</h2>
           <p className="lead">
             The single most expensive question when integrating an API is “what do I put here?” —
@@ -437,7 +437,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 06 · VERIFIED, NOT TRANSPILED ═══════════ */}
+      {/* ═══════════ 05 · VERIFIED, NOT TRANSPILED ═══════════ */}
       <section className="chapter" id="verify">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -445,7 +445,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="06" title="Verification" />
+          <ChapterMark n="05" title="Verification" />
           <h2 className="display">Anyone can turn OpenAPI into MCP. We prove the tools work.</h2>
           <p className="lead">
             Transpilers echo the spec and hope. Spotcheck executes the tools, catches where the docs
@@ -482,7 +482,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 07 · THE SCORE ═══════════ */}
+      {/* ═══════════ 06 · THE SCORE ═══════════ */}
       <section className="chapter" id="score">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -491,7 +491,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="07" title="Score" />
+          <ChapterMark n="06" title="Score" />
           <h2 className="display">Lighthouse gave the web a number. This is yours.</h2>
           <p className="lead">
             A 0–100 grade of how well an agent can drive your API. Two of the four sub-scores are
@@ -525,10 +525,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 08 · SHIP IT ═══════════ */}
+      {/* ═══════════ 07 · SHIP IT ═══════════ */}
       <section className="chapter solo" id="how">
         <div className="chapter-copy wide">
-          <ChapterMark n="08" title="Deliverables" />
+          <ChapterMark n="07" title="Deliverables" />
           <h2 className="display">One import. Everything an agent needs.</h2>
           <p className="lead">
             Paste a spec once. Spotcheck fans it out into {LAYERS.length} surfaces — generated
