@@ -334,6 +334,71 @@ html:has(.report-page) .site-nav .nav-cta:hover {
 }
 html:has(.report-page) .site-footer { border-top-color: var(--rule); }
 
+/* ---- primitives on paper --------------------------------------------------
+   The dark defaults reach for a cyan hover, a gunmetal knockout on the primary
+   button, and a raised panel with an inset top highlight. None of those mean
+   anything on stock. Here a panel is a ruled card, corners tighten from 6-8px
+   to 2-3px because paper is cut and not moulded, and the interactive colour is
+   prussian throughout. Scoped, so the product surfaces keep their versions. */
+html:has(.report-page) {
+  --field: #fbf9f3;    /* a printed form's write-in box, lighter than stock */
+}
+html:has(.report-page) .panel {
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(22, 19, 15, 0.05);
+}
+html:has(.report-page) .chip {
+  border-radius: 2px;
+  padding: 2px 7px;
+  letter-spacing: 0.06em;
+}
+html:has(.report-page) .btn {
+  border-radius: 3px;
+  border-color: rgba(22, 19, 15, 0.28);
+  font-weight: 500;
+}
+html:has(.report-page) .btn:hover {
+  border-color: var(--measure);
+  background: var(--measure-fill);
+}
+html:has(.report-page) .btn.primary {
+  background: var(--measure);
+  border-color: var(--measure);
+  color: var(--paper);
+}
+html:has(.report-page) .btn.primary:hover {
+  background: var(--measure-2);
+  border-color: var(--measure-2);
+}
+html:has(.report-page) input[type='text'],
+html:has(.report-page) input[type='url'],
+html:has(.report-page) input[type='password'],
+html:has(.report-page) input[type='email'],
+html:has(.report-page) input[type='number'],
+html:has(.report-page) select,
+html:has(.report-page) textarea {
+  background: var(--field);
+  border-color: rgba(22, 19, 15, 0.24);
+  border-radius: 3px;
+  color: var(--ink);
+}
+html:has(.report-page) input::placeholder,
+html:has(.report-page) textarea::placeholder { color: var(--ink-3); }
+html:has(.report-page) input:focus,
+html:has(.report-page) select:focus,
+html:has(.report-page) textarea:focus {
+  border-color: var(--measure);
+  box-shadow: 0 0 0 3px var(--measure-fill);
+}
+/* On stock a 1px hairline outline disappears into the tooth; focus needs
+   weight to stay obvious, which matters more here than it did on gunmetal. */
+html:has(.report-page) :focus-visible {
+  outline: 2px solid var(--measure);
+  outline-offset: 2px;
+}
+
 /* ============================================================
    TYPE PRIMITIVES — mirror the landing's voice
    ============================================================ */
