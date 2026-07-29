@@ -18,6 +18,7 @@
 // (callAdvisorTool) rather than round-tripping through a Streamable HTTP MCP
 // session with itself.
 
+import { createAzure } from '@ai-sdk/azure';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, isStepCount, jsonSchema, tool, type LanguageModel, type ToolSet } from 'ai';
 import { ADVISOR_TOOLS, callAdvisorTool, type AdvisorContext } from './advisor';
@@ -63,7 +64,59 @@ function directOpenAIModel(): string | null {
   if (!process.env.OPENAI_API_KEY?.trim()) return null;
   const slug = askModel();
   if (slug.startsWith(OPENAI_PREFIX)) return slug.slice(OPENAI_PREFIX.length) || null;
+  if (slug.startsWith(AZURE_PREFIX)) return null; // Azure is its own provider, below
   return slug.includes('/') ? null : slug;
+}
+
+const AZURE_PREFIX = 'azure/';
+// The api-version Azure deployments were being created with when this landed.
+// Overridable because Azure retires them on a schedule and the right value is a
+// property of the resource, not of this codebase.
+const DEFAULT_AZURE_API_VERSION = '2024-12-01-preview';
+
+// Azure exposes OpenAI models under your own resource, so a platform OpenAI key
+// cannot reach it and vice versa: different host, different auth header,
+// different model naming (a DEPLOYMENT name you chose, not "gpt-5-mini" as
+// such). Hence a provider of its own rather than a flag on the one above.
+//
+// Endpoint is accepted in the form the Azure portal shows
+// ("https://<resource>.openai.azure.com/") and the resource name derived from
+// it, since that is what anyone setting this up already has on their clipboard.
+function azureResourceName(): string | null {
+  const explicit = process.env.AZURE_OPENAI_RESOURCE_NAME?.trim();
+  if (explicit) return explicit;
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
+  if (!endpoint) return null;
+  try {
+    const [label] = new URL(endpoint).hostname.split('.');
+    return label || null;
+  } catch {
+    // A malformed endpoint is not a credential. Returning null keeps aiReady()
+    // honest rather than throwing out of a readiness check.
+    return null;
+  }
+}
+
+type AzureTarget = { deployment: string; resourceName: string; apiKey: string; apiVersion: string };
+
+// All of it or none of it: a key without an endpoint, or an endpoint without a
+// deployment, reports not-configured rather than half-building a client that
+// fails on first call inside enrichRecord's swallowing catch.
+function azureTarget(): AzureTarget | null {
+  const apiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+  const slug = askModel();
+  if (!slug.startsWith(AZURE_PREFIX)) return null;
+  const deployment = slug.slice(AZURE_PREFIX.length);
+  if (!deployment) return null;
+  const resourceName = azureResourceName();
+  if (!resourceName) return null;
+  return {
+    deployment,
+    resourceName,
+    apiKey,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION?.trim() || DEFAULT_AZURE_API_VERSION,
+  };
 }
 
 // Every other xReady() in this codebase demands an explicit secret. The Gateway
@@ -93,7 +146,7 @@ function gatewayReady(): boolean {
 // case would just move the failure from a clear 503 to a swallowed error inside
 // the enrichment pass, which is the one place this codebase can least afford it.
 export function aiReady(): boolean {
-  return directOpenAIModel() !== null || gatewayReady();
+  return directOpenAIModel() !== null || azureTarget() !== null || gatewayReady();
 }
 
 // What every generateText/generateObject call in this codebase passes as
@@ -104,6 +157,16 @@ export function aiReady(): boolean {
 // config — there is no connection to reuse — and a cached instance would outlive
 // an OPENAI_API_KEY change within a single process.
 export function askLanguageModel(): LanguageModel {
+  const azure = azureTarget();
+  if (azure) {
+    const { deployment, ...config } = azure;
+    // .chat() rather than the provider's default .responses(): the Responses
+    // API needs api-version 2025-03-01-preview or later, and pinning it here
+    // would silently 404 every call on a resource pinned to an older one.
+    // Chat Completions is available on every api-version and carries the
+    // json_schema structured output all four call sites depend on.
+    return createAzure(config).chat(deployment);
+  }
   const direct = directOpenAIModel();
   if (!direct) return askModel();
   return createOpenAI({ apiKey: process.env.OPENAI_API_KEY!.trim() })(direct);

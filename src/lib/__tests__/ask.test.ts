@@ -9,7 +9,7 @@ import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
 
-const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL', 'OPENAI_API_KEY'] as const;
+const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_RESOURCE_NAME', 'AZURE_OPENAI_API_VERSION'] as const;
 const originals = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -170,6 +170,78 @@ describe('askLanguageModel', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
     process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-opus-5';
     expect(askLanguageModel()).toBe('anthropic/claude-opus-5');
+  });
+});
+
+describe('askLanguageModel — Azure OpenAI', () => {
+  function configureAzure() {
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+  }
+
+  it('is ready and targets the deployment named after the prefix', () => {
+    configureAzure();
+    expect(aiReady()).toBe(true);
+    const model = askLanguageModel();
+    expect((model as { modelId: string }).modelId).toBe('gpt-5-mini');
+  });
+
+  // Chat Completions, not the provider's default Responses API — the latter
+  // needs api-version 2025-03-01-preview or later.
+  it('calls Chat Completions rather than the Responses API', () => {
+    configureAzure();
+    expect((askLanguageModel() as { provider: string }).provider).toBe('azure.chat');
+  });
+
+  // A deployment name is whatever you called it in Azure, not a model id.
+  it('honours a deployment name that is not a model name', () => {
+    configureAzure();
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/my-mini-deploy';
+    expect((askLanguageModel() as { modelId: string }).modelId).toBe('my-mini-deploy');
+  });
+
+  it('accepts an explicit resource name instead of an endpoint', () => {
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.AZURE_OPENAI_RESOURCE_NAME = 'aoai-example';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    expect(aiReady()).toBe(true);
+  });
+
+  // Each of these is a half-configuration. Reporting ready would move the
+  // failure into enrichRecord's per-chunk catch, where nothing surfaces it.
+  it('is not ready with a key but no endpoint', () => {
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    expect(aiReady()).toBe(false);
+  });
+
+  it('is not ready with an endpoint but no key', () => {
+    process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    expect(aiReady()).toBe(false);
+  });
+
+  it('is not ready when the model names no deployment', () => {
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/';
+    expect(aiReady()).toBe(false);
+  });
+
+  it('is not ready when the endpoint is not a URL', () => {
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.AZURE_OPENAI_ENDPOINT = 'aoai-example';
+    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    expect(aiReady()).toBe(false);
+  });
+
+  // Azure credentials do not make a platform-OpenAI slug callable.
+  it('leaves a non-Azure model alone', () => {
+    configureAzure();
+    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    expect(askLanguageModel()).toBe('openai/gpt-5-mini');
+    expect(aiReady()).toBe(false);
   });
 });
 
