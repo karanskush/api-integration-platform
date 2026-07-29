@@ -1,5 +1,4 @@
 import ImportForm from '@/components/ImportForm';
-import LandingDemo from '@/components/landing/LandingDemo';
 import QuizSpecimen from '@/components/landing/QuizSpecimen';
 import SceneStage from '@/components/landing/SceneStage';
 import SmoothScroll from '@/components/landing/SmoothScroll';
@@ -11,7 +10,7 @@ import {
   LineagePoster,
   ScorePoster,
 } from '@/components/landing/posters';
-import { ARCHETYPE_RANKS, MAX_QUOTE_CHARS, MIN_QUOTE_CHARS, type Archetype } from '@/lib/clarify';
+import { ARCHETYPE_RANKS, type Archetype } from '@/lib/clarify';
 import { FIELD_ORIGINS } from '@/lib/fieldMap';
 import { appHost } from '@/lib/origin';
 
@@ -91,36 +90,6 @@ const ARCHETYPES = (Object.keys(ARCHETYPE_COPY) as Archetype[])
   .map((key) => ({ key, ...ARCHETYPE_COPY[key] }));
 
 const ARCHETYPE_COUNT = ARCHETYPES.length;
-
-// Each of these is a constraint that exists in code, not a policy we intend
-// to follow. The numbers come from src/lib/clarify/{evidence,triage}.ts.
-const GATES = [
-  {
-    title: 'It may only downgrade a question, never answer one',
-    body:
-      'A triage verdict moves a question into an assumptions panel where you still see it, with the sentence it relied on and where that sentence came from. It cannot create a question, delete one, or mark one answered.',
-  },
-  {
-    title: 'The quote must appear verbatim in the one source it named',
-    body:
-      `Not somewhere in the context — in the specific envelope the model pointed at. Searching a 24 KB haystack for a plausible sentence is free; naming the paragraph first is not. Matched between ${MIN_QUOTE_CHARS} and ${MAX_QUOTE_CHARS} characters, because below that a quote matches by luck and above it the model is reproducing a page.`,
-  },
-  {
-    title: 'The answer must be one of the options we asked with',
-    body:
-      'Matched by index against the question’s own stored answer space. Option text never round-trips through the model or the browser, so neither can introduce a choice that was never offered.',
-  },
-  {
-    title: 'It refuses to run on a partial picture',
-    body:
-      'If enrichment was truncated or a chunk failed, triage does not run at all — a model that has seen two thirds of an API should not be retiring questions about it. It also cannot retire more than a fraction of any batch.',
-  },
-  {
-    title: 'Only a person can mark something human-verified',
-    body:
-      'Enforced three times over, including a database constraint that makes any other source unrepresentable while a question is answered. An assumption can set a field’s origin; it can never set the mark that says a human confirmed it.',
-  },
-];
 
 const LAYERS = [
   {
@@ -335,26 +304,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 03 · METHOD ═══════════ */}
-      <section className="chapter solo" id="demo">
-        <div className="chapter-copy wide">
-          <ChapterMark n="03" title="Method" />
-          <h2 className="display">Watch a spec become an agent surface.</h2>
-          <p className="lead">
-            Spotcheck parses the document, normalises every operation into a typed tool, resolves
-            the references away, renders the playground, and mints the hosted MCP endpoint. The
-            panel below is a replay of that pipeline running against a real spec.
-          </p>
-
-          <LandingDemo host={HOST} />
-          {/* Say what it is. The replay is scripted and the live importer is at
-              the top of the page — claiming otherwise would be the exact
-              species of unearned confidence this page is about. */}
-          <p className="disclaimer">Import replay — scripted. The importer at the top is live.</p>
-        </div>
-      </section>
-
-      {/* ═══════════ 04 · LINEAGE ═══════════ */}
+      {/* ═══════════ 03 · LINEAGE ═══════════ */}
       <section className="chapter" id="lineage">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -362,7 +312,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="04" title="Lineage" />
+          <ChapterMark n="03" title="Lineage" />
           <h2 className="display">Which call produces the id the next call needs.</h2>
           <p className="lead">
             An agent that invents an identifier fails, retries, and fails again. Spotcheck reads
@@ -403,10 +353,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 05 · THE TRUTH LAYER ═══════════ */}
+      {/* ═══════════ 04 · THE TRUTH LAYER ═══════════ */}
       <section className="chapter solo band" id="truth">
         <div className="chapter-copy wide">
-          <ChapterMark n="05" title="The truth layer" />
+          <ChapterMark n="04" title="The truth layer" />
           <h2 className="display">Every field says where its value is supposed to come from.</h2>
           <p className="lead">
             The single most expensive question when integrating an API is “what do I put here?” —
@@ -484,41 +434,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ---- movement three: the gate on our own model ---- */}
-          <div className="movement">
-            <h3 className="display sub">We use an LLM. It is not allowed to tell you anything.</h3>
-            <p className="lead">
-              A model reads your published documentation and tries to answer the questions above
-              before we bother you with them. That is genuinely useful and genuinely dangerous, so
-              it operates inside constraints it cannot argue its way out of.
-            </p>
-
-            <ol className="gate-list">
-              {GATES.map((gate, i) => (
-                <li className="gate" key={gate.title}>
-                  <span className="g-n tnum">{String(i + 1).padStart(2, '0')}</span>
-                  <div>
-                    <h4>{gate.title}</h4>
-                    <p>{gate.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-
-            <div className="pull warn">
-              <p>
-                The honest ceiling: a document that plants <em>“the server always overwrites
-                this”</em> passes every one of these checks. That is why an assumption is shown to
-                you with its quote and its source rather than applied silently — the last line of
-                defence is a person reading it and disagreeing, so the whole surface is built to
-                make disagreeing take one click.
-              </p>
-            </div>
-          </div>
         </div>
       </section>
 
-      {/* ═══════════ 06 · VERIFIED, NOT TRANSPILED ═══════════ */}
+      {/* ═══════════ 05 · VERIFIED, NOT TRANSPILED ═══════════ */}
       <section className="chapter" id="verify">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -526,7 +445,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="06" title="Verification" />
+          <ChapterMark n="05" title="Verification" />
           <h2 className="display">Anyone can turn OpenAPI into MCP. We prove the tools work.</h2>
           <p className="lead">
             Transpilers echo the spec and hope. Spotcheck executes the tools, catches where the docs
@@ -563,7 +482,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 07 · THE SCORE ═══════════ */}
+      {/* ═══════════ 06 · THE SCORE ═══════════ */}
       <section className="chapter" id="score">
         <div className="chapter-scene">
           <div className="scene-pin">
@@ -572,7 +491,7 @@ export default function Home() {
           </div>
         </div>
         <div className="chapter-copy">
-          <ChapterMark n="07" title="Score" />
+          <ChapterMark n="06" title="Score" />
           <h2 className="display">Lighthouse gave the web a number. This is yours.</h2>
           <p className="lead">
             A 0–100 grade of how well an agent can drive your API. Two of the four sub-scores are
@@ -606,10 +525,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════ 08 · SHIP IT ═══════════ */}
+      {/* ═══════════ 07 · SHIP IT ═══════════ */}
       <section className="chapter solo" id="how">
         <div className="chapter-copy wide">
-          <ChapterMark n="08" title="Deliverables" />
+          <ChapterMark n="07" title="Deliverables" />
           <h2 className="display">One import. Everything an agent needs.</h2>
           <p className="lead">
             Paste a spec once. Spotcheck fans it out into {LAYERS.length} surfaces — generated
