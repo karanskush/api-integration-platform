@@ -81,9 +81,11 @@ export default function QuizSpecimen() {
         </p>
       </div>
 
-      <figcaption className="fig-cap">
-        <span className="n">Fig. 3</span>
-        <span>Rendered by the live classifier, not written for this page.</span>
+      {/* The inverse of the usual disclaimer: this one exists to say the card
+          is *not* marketing copy. Same obligation either way — state what the
+          reader is looking at. */}
+      <figcaption className="disclaimer">
+        Rendered by the live classifier, not written for this page.
       </figcaption>
     </figure>
   );
