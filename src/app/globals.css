@@ -399,6 +399,72 @@ html:has(.report-page) :focus-visible {
   outline-offset: 2px;
 }
 
+/* ---- .inst — the instrument panel ----------------------------------------
+   The other half of the contract. Wherever the page shows live or measured
+   data it stops being paper and becomes the instrument's own screen, set
+   into the stock like a photograph pasted into a report.
+
+   Mechanically this is a portal back to the product palette: .inst repoints
+   the same substrate tokens at the dark values, so every rule written for
+   the app — the demo window, the terminal, the gauge — renders correctly
+   inside it with no landing-specific variant. It is also the only scope
+   where --phosphor is legal, because it is the only scope where something
+   has actually been measured. */
+.report-page .inst {
+  --bg: var(--inst);
+  --bg-soft: var(--inst-2);
+  --panel: var(--inst);
+  --field: var(--inst-2);
+
+  --fg: var(--inst-ink);
+  --fg-dim: #b6bcb9;
+  --fg-mute: var(--inst-dim);
+
+  --hair: var(--inst-rule);
+  --hair-soft: rgba(230, 228, 221, 0.06);
+  --edge-light: rgba(230, 228, 221, 0.07);
+
+  --accent: #7fd4ee;
+  --accent-soft: #a6e2f4;
+  --accent-blue: #93b8c9;
+  --accent-red: #f2685c;
+  --accent-green: var(--phosphor);
+  --ok: var(--phosphor);
+  --warn: #e8b552;
+  --accent-fill: rgba(127, 212, 238, 0.14);
+  --ok-fill: rgba(111, 227, 168, 0.14);
+  --warn-fill: rgba(232, 181, 82, 0.14);
+
+  background: var(--inst);
+  color: var(--inst-ink);
+  border: 1px solid #050706;
+  border-radius: 3px;
+  /* A plate sitting in the page: paper catches light along its top edge,
+     and the panel drops a short contact shadow rather than floating. */
+  box-shadow:
+    0 1px 0 rgba(255, 253, 247, 0.55),
+    0 18px 40px -30px rgba(22, 19, 15, 0.7);
+}
+.report-page .inst :focus-visible { outline-color: var(--accent); }
+
+/* ---- figures --------------------------------------------------------------
+   Anything set into the page gets a caption, the way a plate in a report
+   does. It is also the honest place to say when something is a specimen
+   rather than live output. */
+.fig-cap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.fig-cap .n { color: var(--ink-2); flex-shrink: 0; }
+
 /* ============================================================
    TYPE PRIMITIVES — mirror the landing's voice
    ============================================================ */
@@ -852,11 +918,46 @@ table.params td.desc { color: var(--fg-dim); }
 /* ============================================================
    LANDING — shared section rhythm
    ============================================================ */
-.landing .section { position: relative; padding: clamp(84px, 10vw, 148px) 0 0; }
-.landing .section:last-child { padding-bottom: clamp(84px, 10vw, 148px); }
-.section-head { text-align: center; max-width: 720px; margin: 0 auto clamp(40px, 5vw, 64px); }
-.section-head .eyebrow { display: block; margin-bottom: 22px; }
-.section-head .lead { margin: 18px auto 0; }
+/* A report indexes itself, so sections are numbered and left-aligned against
+   a rule rather than centred. Centred section heads are the generic pattern
+   this redesign is specifically trying to get away from, and left alignment
+   is also what lets the numbers line up down the page. */
+.landing .section { position: relative; padding: clamp(62px, 7.5vw, 104px) 0 0; }
+.landing .section:last-child { padding-bottom: clamp(72px, 9vw, 124px); }
+.landing .section.band {
+  background: var(--paper-2);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin-top: clamp(62px, 7.5vw, 104px);
+  padding-bottom: clamp(62px, 7.5vw, 104px);
+}
+.landing .section.band + .section { padding-top: clamp(62px, 7.5vw, 104px); }
+
+.sec-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 10px;
+  margin-bottom: clamp(24px, 3vw, 38px);
+  border-bottom: 1px solid var(--ink);
+}
+.sec-mark .n,
+.sec-mark .t,
+.sec-mark .note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.sec-mark .n { color: var(--ink-3); letter-spacing: 0.14em; }
+.sec-mark .t { color: var(--ink); }
+.sec-mark .note { margin-left: auto; color: var(--ink-3); letter-spacing: 0.12em; text-align: right; }
+
+.section-head { max-width: 780px; margin: 0 0 clamp(34px, 4.4vw, 58px); }
+.section-head .eyebrow { display: block; margin-bottom: 14px; }
+.section-head .lead { margin-top: 16px; }
+.landing .section-head h2.display { max-width: 20ch; }
 
 /* reveal choreography — hidden state exists only once JS mounts */
 .js-landing .reveal {
@@ -875,11 +976,7 @@ table.params td.desc { color: var(--fg-dim); }
 .demo-window {
   max-width: 880px;
   margin: 0 auto;
-  border: 1px solid var(--hair);
-  border-radius: 8px;
   overflow: hidden;
-  background: var(--panel);
-  box-shadow: inset 0 1px 0 var(--edge-light), 0 24px 60px rgba(0, 0, 0, 0.55);
 }
 .term-bar {
   display: flex;

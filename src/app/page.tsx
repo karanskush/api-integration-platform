@@ -50,6 +50,18 @@ const SUBSCORES = [
   { name: 'Idempotency', value: 95, why: 'Can a retried call ever double-charge? Agents retry. This matters.' },
 ];
 
+// A report indexes itself. The numbers are the page's spine — they run down
+// the left edge and let a reader cite a section rather than scroll for it.
+function SectionMark({ n, title, note }: { n: string; title: string; note?: string }) {
+  return (
+    <div className="sec-mark">
+      <span className="n">§&#8202;{n}</span>
+      <span className="t">{title}</span>
+      {note ? <span className="note">{note}</span> : null}
+    </div>
+  );
+}
+
 export default function Home() {
   return (
     <div className="landing report-page" id="top">
@@ -105,19 +117,27 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ DEMO — simulated import replay ============ */}
-      <section className="section demo-section" id="demo">
+      {/* ============ METHOD — the replay ============ */}
+      <section className="section demo-section" id="method">
         <div className="landing-wrap">
+          <SectionMark n="01" title="Method" note="60 seconds, one paste" />
           <div className="section-head reveal">
-            <p className="eyebrow">The 60-second demo</p>
             <h2 className="display">Watch a spec become an agent surface.</h2>
             <p className="lead">
-              One paste. Spotcheck parses the spec, normalizes every endpoint into typed tools,
-              renders the playground, and mints your hosted MCP URL.
+              Spotcheck parses the document, normalises every operation into a typed tool, resolves
+              the references away, renders the playground, and mints the hosted MCP endpoint. The
+              panel below is a replay of that pipeline running against a real spec.
             </p>
           </div>
           <div className="reveal">
             <LandingDemo />
+            {/* Say what it is. The replay is scripted, and the live importer
+                is thirty pixels up the page — claiming otherwise would be
+                the exact species of unearned confidence this page is about. */}
+            <p className="fig-cap">
+              <span className="n">Fig. 1</span>
+              <span>Import replay — scripted. The importer above is live.</span>
+            </p>
           </div>
         </div>
       </section>
