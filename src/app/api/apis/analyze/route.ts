@@ -14,6 +14,7 @@ import { limitsFor } from '@/lib/plans';
 import { publishJob, queueReady } from '@/lib/queue';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { SsrfError, UpstreamError } from '@/lib/ssrf';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 60;
 
@@ -24,9 +25,6 @@ const ANALYZE_LIMIT = { limit: 10, windowSec: 86_400 };
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_DOC_URLS = 5;
 
-function appOrigin(req: Request): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
-}
 
 // The authenticated, fully-async entry point for the deep-analysis pipeline —
 // distinct from /api/import (anonymous, ephemeral, instant preview, left

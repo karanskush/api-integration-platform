@@ -6,6 +6,7 @@ import { apis, claims } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 30;
 
@@ -16,9 +17,6 @@ export const maxDuration = 30;
 const VERIFY_LIMIT = { limit: 20, windowSec: 3600 };
 const MAX_ATTEMPTS = 25;
 
-function appOrigin(req: Request): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
-}
 
 // Checks a pending domain-ownership claim (see claim/start's route for how
 // one is created). Distinct from api/apis/claim/route.ts.

@@ -13,6 +13,13 @@ import {
 } from '@/components/landing/posters';
 import { ARCHETYPE_RANKS, MAX_QUOTE_CHARS, MIN_QUOTE_CHARS, type Archetype } from '@/lib/clarify';
 import { FIELD_ORIGINS } from '@/lib/fieldMap';
+import { appHost } from '@/lib/origin';
+
+// Every hostname this page shows is the one it is actually served from.
+// Hardcoding `spotcheck.dev` meant the page promised URLs that did not
+// resolve — the single thing on a page about not overclaiming that overclaimed.
+// Resolved once here: PUBLIC_APP_ORIGIN is fixed for a deployment's lifetime.
+const HOST = appHost();
 
 // Keyed off the real union rather than restated, so the page cannot claim a
 // set of origins the engine no longer has. Adding an origin to FIELD_ORIGINS
@@ -126,7 +133,7 @@ const LAYERS = [
   },
   {
     title: 'Hosted MCP server',
-    body: 'spotcheck.dev/mcp/you — a drop-in endpoint Claude, Cursor, and Copilot call directly. Typed tools, auth handled, zero infrastructure on your side.',
+    body: `${HOST}/mcp/you — a drop-in endpoint Claude, Cursor, and Copilot call directly. Typed tools, auth handled, zero infrastructure on your side.`,
   },
   {
     title: 'Agent-Ready Score',
@@ -185,7 +192,7 @@ const DISTRIBUTION = [
     body: 'Every public API gets a live page — even before its owner shows up. Found yours? Prove you own the domain and make it official.',
     snippet: (
       <>
-        <span className="cs-dim">spotcheck.dev/</span>stripe <span className="cs-accent">· claim this page</span>
+        <span className="cs-dim">{HOST}/</span>stripe <span className="cs-accent">· claim this page</span>
       </>
     ),
   },
@@ -194,7 +201,7 @@ const DISTRIBUTION = [
     body: 'Drop it in your README and docs. It renders your live score — and links every reader back to your integration page.',
     snippet: (
       <>
-        &lt;img src=&quot;<span className="cs-dim">https://</span>spotcheck.dev/badge/you&quot; /&gt;
+        &lt;img src=&quot;<span className="cs-dim">https://</span>{HOST}/badge/you&quot; /&gt;
       </>
     ),
   },
@@ -212,7 +219,7 @@ const DISTRIBUTION = [
     body: 'Your users paste one URL into Claude, Cursor, or Copilot and their agents are calling your API — metered, rate-limited, every tool annotated read or write.',
     snippet: (
       <>
-        <span className="cs-dim">spotcheck.dev/mcp/</span>you <span className="cs-ok">· ready</span>
+        <span className="cs-dim">{HOST}/mcp/</span>you <span className="cs-ok">· ready</span>
       </>
     ),
   },
@@ -339,7 +346,7 @@ export default function Home() {
             panel below is a replay of that pipeline running against a real spec.
           </p>
 
-          <LandingDemo />
+          <LandingDemo host={HOST} />
           {/* Say what it is. The replay is scripted and the live importer is at
               the top of the page — claiming otherwise would be the exact
               species of unearned confidence this page is about. */}
@@ -528,7 +535,7 @@ export default function Home() {
 
           <div className="terminal">
             <div className="term-bar">
-              <span className="term-title">agent ↔ spotcheck.dev/mcp/acme</span>
+              <span className="term-title">agent ↔ {HOST}/mcp/acme</span>
               <span className="term-live"><i aria-hidden="true" />replay</span>
             </div>
             <div className="term-body">

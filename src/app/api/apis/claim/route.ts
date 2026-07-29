@@ -8,6 +8,7 @@ import { getOrCreateOrgForUser } from '@/lib/org';
 import { persistApi } from '@/lib/persist';
 import { limitsFor } from '@/lib/plans';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 60;
 
@@ -15,9 +16,6 @@ export const maxDuration = 60;
 // facts and a score preview — the heaviest write path in the app.
 const CLAIM_IMPORT_LIMIT = { limit: 20, windowSec: 600 };
 
-function appOrigin(req: Request): string {
-  return process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
-}
 
 // Claims a still-live anonymous import into the signed-in user's account —
 // same persistApi() transaction a direct authenticated persist would use

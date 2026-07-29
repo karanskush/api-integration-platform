@@ -11,7 +11,10 @@ const LOG_AT = [1150, 1600, 2050, 2500];
 const RESULT_AT = 3050;
 const CTA_AT = 3500;
 
-export default function LandingDemo() {
+// `host` arrives as a prop rather than being read here: PUBLIC_APP_ORIGIN is
+// not NEXT_PUBLIC_, so a client component cannot see it, and the alternative
+// (window.location.host) would differ between the server render and hydration.
+export default function LandingDemo({ host }: { host: string }) {
   // Server HTML (and no-JS visitors) get the finished state; the effect below
   // rewinds and replays it only when JS + IntersectionObserver are available.
   const [chars, setChars] = useState(SPEC_URL.length);
@@ -116,7 +119,7 @@ export default function LandingDemo() {
           </div>
           <div className="demo-mcp">
             <div className="dm-head">Hosted MCP server</div>
-            <div className="dm-url"><span>spotcheck.dev/mcp/stripe</span><span className="dm-copy">copy</span></div>
+            <div className="dm-url"><span>{host}/mcp/stripe</span><span className="dm-copy">copy</span></div>
             <div className="dm-hint">Drop into Claude · Cursor · Copilot</div>
             <div className="dm-score">
               <span className="dm-score-label">Agent-Ready</span>

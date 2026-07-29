@@ -3,6 +3,7 @@ import { dbReady, getDb } from '@/lib/db';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { billingReady, getStripe } from '@/lib/stripe';
+import { appOrigin } from '@/lib/origin';
 
 export const maxDuration = 30;
 
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
   }
 
   const stripe = getStripe();
-  const origin = process.env.PUBLIC_APP_ORIGIN?.replace(/\/$/, '') || new URL(req.url).origin;
+  const origin = appOrigin(req);
   const session = await stripe.billingPortal.sessions.create({
     customer: org.stripeCustomerId,
     return_url: `${origin}/dashboard`,
