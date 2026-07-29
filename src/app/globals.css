@@ -1,10 +1,34 @@
-/* Token-aligned with the landing site (src/styles/tokens.css):
-   "CALIBRATED" — gunmetal + calibration cyan; green is earned.
-   Instrument Sans (display) + Geist (UI) + JetBrains Mono (labels/code). */
+/* "FIELD REPORT" — a printed calibration certificate with the instrument's own
+   screen pasted into it. Fraunces (display) + Public Sans (UI) + Azeret Mono
+   (measurements).
+
+   The palette carries one rule, and it is the product's thesis in colour:
+
+     PAPER states a claim.  An INSTRUMENT PANEL shows a measurement.
+     The STAMP is only ever applied where a verification actually passed.
+
+   Concretely, and enforced in review:
+     --stamp     verification marks only — the stamp, a verified badge, the
+                 word "verified". NEVER nav, buttons, borders, feature ticks.
+     --phosphor  inside .inst panels only. It means "this reading came back
+                 good", so it may not appear on paper, where nothing is proven.
+     --measure   the interactive/annotation channel: links, focus, dimension
+                 lines, tick strips. This is the colour that is safe to reach
+                 for; the two above are not.
+
+   Replaces CALIBRATED (gunmetal + cyan, green-is-earned). Same discipline,
+   different substrate: the earned colour is now an ink stamp, and the dark
+   panels are where the app's own aesthetic surfaces inside the document. */
 :root {
   --font-sans: var(--font-public-sans, 'Public Sans'), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-display: var(--font-fraunces, 'Fraunces'), 'Iowan Old Style', Georgia, serif;
   --font-mono: var(--font-azeret-mono, 'Azeret Mono'), ui-monospace, SFMono-Regular, monospace;
+
+  /* ---- PRODUCT SURFACES ------------------------------------------------
+     Every signed-in and product surface (/app, /pricing, /dashboard,
+     /apis/*, /p/*) renders on this dark substrate, unchanged. The landing
+     document remaps these same names to paper further down, which is why
+     the shared header, footer, buttons and forms need no landing variants. */
 
   /* surfaces — cool gunmetal */
   --bg: #05080a;
@@ -47,6 +71,78 @@
   --maxw-nav: 1180px;
   --maxw-landing: 1180px;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- FIELD REPORT ----------------------------------------------------
+     The landing document's own palette. Always defined so components can
+     name colours semantically (--stamp, --phosphor) rather than relying on
+     whichever substrate happens to be active. */
+
+  /* substrate — warm stock */
+  --paper: #f2efe6;
+  --paper-2: #eae5d8;   /* alternating band, inset well */
+  --paper-3: #e0dacb;   /* pressed edge, table rules */
+
+  /* ink */
+  --ink: #16130f;
+  --ink-2: #4a443c;     /* secondary running text */
+  --ink-3: #7d766a;     /* captions and mono labels; 4.6:1 on --paper */
+  --rule: rgba(22, 19, 15, 0.14);
+  --rule-soft: rgba(22, 19, 15, 0.07);
+
+  /* channels */
+  --measure: #1c4a7a;   /* prussian — the safe interactive/annotation colour */
+  --measure-2: #2e6aa6;
+  --measure-fill: rgba(28, 74, 122, 0.09);
+  --stamp: #c2402b;     /* vermillion — EARNED. verification marks only. */
+  --stamp-fill: rgba(194, 64, 43, 0.09);
+  --drift: #a8791f;     /* ochre — caught drift */
+  --drift-fill: rgba(168, 121, 31, 0.1);
+
+  /* instrument — the dark panels set into the paper */
+  --inst: #0b0d0c;
+  --inst-2: #141817;
+  --inst-ink: #e6e4dd;
+  --inst-dim: #8b9490;
+  --inst-rule: rgba(230, 228, 221, 0.11);
+  --phosphor: #6fe3a8;  /* inside .inst only: a reading that came back good */
+}
+
+/* The landing document repoints the substrate tokens at paper. Scoped with
+   :has() on the page wrapper rather than a body class so it needs no JS and
+   no route detection, and so a product page can never pick it up by accident.
+   Everything the shared chrome styles — header, footer, .btn, inputs, focus —
+   reads these names, so it adapts here for free. */
+html:has(.report-page) {
+  color-scheme: light;
+
+  --bg: var(--paper);
+  --bg-soft: var(--paper-2);
+  --panel: var(--paper);
+
+  --fg: var(--ink);
+  --fg-dim: var(--ink-2);
+  --fg-mute: var(--ink-3);
+
+  --accent: var(--measure);
+  --accent-soft: var(--measure-2);
+  --accent-blue: var(--measure);
+  --accent-red: var(--stamp);
+  --accent-green: var(--stamp);   /* nothing on paper is "ok" — it is stamped */
+  --ok: var(--stamp);
+  --warn: var(--drift);
+
+  --accent-fill: var(--measure-fill);
+  --ok-fill: var(--stamp-fill);
+  --warn-fill: var(--drift-fill);
+  --danger-fill: var(--stamp-fill);
+  --glow-ok: transparent;         /* ink does not glow */
+
+  --hair: var(--rule);
+  --hair-soft: var(--rule-soft);
+  --edge-light: rgba(255, 253, 247, 0.6);  /* paper catches light, not sheen */
+
+  --focus-ring: var(--measure);
+  --selection-bg: rgba(28, 74, 122, 0.18);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
