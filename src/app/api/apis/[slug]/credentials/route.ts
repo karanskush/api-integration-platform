@@ -14,7 +14,7 @@ const WRITE_LIMIT = { limit: 20, windowSec: 600 };
 const ENVIRONMENTS = ['production', 'sandbox'] as const;
 
 // Vaulted upstream credentials for one API (Team+). BYOK stays the default
-// everywhere; this is the opt-in for teams that would rather Spotcheck hold the
+// everywhere; this is the opt-in for teams that would rather DocentAPI hold the
 // key than paste it into every agent config.
 //
 // GET returns metadata only — fingerprint, hint, versions, timestamps. There is
@@ -25,7 +25,7 @@ const ENVIRONMENTS = ['production', 'sandbox'] as const;
 
 function notConfigured(): Response {
   return Response.json(
-    { error: 'The credential vault is not configured — set SPOTCHECK_MASTER_KEY and redeploy' },
+    { error: 'The credential vault is not configured — set DOCENTAPI_MASTER_KEY and redeploy' },
     { status: 503 },
   );
 }

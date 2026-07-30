@@ -39,7 +39,7 @@ const FAVICON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308080c'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%237a5cff' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%237a5cff'/%3E%3C/svg%3E";
 
 export const metadata: Metadata = {
-  title: 'Spotcheck — your API, agent-ready in 60 seconds',
+  title: 'DocentAPI — your API, agent-ready in 60 seconds',
   description:
     'Paste an OpenAPI spec, Postman collection, or cURL command. Get a live integration page, a BYOK playground, and a hosted MCP server.',
   icons: { icon: FAVICON },
@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="header-inner">
             <a className="brand" href="/">
               <span className="brand-mark" aria-hidden="true" />
-              Spotcheck
+              DocentAPI
             </a>
             <nav className="site-nav" aria-label="Primary">
               <a className="nav-link" href="/#how">
@@ -102,10 +102,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="site-main">{children}</main>
         <footer className="site-footer">
           <div className="footer-inner">
-            <span>Spotcheck · behavior-verified API integration</span>
+            <span>DocentAPI · behavior-verified API integration</span>
             <span className="footer-links">
               <a href="https://github.com/karanskush/api-integration-platform">GitHub</a>
-              <a href="mailto:hello@spotcheck.dev">Contact</a>
+              <a href="mailto:hello@docentapi.dev">Contact</a>
             </span>
           </div>
         </footer>

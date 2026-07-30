@@ -1,4 +1,4 @@
-# Spotcheck — Technical Implementation Plan
+# DocentAPI — Technical Implementation Plan
 
 > **Scope.** This document specifies the **product platform** — the thing the landing page sells. The repo now contains both the static marketing site (Vite + Three.js) and a Phase 0-style Next.js app workspace under `app/` with importer, playground, MCP, SSRF guard, and ephemeral storage primitives. Treat this document as the architecture roadmap that keeps the current `app/` slice pointed at the larger product.
 >
@@ -11,7 +11,7 @@
 One import (OpenAPI / Postman / cURL) produces two surfaces from a single normalized intermediate representation:
 
 - **For humans:** a public, claimable integration page with a BYOK playground.
-- **For agents:** a hosted MCP server at `mcp.spotcheck.dev/{slug}`.
+- **For agents:** a hosted MCP server at `mcp.docentapi.dev/{slug}`.
 
 Plus the proof layer that differentiates us from transpilers (Speakeasy, Stainless, Mintlify): **runtime verification** → the **Agent-Ready Score** (0–100), an embeddable badge, and CI sync so drift never ships.
 
@@ -30,7 +30,7 @@ Adoption physics the architecture must serve:
 | Database | **Neon Postgres + Drizzle ORM** | Structured orgs/apis/actions/scores; branching for preview envs |
 | Queue / jobs | **Upstash QStash + Redis** | Import parsing, probe runs, scheduled re-verification; Redis for rate limits + credit counters |
 | Object storage | **Vercel Blob** | Spec snapshots (versioned by content hash), rendered badge SVGs, log exports |
-| MCP hosting | **One multi-tenant handler** at `mcp.spotcheck.dev/[slug]` using `mcp-handler` (Streamable HTTP transport) | No per-customer infra; endpoint tools and advisor tools resolved from the stored model by slug |
+| MCP hosting | **One multi-tenant handler** at `mcp.docentapi.dev/[slug]` using `mcp-handler` (Streamable HTTP transport) | No per-customer infra; endpoint tools and advisor tools resolved from the stored model by slug |
 | Secrets | **KMS envelope encryption** (AWS KMS or equivalent) for vaulted credentials | Per-org data keys; plaintext never at rest, never in logs |
 | Billing | **Stripe** (subscriptions + metered MCP credits) | Self-serve; usage records from the credit counter |
 | Auth | Email magic link + GitHub OAuth (GitHub identity doubles as claim evidence for repos) | |
@@ -80,14 +80,14 @@ type Action = {
 
 1. **Importer/parser** — OpenAPI 3.x + Swagger 2 (via `@readme/openapi-parser`), Postman collections, cURL paste (heuristic parse). Fetch runs in a queue job with SSRF guards (§5). Output: `spec_versions` row (blob ref + content hash) → normalizer.
 2. **Action normalizer** — endpoints → `Action[]`: snake_case tool names from `operationId`/path, description cleanup (optional LLM pass, credit-metered), safety classification (GET=read; DELETE/prod-money-movement=destructive, excluded from MCP by default until owner opts in).
-3. **Integration page renderer** — `spotcheck.dev/{slug}`, ISR with tag revalidation on re-import. Sections: overview, auth guide, action list with schemas + snippets (curl/TS/Python), playground, score panel, "claim this page" banner on unclaimed pages, Spotcheck badge watermark on Free.
-4. **BYOK playground** — client component. Key lives in memory/`sessionStorage` only. Calls go through a thin CORS proxy (`/api/proxy`) that streams request/response, **injects nothing, persists nothing** — the visitor's key rides a pass-through header. Proxy allowlists the API's registered base URLs only. When CORS permits, direct browser-to-upstream mode is preferred so the key never traverses Spotcheck infrastructure at all.
-5. **Hosted MCP server** — `mcp.spotcheck.dev/{slug}`: exposes two tool classes. **Endpoint tools** come from `Action[]` (safety-filtered) and execute against the upstream API. **Advisor tools** answer integration questions from the evidence graph and materialized facts: call sequence, auth requirements, common errors, score explanation, and drift risk. Auth resolution order for executable endpoint tools: caller-supplied header (BYOK pass-through) → org vaulted credential (Team+, if the caller is authorized) → unauthenticated. Per-call credit metering in Redis (`INCR` + plan ceilings), per-IP and per-slug rate limits.
-6. **Evidence graph** — append-only facts that explain why Spotcheck believes something: static spec facts, parser warnings, live probe observations, schema diffs, error observations, auth findings, human corrections, and CI sync deltas. Every fact carries source, environment, timestamp, confidence, and redaction status. Scores and MCP advisor tools read this graph; they do not invent conclusions directly from raw logs.
+3. **Integration page renderer** — `docentapi.dev/{slug}`, ISR with tag revalidation on re-import. Sections: overview, auth guide, action list with schemas + snippets (curl/TS/Python), playground, score panel, "claim this page" banner on unclaimed pages, DocentAPI badge watermark on Free.
+4. **BYOK playground** — client component. Key lives in memory/`sessionStorage` only. Calls go through a thin CORS proxy (`/api/proxy`) that streams request/response, **injects nothing, persists nothing** — the visitor's key rides a pass-through header. Proxy allowlists the API's registered base URLs only. When CORS permits, direct browser-to-upstream mode is preferred so the key never traverses DocentAPI infrastructure at all.
+5. **Hosted MCP server** — `mcp.docentapi.dev/{slug}`: exposes two tool classes. **Endpoint tools** come from `Action[]` (safety-filtered) and execute against the upstream API. **Advisor tools** answer integration questions from the evidence graph and materialized facts: call sequence, auth requirements, common errors, score explanation, and drift risk. Auth resolution order for executable endpoint tools: caller-supplied header (BYOK pass-through) → org vaulted credential (Team+, if the caller is authorized) → unauthenticated. Per-call credit metering in Redis (`INCR` + plan ceilings), per-IP and per-slug rate limits.
+6. **Evidence graph** — append-only facts that explain why DocentAPI believes something: static spec facts, parser warnings, live probe observations, schema diffs, error observations, auth findings, human corrections, and CI sync deltas. Every fact carries source, environment, timestamp, confidence, and redaction status. Scores and MCP advisor tools read this graph; they do not invent conclusions directly from raw logs.
 7. **Agent-Ready Score engine** *(inherits L2 spec ideas)* — before live probing exists, a cheap `scorePreview` runs static checks: auth discoverability, server URL validity, unsafe action count, missing response schemas, missing error schemas, and tool-name quality. Full score runs execute a sampled subset of read-safe actions (writes only in sandbox or with owner opt-in) and grade four sub-scores, weighted to 0–100: **Auth clarity** (is auth discoverable/satisfiable from the spec alone?), **Error quality** (do 4xx bodies explain themselves?), **Doc drift** (response shape vs spec, field-by-field), **Idempotency** (retry safety on writes, sandbox only). Scores cached in `scores`; each score stores an explanation bundle pointing to the evidence that moved it. Re-run on schedule (plan-gated cadence), CI trigger, or manual.
 8. **Claim flow** — prove ownership of an unclaimed public page via DNS TXT record, `<meta>` tag on the API's docs domain, or matching email domain. Claim converts the page to owner-managed and starts the upgrade funnel.
-9. **Badge** — `spotcheck.dev/badge/{slug}.svg`, edge-rendered from the cached score, cache-tagged and revalidated on score change. The badge links to the page and its score explanation: every README that embeds it is inbound distribution plus audit trail.
-10. **GitHub Action** — `spotcheck/sync@v1`: on push to the spec path, POST signed payload to `/api/ci/sync` → re-import, re-verify, re-render, badge revalidate. Optional `fail-below: 80` turns the score into a CI gate.
+9. **Badge** — `docentapi.dev/badge/{slug}.svg`, edge-rendered from the cached score, cache-tagged and revalidated on score change. The badge links to the page and its score explanation: every README that embeds it is inbound distribution plus audit trail.
+10. **GitHub Action** — `docentapi/sync@v1`: on push to the spec path, POST signed payload to `/api/ci/sync` → re-import, re-verify, re-render, badge revalidate. Optional `fail-below: 80` turns the score into a CI gate.
 11. **Analytics** — per-action call counts (human vs agent), failure classes, drift events, page traffic. Pro+ dashboard; also powers the "agents fumble X" claim-outreach emails.
 
 ### MCP tool strategy
@@ -171,7 +171,7 @@ waitlist       id, email, source, created_at
 | "auth detected · bearer" | Normalizer auth detection | 0 |
 | "38 tools normalized · unsafe ops flagged" | Normalizer safety classification | 0 |
 | Mini playground with 200 response | BYOK playground + proxy | 0 |
-| `mcp.spotcheck.dev/stripe` mints | Multi-tenant MCP handler | 0 (BYOK) / 1 (metered) |
+| `mcp.docentapi.dev/stripe` mints | Multi-tenant MCP handler | 0 (BYOK) / 1 (metered) |
 | Score counts to 87 | Score engine | 2 |
 | "Get early access" waitlist | `waitlist` table — set `data-endpoint` on `#cta-form` in `index.html`; the handler in `src/main.js` already POSTs `{email}` as JSON | 1 |
 

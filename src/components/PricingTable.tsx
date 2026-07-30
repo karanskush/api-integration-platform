@@ -37,7 +37,7 @@ const TIERS: Tier[] = [
     name: 'Pro',
     price: 79,
     blurb: "For the API that's becoming a product.",
-    features: ['Up to 10 APIs', 'Usage analytics: humans + agents', 'Priority import + re-verify', 'Remove Spotcheck branding'],
+    features: ['Up to 10 APIs', 'Usage analytics: humans + agents', 'Priority import + re-verify', 'Remove DocentAPI branding'],
     selfServe: true,
     featured: true,
   },
@@ -72,7 +72,7 @@ export default function PricingTable() {
     // custom domain, SLA/audit — don't exist until Phase 3), so route to
     // a contact form instead of selling something that doesn't work.
     if (!tier.selfServe) {
-      window.location.href = `mailto:hello@spotcheck.dev?subject=${encodeURIComponent(`${tier.name} plan`)}`;
+      window.location.href = `mailto:hello@docentapi.dev?subject=${encodeURIComponent(`${tier.name} plan`)}`;
       return;
     }
     setBusyKey(tier.key);

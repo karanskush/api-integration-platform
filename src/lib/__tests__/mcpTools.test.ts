@@ -48,7 +48,7 @@ describe('callActionTool', () => {
     const result = await callActionTool(a, {}, target, undefined);
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe(
-      'This API requires bearer auth. Supply your key via the x-spotcheck-upstream-key header (or ?key= in the server URL). Spotcheck never stores it.',
+      'This API requires bearer auth. Supply your key via the x-docentapi-upstream-key header (or ?key= in the server URL). DocentAPI never stores it.',
     );
   });
 
@@ -102,20 +102,20 @@ describe('resolveNameCollisions', () => {
   });
 
   it('suffixes an operation whose name collides with an advisor tool', () => {
-    const a = action({ id: 'coll-2', name: 'spotcheck_search_endpoints' });
-    expect(resolveNameCollisions([a])[0].name).toBe('spotcheck_search_endpoints_api');
+    const a = action({ id: 'coll-2', name: 'docentapi_search_endpoints' });
+    expect(resolveNameCollisions([a])[0].name).toBe('docentapi_search_endpoints_api');
   });
 
   it('resolves every advisor-tool-shaped name in the same list', () => {
     const actions = [
       action({ id: 'coll-3a', name: 'get_pet' }),
-      action({ id: 'coll-3b', name: 'spotcheck_trace_field' }),
-      action({ id: 'coll-3c', name: 'spotcheck_get_call_sequence' }),
+      action({ id: 'coll-3b', name: 'docentapi_trace_field' }),
+      action({ id: 'coll-3c', name: 'docentapi_get_call_sequence' }),
     ];
     expect(resolveNameCollisions(actions).map((a) => a.name)).toEqual([
       'get_pet',
-      'spotcheck_trace_field_api',
-      'spotcheck_get_call_sequence_api',
+      'docentapi_trace_field_api',
+      'docentapi_get_call_sequence_api',
     ]);
   });
 
@@ -124,21 +124,21 @@ describe('resolveNameCollisions', () => {
   // becomes invisible everywhere — not just uncallable, which is the intended
   // behaviour — because the advisor layer would never see it under any name.
   it('renames a colliding action regardless of its safety class', () => {
-    const a = action({ id: 'coll-4', name: 'spotcheck_explain_error', safety: 'destructive' });
+    const a = action({ id: 'coll-4', name: 'docentapi_explain_error', safety: 'destructive' });
     const [renamed] = resolveNameCollisions([a]);
-    expect(renamed.name).toBe('spotcheck_explain_error_api');
+    expect(renamed.name).toBe('docentapi_explain_error_api');
     expect(renamed.safety).toBe('destructive');
   });
 
   it('does not mutate the input actions', () => {
-    const a = action({ id: 'coll-5', name: 'spotcheck_search_endpoints' });
+    const a = action({ id: 'coll-5', name: 'docentapi_search_endpoints' });
     const [renamed] = resolveNameCollisions([a]);
-    expect(a.name).toBe('spotcheck_search_endpoints');
+    expect(a.name).toBe('docentapi_search_endpoints');
     expect(renamed).not.toBe(a);
   });
 
   it('preserves every other field on a renamed action', () => {
-    const a = action({ id: 'coll-6', name: 'spotcheck_describe_fields', method: 'POST', path: '/x', description: 'd' });
+    const a = action({ id: 'coll-6', name: 'docentapi_describe_fields', method: 'POST', path: '/x', description: 'd' });
     const [renamed] = resolveNameCollisions([a]);
     expect(renamed).toMatchObject({ id: 'coll-6', method: 'POST', path: '/x', description: 'd' });
   });

@@ -9,7 +9,7 @@ function schemaRows(schema: JSONSchema): Row[] {
   const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
   return Object.entries(props).map(([name, p]) => ({
     name,
-    where: String(p['x-spotcheck-in'] ?? 'query'),
+    where: String(p['x-docentapi-in'] ?? 'query'),
     type: Array.isArray(p.type) ? p.type.join(' | ') : String(p.type ?? 'any'),
     required: required.has(name),
     description: String(p.description ?? ''),

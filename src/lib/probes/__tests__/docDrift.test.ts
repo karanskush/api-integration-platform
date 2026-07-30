@@ -13,7 +13,7 @@ function action(overrides: Partial<Action> = {}): Action {
     path: '/things/{id}',
     paramsSchema: {
       type: 'object',
-      properties: { id: { type: 'string', 'x-spotcheck-in': 'path' } },
+      properties: { id: { type: 'string', 'x-docentapi-in': 'path' } },
       required: ['id'],
     },
     auth: 'none',

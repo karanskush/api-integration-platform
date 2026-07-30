@@ -234,7 +234,7 @@ function cleanDescription(op: OASOperation, method: string, path: string): strin
 // POST /pet/{petId}/uploadImage declares ONLY application/octet-stream with
 // {type: string, format: binary}; calling that "JSON request body" is a factual
 // error, and the deep-analysis pass duly raised it as a clarification for a
-// human to answer — a question Spotcheck manufactured for itself.
+// human to answer — a question DocentAPI manufactured for itself.
 function describeBody(mediaType: string, schema: Record<string, unknown>): string {
   if (isJsonMediaType(mediaType)) return 'JSON request body';
   if (mediaType === 'application/x-www-form-urlencoded') return 'Form-encoded request body';
@@ -299,7 +299,7 @@ function buildParamsSchema(
 
     const schema = sanitizeSchema(p.schema ?? (p.type ? { type: p.type } : {}));
     if (p.description && !schema.description) schema.description = p.description.slice(0, 300);
-    schema['x-spotcheck-in'] = p.in;
+    schema['x-docentapi-in'] = p.in;
     properties[p.name!] = schema;
     if (p.in === 'path' || p.required) required.push(p.name!);
 
@@ -315,13 +315,13 @@ function buildParamsSchema(
     const media = mediaType ? content[mediaType] : undefined;
     if (media && mediaType) {
       const bodySchema = sanitizeSchema((media.schema as Record<string, unknown>) ?? {});
-      bodySchema['x-spotcheck-in'] = 'body';
-      // Same vendor-annotation convention as x-spotcheck-in above, and carried
+      bodySchema['x-docentapi-in'] = 'body';
+      // Same vendor-annotation convention as x-docentapi-in above, and carried
       // on the schema rather than promoted to Action so ir.ts, the actions table
       // projection, persistentApi.ts's toAction() and every fixture stay
       // unchanged. upstream.ts and snippets.ts read it to send the right
       // Content-Type instead of hardcoding JSON.
-      bodySchema['x-spotcheck-content-type'] = mediaType;
+      bodySchema['x-docentapi-content-type'] = mediaType;
       if (!bodySchema.description) {
         bodySchema.description = describeBody(mediaType, bodySchema);
       }

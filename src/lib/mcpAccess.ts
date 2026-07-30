@@ -22,7 +22,7 @@
 
 import { deriveKey, hmacHex, secretsEqual } from './keys';
 
-export const MCP_ACCESS_HEADER = 'x-spotcheck-access-token';
+export const MCP_ACCESS_HEADER = 'x-docentapi-access-token';
 const TOKEN_PREFIX = 'spck_mcp_';
 
 export function mcpAccessTokenFor(orgId: string, version: number): string {

@@ -31,7 +31,7 @@ export type EvidenceKind =
   | 'llm.doc_grounding'
   | 'llm.field_semantics'
   // The LLM's disagreement with a structural lineage edge. Deliberately NOT a
-  // clarification: it is a claim about Spotcheck's own heuristics, which an API
+  // clarification: it is a claim about DocentAPI's own heuristics, which an API
   // owner has no way to adjudicate. Recording it downgrades the edge at the
   // artifact boundary; it never becomes a question.
   | 'llm.lineage_dispute'

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import AnalyzeForm from '@/components/AnalyzeForm';
 
-export const metadata: Metadata = { title: 'Deep analysis — Spotcheck' };
+export const metadata: Metadata = { title: 'Deep analysis — DocentAPI' };
 
 // Same clerkReady()/hard-redirect gate as dashboard/page.tsx — this page
 // requires a real account from the first request (see /api/apis/analyze's

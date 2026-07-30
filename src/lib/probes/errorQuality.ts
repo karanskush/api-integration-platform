@@ -5,7 +5,7 @@ import type { ProbeContext, ProbeOutcome } from './types';
 
 const FULL = 25;
 const SAMPLE_LIMIT = 2;
-const BAD_VALUE = '__spotcheck_invalid__';
+const BAD_VALUE = '__docentapi_invalid__';
 const MESSAGE_KEY = /^(message|error|detail)$/i;
 
 // Drops one required param (so the upstream has to reject a genuinely
@@ -28,7 +28,7 @@ function corrupt(action: Action): Record<string, unknown> | null {
   }
 
   const props = (action.paramsSchema.properties ?? {}) as Record<string, Record<string, unknown>>;
-  const pathKey = Object.keys(props).find((k) => props[k]?.['x-spotcheck-in'] === 'path' && k in params);
+  const pathKey = Object.keys(props).find((k) => props[k]?.['x-docentapi-in'] === 'path' && k in params);
   if (pathKey) {
     params[pathKey] = BAD_VALUE;
     return params;

@@ -3,10 +3,10 @@ import { badgeSvg } from '../badge';
 
 describe('badgeSvg', () => {
   it('renders the neutral unverified variant', () => {
-    const svg = badgeSvg({ label: 'spotcheck', message: 'unverified', color: '#8a8f98' });
+    const svg = badgeSvg({ label: 'docentapi', message: 'unverified', color: '#8a8f98' });
     expect(svg).toContain('#8a8f98');
     expect(svg).toContain('unverified');
-    expect(svg).toContain('spotcheck');
+    expect(svg).toContain('docentapi');
     expect(svg.startsWith('<svg')).toBe(true);
   });
 

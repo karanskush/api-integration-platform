@@ -9,7 +9,7 @@ import {
   verifyCiRequest,
 } from '../ciSync';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 
 const API_ID = '11111111-1111-1111-1111-111111111111';

@@ -15,7 +15,7 @@ function action(overrides: Partial<Action> & { name: string; method: string; pat
 }
 
 function param(where: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { 'x-spotcheck-in': where, ...extra };
+  return { 'x-docentapi-in': where, ...extra };
 }
 
 function pathsOf(nodes: FieldNode[]): string[] {

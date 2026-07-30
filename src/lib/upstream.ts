@@ -33,13 +33,13 @@ export function buildUpstreamRequest(
   const query = new URLSearchParams();
   const headers: Record<string, string> = {
     accept: 'application/json, */*',
-    'user-agent': 'spotcheck-playground/0.1',
+    'user-agent': 'docentapi-playground/0.1',
   };
   let body: string | undefined;
 
   for (const [name, value] of Object.entries(args)) {
     if (value === undefined || value === null || value === '') continue;
-    const where = props[name]?.['x-spotcheck-in'] ?? 'query';
+    const where = props[name]?.['x-docentapi-in'] ?? 'query';
     switch (where) {
       case 'path':
         path = path.split(`{${name}}`).join(encodeURIComponent(String(value)));
@@ -58,7 +58,7 @@ export function buildUpstreamRequest(
         // time by normalize.ts. This was hardcoded to application/json, which
         // sent JSON to endpoints that accept none — Petstore's
         // POST /pet/{petId}/uploadImage declares only application/octet-stream.
-        const declared = String(props[name]?.['x-spotcheck-content-type'] ?? 'application/json');
+        const declared = String(props[name]?.['x-docentapi-content-type'] ?? 'application/json');
         headers['content-type'] = declared;
         if (typeof value === 'string') body = value;
         else if (declared === 'application/x-www-form-urlencoded') {

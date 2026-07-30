@@ -15,14 +15,14 @@ describe('advisor registry', () => {
   // ones, then diagnosis and codegen.
   it('exposes exactly the expected tool set, in order', () => {
     expect(ADVISOR_TOOLS.map((t) => t.name)).toEqual([
-      'spotcheck_search_endpoints',
-      'spotcheck_get_endpoint_schema',
-      'spotcheck_describe_fields',
-      'spotcheck_trace_field',
-      'spotcheck_get_call_sequence',
-      'spotcheck_explain_error',
-      'spotcheck_get_score_explanation',
-      'spotcheck_generate_contract_test',
+      'docentapi_search_endpoints',
+      'docentapi_get_endpoint_schema',
+      'docentapi_describe_fields',
+      'docentapi_trace_field',
+      'docentapi_get_call_sequence',
+      'docentapi_explain_error',
+      'docentapi_get_score_explanation',
+      'docentapi_generate_contract_test',
     ]);
   });
 
@@ -49,55 +49,55 @@ describe('advisor registry', () => {
 
   it('declares required arguments for the tools that need one', () => {
     const byName = new Map(ADVISOR_TOOLS.map((t) => [t.name, t]));
-    expect(byName.get('spotcheck_get_endpoint_schema')?.inputSchema.required).toEqual(['tool']);
-    expect(byName.get('spotcheck_get_call_sequence')?.inputSchema.required).toEqual(['tool']);
-    expect(byName.get('spotcheck_explain_error')?.inputSchema.required).toEqual(['status']);
-    expect(byName.get('spotcheck_generate_contract_test')?.inputSchema.required).toEqual(['tool']);
-    expect(byName.get('spotcheck_describe_fields')?.inputSchema.required).toEqual(['tool']);
-    expect(byName.get('spotcheck_trace_field')?.inputSchema.required).toEqual(['field']);
-    expect(byName.get('spotcheck_search_endpoints')?.inputSchema.required).toBeUndefined();
-    expect(byName.get('spotcheck_get_score_explanation')?.inputSchema.required).toBeUndefined();
+    expect(byName.get('docentapi_get_endpoint_schema')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('docentapi_get_call_sequence')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('docentapi_explain_error')?.inputSchema.required).toEqual(['status']);
+    expect(byName.get('docentapi_generate_contract_test')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('docentapi_describe_fields')?.inputSchema.required).toEqual(['tool']);
+    expect(byName.get('docentapi_trace_field')?.inputSchema.required).toEqual(['field']);
+    expect(byName.get('docentapi_search_endpoints')?.inputSchema.required).toBeUndefined();
+    expect(byName.get('docentapi_get_score_explanation')?.inputSchema.required).toBeUndefined();
   });
 
   it('recognises its own tool names and nothing else', () => {
-    expect(isAdvisorTool('spotcheck_search_endpoints')).toBe(true);
+    expect(isAdvisorTool('docentapi_search_endpoints')).toBe(true);
     expect(isAdvisorTool('search_endpoints')).toBe(false);
     expect(isAdvisorTool('get_pet')).toBe(false);
-    expect(isAdvisorTool('spotcheck_made_up')).toBe(false);
+    expect(isAdvisorTool('docentapi_made_up')).toBe(false);
   });
 });
 
 describe('callAdvisorTool', () => {
   it('dispatches each registered tool to a real result', () => {
-    expect(payload('spotcheck_search_endpoints', { query: 'pet' }).data.results).toBeDefined();
-    expect(payload('spotcheck_get_endpoint_schema', { tool: 'get_pet' }).data.parameters).toBeDefined();
-    expect(payload('spotcheck_get_call_sequence', { tool: 'get_pet' }).data.steps).toBeDefined();
-    expect(payload('spotcheck_explain_error', { status: 429 }).data.retryable).toBe(true);
-    expect(payload('spotcheck_get_score_explanation').data.total).toBeTypeOf('number');
-    expect(payload('spotcheck_generate_contract_test', { tool: 'get_pet' }).data.source).toBeTypeOf('string');
-    expect(payload('spotcheck_describe_fields', { tool: 'create_pet' }).data.request).toBeDefined();
-    expect(payload('spotcheck_trace_field', { field: 'petId' }).data.results).toBeDefined();
+    expect(payload('docentapi_search_endpoints', { query: 'pet' }).data.results).toBeDefined();
+    expect(payload('docentapi_get_endpoint_schema', { tool: 'get_pet' }).data.parameters).toBeDefined();
+    expect(payload('docentapi_get_call_sequence', { tool: 'get_pet' }).data.steps).toBeDefined();
+    expect(payload('docentapi_explain_error', { status: 429 }).data.retryable).toBe(true);
+    expect(payload('docentapi_get_score_explanation').data.total).toBeTypeOf('number');
+    expect(payload('docentapi_generate_contract_test', { tool: 'get_pet' }).data.source).toBeTypeOf('string');
+    expect(payload('docentapi_describe_fields', { tool: 'create_pet' }).data.request).toBeDefined();
+    expect(payload('docentapi_trace_field', { field: 'petId' }).data.results).toBeDefined();
   });
 
   it('returns machine-parseable JSON, not prose', () => {
-    const { outcome } = payload('spotcheck_search_endpoints', { query: 'pet' });
+    const { outcome } = payload('docentapi_search_endpoints', { query: 'pet' });
     expect(outcome.content).toHaveLength(1);
     expect(outcome.content[0].type).toBe('text');
     expect(() => JSON.parse(outcome.content[0].text)).not.toThrow();
   });
 
   it('flags an argument error as isError rather than a silent empty result', () => {
-    const { outcome, data } = payload('spotcheck_get_endpoint_schema', {});
+    const { outcome, data } = payload('docentapi_get_endpoint_schema', {});
     expect(outcome.isError).toBe(true);
     expect(data.error).toContain('tool is required');
   });
 
   it('does not flag a successful call as an error', () => {
-    expect(payload('spotcheck_search_endpoints', { query: 'pet' }).outcome.isError).toBe(false);
+    expect(payload('docentapi_search_endpoints', { query: 'pet' }).outcome.isError).toBe(false);
   });
 
   it('reports an unknown advisor tool instead of throwing', () => {
-    const { outcome, data } = payload('spotcheck_not_a_tool');
+    const { outcome, data } = payload('docentapi_not_a_tool');
     expect(outcome.isError).toBe(true);
     expect(data.error).toContain('Unknown advisor tool');
   });

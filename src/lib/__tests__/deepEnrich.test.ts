@@ -45,7 +45,7 @@ function record(): ImportRecord {
         required: ['body'],
         properties: {
           body: {
-            'x-spotcheck-in': 'body',
+            'x-docentapi-in': 'body',
             type: 'object',
             required: ['customerId', 'currency', 'discountCode'],
             properties: {
@@ -146,7 +146,7 @@ describe('enrichRecord question containment', () => {
     const internal = [
       'knownProducers for body.id list tag ids too. Is this heuristic noise?',
       'Is the lineage confidence score for this field intentional?',
-      'Should Spotcheck treat these as interchangeable?',
+      'Should DocentAPI treat these as interchangeable?',
       'Why did the structural heuristic pick this producer?',
     ];
     const result = await enrichRecord({

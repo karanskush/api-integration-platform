@@ -20,10 +20,10 @@ type ClaimMethod = 'dns' | 'meta' | 'email';
 
 function instructionsFor(method: ClaimMethod, domain: string, token: string): string {
   if (method === 'dns') {
-    return `Add a TXT record named "_spotcheck-verify.${domain}" with the value "${token}", then come back and verify.`;
+    return `Add a TXT record named "_docentapi-verify.${domain}" with the value "${token}", then come back and verify.`;
   }
   if (method === 'meta') {
-    return `Add <meta name="spotcheck-verification" content="${token}"> to the <head> of https://${domain}/, then come back and verify.`;
+    return `Add <meta name="docentapi-verification" content="${token}"> to the <head> of https://${domain}/, then come back and verify.`;
   }
   return `We'll verify this against your signed-in account's email domain — no action needed, just click verify.`;
 }

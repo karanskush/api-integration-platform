@@ -1,5 +1,5 @@
 // Domain-ownership verification for claiming an existing unclaimed API page
-// (Spotcheck-seeded or created by another user) — distinct from
+// (DocentAPI-seeded or created by another user) — distinct from
 // api/apis/claim/route.ts, which claims a fresh ephemeral import into the
 // caller's own account and never touches this file.
 
@@ -27,7 +27,7 @@ export async function verifyDnsClaim(
   resolveTxt: DnsResolver = defaultResolver,
 ): Promise<boolean> {
   try {
-    const records = await resolveTxt(`_spotcheck-verify.${domain}`);
+    const records = await resolveTxt(`_docentapi-verify.${domain}`);
     return records.some((record) => record.includes(token));
   } catch {
     return false;
@@ -40,7 +40,7 @@ type FetchImpl = typeof safeFetch;
 // not a full HTML parser, just a per-tag substring check.
 function hasVerificationMetaTag(html: string, token: string): boolean {
   const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const nameAttr = /name\s*=\s*["']spotcheck-verification["']/i;
+  const nameAttr = /name\s*=\s*["']docentapi-verification["']/i;
   const contentAttr = new RegExp(`content\\s*=\\s*["']${escapedToken}["']`, 'i');
   for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
     const tag = match[0];

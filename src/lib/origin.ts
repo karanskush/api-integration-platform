@@ -4,7 +4,7 @@
 // different shapes — some falling back to the request origin, some to
 // localhost, and each re-deciding how to strip a trailing slash. That is fine
 // until the marketing copy needs the same answer: a landing page that names a
-// hostname is making a claim, and it was naming `spotcheck.dev` while the app
+// hostname is making a claim, and it was naming `docentapi.dev` while the app
 // served from somewhere else.
 //
 // One implementation, three call shapes, and the copy can now be as true as
@@ -32,7 +32,7 @@ export function appOrigin(req?: Request): string {
 }
 
 /**
- * The bare host, for prose. `https://spotcheck.dev/` -> `spotcheck.dev`.
+ * The bare host, for prose. `https://docentapi.dev/` -> `docentapi.dev`.
  *
  * Copy that shows a URL reads better without the scheme, and the landing page
  * renders it in a dimmed span rather than as part of the sentence.

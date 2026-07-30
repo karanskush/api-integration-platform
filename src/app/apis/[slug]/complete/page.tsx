@@ -12,7 +12,7 @@ const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  return { title: `Finish setting up — ${slug} — Spotcheck` };
+  return { title: `Finish setting up — ${slug} — DocentAPI` };
 }
 
 // The clarification email's landing page. Reachable two ways: the signed

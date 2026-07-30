@@ -68,7 +68,7 @@ export async function collectDailyUsage(db: Db, start: Date, end: Date): Promise
 
 // Deterministic per (org, day): the dedupe key that makes a retry safe.
 export function usageEventIdentifier(orgId: string, day: string): string {
-  return `spotcheck-usage-${orgId}-${day}`;
+  return `docentapi-usage-${orgId}-${day}`;
 }
 
 export type ReportOutcome = {

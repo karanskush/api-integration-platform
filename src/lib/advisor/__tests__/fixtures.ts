@@ -22,13 +22,13 @@ export function action(overrides: ActionOverrides): Action {
   } as Action;
 }
 
-// Property carrying the normalizer's 'x-spotcheck-in' annotation (see ir.ts).
+// Property carrying the normalizer's 'x-docentapi-in' annotation (see ir.ts).
 export function param(
   where: 'path' | 'query' | 'header' | 'body',
   type = 'string',
   extra: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return { type, 'x-spotcheck-in': where, ...extra };
+  return { type, 'x-docentapi-in': where, ...extra };
 }
 
 export function record(overrides: Partial<ImportRecord> = {}): ImportRecord {

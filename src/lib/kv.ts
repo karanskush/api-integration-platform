@@ -16,10 +16,10 @@ export interface KV {
   addWaitlist(entry: WaitlistEntry): Promise<boolean>;
 }
 
-const IMPORT_KEY = (id: string) => `spotcheck:import:${id}`;
-const RAW_SPEC_KEY = (id: string) => `spotcheck:import:raw:${id}`;
-const WAITLIST_LIST = 'spotcheck:waitlist';
-const WAITLIST_SET = 'spotcheck:waitlist:emails';
+const IMPORT_KEY = (id: string) => `docentapi:import:${id}`;
+const RAW_SPEC_KEY = (id: string) => `docentapi:import:raw:${id}`;
+const WAITLIST_LIST = 'docentapi:waitlist';
+const WAITLIST_SET = 'docentapi:waitlist:emails';
 
 function upstashDriver(): KV {
   const redis = Redis.fromEnv();
@@ -78,9 +78,9 @@ type MemoryStore = {
 };
 
 function memoryDriver(): KV {
-  const g = globalThis as typeof globalThis & { __spotcheckKV?: MemoryStore };
+  const g = globalThis as typeof globalThis & { __docentapiKV?: MemoryStore };
   const initial: MemoryStore = { imports: new Map(), rawSpecs: new Map(), emails: new Set(), waitlist: [] };
-  const store = (g.__spotcheckKV ??= initial);
+  const store = (g.__docentapiKV ??= initial);
   const { imports, rawSpecs, emails, waitlist } = store;
 
   const prune = () => {

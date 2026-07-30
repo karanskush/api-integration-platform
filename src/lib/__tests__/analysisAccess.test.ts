@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { analysisAccessTokenFor, verifyAnalysisAccessToken } from '../analysisAccess';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 
 const API_ID = 'api-aaaa';

@@ -1,13 +1,13 @@
-// Builds an OpenAPI-shaped document from Spotcheck's own normalized model of
+// Builds an OpenAPI-shaped document from DocentAPI's own normalized model of
 // the API — NOT a byte-for-byte re-annotation of the customer's original
 // file. normalize.ts already restructures $refs/oneOf/allOf away during
 // import, so there is no clean 1:1 path back onto the original tree; this is
 // assembled fresh from the same Action[] everything else in this codebase
 // already treats as the source of truth.
 //
-// Every field carries x-spotcheck-* extensions: origin, the operation(s) that
+// Every field carries x-docentapi-* extensions: origin, the operation(s) that
 // produce it, lineage confidence, and whether a human confirmed it via an
-// answered clarification. The x-spotcheck- prefix follows the standard
+// answered clarification. The x-docentapi- prefix follows the standard
 // vendor-extension convention (Speakeasy's x-speakeasy-, etc.) — any tool
 // that doesn't recognise it simply ignores it.
 //
@@ -31,7 +31,7 @@ export type HumanAnswer = { origin?: FieldOrigin };
 export type AssumedAnswer = { origin?: FieldOrigin; quote: string; sourceKind: string; sourceUrl?: string };
 
 export type EnrichedSpecInput = {
-  // Answered by a person. The key set doubles as x-spotcheck-human-verified.
+  // Answered by a person. The key set doubles as x-docentapi-human-verified.
   answers?: Map<string, HumanAnswer>;
   // Concluded from evidence by the triage pass, not confirmed by anyone.
   assumptions?: Map<string, AssumedAnswer>;
@@ -69,14 +69,14 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
     ...(field.format ? { format: field.format } : {}),
     ...(field.enum ? { enum: field.enum } : {}),
     ...(field.description ? { description: field.description } : {}),
-    'x-spotcheck-origin': origin,
+    'x-docentapi-origin': origin,
     // Which of the three produced the value above, so a consumer never has to
     // guess whether it is reading a person's answer, an inference from the
     // provider's own documentation, or our structural heuristic.
-    'x-spotcheck-origin-source': answer?.origin ? 'human' : assumption?.origin ? 'assumed' : 'heuristic',
+    'x-docentapi-origin-source': answer?.origin ? 'human' : assumption?.origin ? 'assumed' : 'heuristic',
     ...(producers.length
       ? {
-          'x-spotcheck-produced-by': producers.map((p) => ({
+          'x-docentapi-produced-by': producers.map((p) => ({
             operation: p.from.tool,
             field: p.from.field,
             confidence: p.confidence,
@@ -86,12 +86,12 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
     // Strictly a person. An assumption never sets this, no matter how well
     // evidenced — that is the line between "someone who knows this API told us"
     // and "we read it somewhere", and it is the whole value of the marker.
-    'x-spotcheck-human-verified': input.answers?.has(key) ?? false,
+    'x-docentapi-human-verified': input.answers?.has(key) ?? false,
     // Carries its own receipt: the sentence relied on and where it came from, so
     // a consumer can judge the inference instead of taking it on faith.
     ...(assumption
       ? {
-          'x-spotcheck-assumed': {
+          'x-docentapi-assumed': {
             quote: assumption.quote,
             source: assumption.sourceKind,
             ...(assumption.sourceUrl ? { url: assumption.sourceUrl } : {}),
@@ -100,7 +100,7 @@ function annotateField(action: Action, field: FieldNode, record: ImportRecord, i
       : {}),
     // Asked and unanswerable. Distinct from an absent marker, which only means
     // we never asked.
-    ...(input.unresolved?.has(key) ? { 'x-spotcheck-unresolved': true } : {}),
+    ...(input.unresolved?.has(key) ? { 'x-docentapi-unresolved': true } : {}),
   };
 }
 
@@ -128,7 +128,7 @@ export function buildEnrichedSpec(
     pathEntry[action.method.toLowerCase()] = {
       operationId: action.name,
       description: action.description,
-      'x-spotcheck-safety': action.safety,
+      'x-docentapi-safety': action.safety,
       requestFields,
     };
     paths[action.path] = pathEntry;
@@ -137,10 +137,10 @@ export function buildEnrichedSpec(
   return {
     openapi: '3.1.0',
     info: {
-      title: `${record.name} — Spotcheck-enriched`,
+      title: `${record.name} — DocentAPI-enriched`,
       version: '1.0.0',
       description:
-        "Assembled from Spotcheck's normalized model of this API, not a re-annotation of the original file. Every field carries x-spotcheck-* tags describing its origin, known producers, and whether a human confirmed it.",
+        "Assembled from DocentAPI's normalized model of this API, not a re-annotation of the original file. Every field carries x-docentapi-* tags describing its origin, known producers, and whether a human confirmed it.",
     },
     paths,
   };

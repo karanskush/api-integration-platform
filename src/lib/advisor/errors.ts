@@ -29,7 +29,7 @@ const STATUS_GUIDE: Record<number, StatusGuide> = {
   401: {
     trigger: 'No credentials were supplied, or they were not accepted.',
     retryable: false,
-    fix: 'Supply a valid key. Over this MCP server, pass it in the x-spotcheck-upstream-key header. Check the auth scheme and placement in get_endpoint_schema.',
+    fix: 'Supply a valid key. Over this MCP server, pass it in the x-docentapi-upstream-key header. Check the auth scheme and placement in get_endpoint_schema.',
   },
   402: {
     trigger: 'The account is not entitled to this operation — payment or plan upgrade required.',

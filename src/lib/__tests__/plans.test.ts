@@ -32,7 +32,7 @@ describe('PLAN_LIMITS', () => {
     expect(PLAN_LIMITS.business.scheduledVerification).toBe(true);
   });
 
-  // askAssistant spends real LLM tokens on Spotcheck's account, so it follows
+  // askAssistant spends real LLM tokens on DocentAPI's account, so it follows
   // the same Pro+ floor as analytics rather than being free to anyone who can
   // view the page.
   it('only gates analytics/askAssistant behind Pro+', () => {

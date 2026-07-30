@@ -90,8 +90,8 @@ describe('normalizeOpenApi', () => {
     expect(get.method).toBe('GET');
     expect(get.safety).toBe('read');
     const props = get.paramsSchema.properties as Record<string, Record<string, unknown>>;
-    expect(props.petId['x-spotcheck-in']).toBe('path');
-    expect(props.verbose['x-spotcheck-in']).toBe('query');
+    expect(props.petId['x-docentapi-in']).toBe('path');
+    expect(props.verbose['x-docentapi-in']).toBe('query');
     expect(get.paramsSchema.required).toEqual(['petId']);
 
     const del = spec.actions.find((a) => a.name === 'delete_pet')!;
@@ -100,7 +100,7 @@ describe('normalizeOpenApi', () => {
     const add = spec.actions.find((a) => a.name === 'add_pet')!;
     expect(add.safety).toBe('write');
     const bodySchema = (add.paramsSchema.properties as Record<string, Record<string, unknown>>).body;
-    expect(bodySchema['x-spotcheck-in']).toBe('body');
+    expect(bodySchema['x-docentapi-in']).toBe('body');
     // $ref was dereferenced into the real Pet schema
     expect((bodySchema.properties as Record<string, unknown>).name).toBeDefined();
     expect(add.paramsSchema.required).toEqual(['body']);
@@ -126,7 +126,7 @@ describe('normalizeOpenApi request body media types', () => {
       structuredClone(docWith({ 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } })) as never,
     );
     const body = bodyOf(normalizeOpenApi(doc), 'post_thing');
-    expect(body['x-spotcheck-content-type']).toBe('application/octet-stream');
+    expect(body['x-docentapi-content-type']).toBe('application/octet-stream');
     expect(body.description).toBe('Binary request body (application/octet-stream)');
   });
 
@@ -140,7 +140,7 @@ describe('normalizeOpenApi request body media types', () => {
       ) as never,
     );
     const body = bodyOf(normalizeOpenApi(doc), 'post_thing');
-    expect(body['x-spotcheck-content-type']).toBe('application/vnd.api+json');
+    expect(body['x-docentapi-content-type']).toBe('application/vnd.api+json');
     expect(body.description).toBe('JSON request body');
     expect((body.properties as Record<string, unknown>).name).toBeDefined();
   });

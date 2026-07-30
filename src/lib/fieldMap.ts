@@ -284,7 +284,7 @@ function section(
   return state;
 }
 
-// Request fields, with each top-level parameter's `x-spotcheck-in` annotation
+// Request fields, with each top-level parameter's `x-docentapi-in` annotation
 // carried down to its descendants. That annotation exists only on top-level
 // properties (normalize.ts writes it there), so without this propagation every
 // nested body field would be unattributed — which is precisely why the body has
@@ -301,7 +301,7 @@ function requestFields(action: Action): WalkState {
   );
 
   for (const [name, child] of Object.entries(props)) {
-    const declared = asSchema(child)?.['x-spotcheck-in'];
+    const declared = asSchema(child)?.['x-docentapi-in'];
     const location: FieldLocation =
       declared === 'path' || declared === 'query' || declared === 'header' || declared === 'body' ? declared : 'query';
 

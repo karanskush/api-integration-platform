@@ -144,7 +144,7 @@ describe('schema constraints', () => {
     ).rejects.toThrow();
   });
 
-  // The enriched spec derives x-spotcheck-human-verified from answered rows, so
+  // The enriched spec derives x-docentapi-human-verified from answered rows, so
   // "only a human can answer" has to hold at the database level rather than by
   // convention in whichever code path happens to do the update.
   it('refuses to mark a clarification answered by anything but a human', async () => {

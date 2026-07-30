@@ -25,7 +25,7 @@ function badgeResponse(svg: string): Response {
 }
 
 function unverifiedBadge(): Response {
-  return badgeResponse(badgeSvg({ label: 'spotcheck', message: 'unverified', color: UNVERIFIED_COLOR }));
+  return badgeResponse(badgeSvg({ label: 'docentapi', message: 'unverified', color: UNVERIFIED_COLOR }));
 }
 
 // Public, unauthenticated badge — reads apis+scores directly rather than

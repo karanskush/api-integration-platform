@@ -9,7 +9,7 @@ import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
 
-const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'SPOTCHECK_ASK_MODEL', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_RESOURCE_NAME', 'AZURE_OPENAI_API_VERSION'] as const;
+const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'DOCENTAPI_ASK_MODEL', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_RESOURCE_NAME', 'AZURE_OPENAI_API_VERSION'] as const;
 const originals = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -48,7 +48,7 @@ function record(): ImportRecord {
         type: 'object',
         properties: {
           body: {
-            'x-spotcheck-in': 'body',
+            'x-docentapi-in': 'body',
             type: 'object',
             required: ['name'],
             properties: { name: { type: 'string' } },
@@ -129,7 +129,7 @@ describe('aiReady', () => {
   // has to be enough to run every model-backed feature.
   it('is true with an OpenAI key and an OpenAI model, with no Gateway credential', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
     expect(aiReady()).toBe(true);
   });
 
@@ -137,7 +137,7 @@ describe('aiReady', () => {
   // would turn a clear 503 into an error swallowed inside the enrichment pass.
   it('is false with an OpenAI key but a model the Gateway would have to serve', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-sonnet-5';
+    process.env.DOCENTAPI_ASK_MODEL = 'anthropic/claude-sonnet-5';
     expect(aiReady()).toBe(false);
   });
 });
@@ -145,13 +145,13 @@ describe('aiReady', () => {
 describe('askLanguageModel', () => {
   it('returns the slug itself when the Gateway is the credential', () => {
     process.env.VERCEL = '1';
-    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
     expect(askLanguageModel()).toBe('openai/gpt-5-mini');
   });
 
   it('returns a provider instance for the bare model when going direct', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
     const model = askLanguageModel();
     expect(typeof model).not.toBe('string');
     expect((model as { modelId: string }).modelId).toBe('gpt-5-mini');
@@ -160,7 +160,7 @@ describe('askLanguageModel', () => {
   // Every Gateway slug carries a "/", so a bare name can only be OpenAI's own.
   it('accepts a bare OpenAI model name', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    process.env.SPOTCHECK_ASK_MODEL = 'gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'gpt-5-mini';
     expect((askLanguageModel() as { modelId: string }).modelId).toBe('gpt-5-mini');
   });
 
@@ -168,7 +168,7 @@ describe('askLanguageModel', () => {
   // this call — the configured model is never quietly rewritten.
   it('leaves a non-OpenAI model on the Gateway even with a key set', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-opus-5';
+    process.env.DOCENTAPI_ASK_MODEL = 'anthropic/claude-opus-5';
     expect(askLanguageModel()).toBe('anthropic/claude-opus-5');
   });
 });
@@ -177,7 +177,7 @@ describe('askLanguageModel — Azure OpenAI', () => {
   function configureAzure() {
     process.env.AZURE_OPENAI_API_KEY = 'azure-key';
     process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
   }
 
   it('is ready and targets the deployment named after the prefix', () => {
@@ -197,14 +197,14 @@ describe('askLanguageModel — Azure OpenAI', () => {
   // A deployment name is whatever you called it in Azure, not a model id.
   it('honours a deployment name that is not a model name', () => {
     configureAzure();
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/my-mini-deploy';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/my-mini-deploy';
     expect((askLanguageModel() as { modelId: string }).modelId).toBe('my-mini-deploy');
   });
 
   it('accepts an explicit resource name instead of an endpoint', () => {
     process.env.AZURE_OPENAI_API_KEY = 'azure-key';
     process.env.AZURE_OPENAI_RESOURCE_NAME = 'aoai-example';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
     expect(aiReady()).toBe(true);
   });
 
@@ -212,34 +212,34 @@ describe('askLanguageModel — Azure OpenAI', () => {
   // failure into enrichRecord's per-chunk catch, where nothing surfaces it.
   it('is not ready with a key but no endpoint', () => {
     process.env.AZURE_OPENAI_API_KEY = 'azure-key';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
     expect(aiReady()).toBe(false);
   });
 
   it('is not ready with an endpoint but no key', () => {
     process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
     expect(aiReady()).toBe(false);
   });
 
   it('is not ready when the model names no deployment', () => {
     process.env.AZURE_OPENAI_API_KEY = 'azure-key';
     process.env.AZURE_OPENAI_ENDPOINT = 'https://aoai-example.openai.azure.com/';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/';
     expect(aiReady()).toBe(false);
   });
 
   it('is not ready when the endpoint is not a URL', () => {
     process.env.AZURE_OPENAI_API_KEY = 'azure-key';
     process.env.AZURE_OPENAI_ENDPOINT = 'aoai-example';
-    process.env.SPOTCHECK_ASK_MODEL = 'azure/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
     expect(aiReady()).toBe(false);
   });
 
   // Azure credentials do not make a platform-OpenAI slug callable.
   it('leaves a non-Azure model alone', () => {
     configureAzure();
-    process.env.SPOTCHECK_ASK_MODEL = 'openai/gpt-5-mini';
+    process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
     expect(askLanguageModel()).toBe('openai/gpt-5-mini');
     expect(aiReady()).toBe(false);
   });
@@ -251,12 +251,12 @@ describe('askModel', () => {
   });
 
   it('honours an override', () => {
-    process.env.SPOTCHECK_ASK_MODEL = 'anthropic/claude-opus-5';
+    process.env.DOCENTAPI_ASK_MODEL = 'anthropic/claude-opus-5';
     expect(askModel()).toBe('anthropic/claude-opus-5');
   });
 
   it('ignores a whitespace-only override', () => {
-    process.env.SPOTCHECK_ASK_MODEL = '   ';
+    process.env.DOCENTAPI_ASK_MODEL = '   ';
     expect(askModel()).toBe('anthropic/claude-sonnet-5');
   });
 });
@@ -301,7 +301,7 @@ describe('askAboutApi — tool calling', () => {
   it('calls a real advisor tool and grounds the final answer in its result', async () => {
     const model = new MockLanguageModelV4({
       doGenerate: [
-        toolCallResult('call-1', 'spotcheck_search_endpoints', { query: 'pet' }),
+        toolCallResult('call-1', 'docentapi_search_endpoints', { query: 'pet' }),
         textResult('There are two pet operations: list_pets and create_pet.'),
       ],
     });
@@ -310,7 +310,7 @@ describe('askAboutApi — tool calling', () => {
 
     expect(result.answer).toContain('list_pets');
     expect(result.steps).toBe(2);
-    expect(result.toolCalls).toEqual([{ tool: 'spotcheck_search_endpoints', input: { query: 'pet' } }]);
+    expect(result.toolCalls).toEqual([{ tool: 'docentapi_search_endpoints', input: { query: 'pet' } }]);
   });
 
   // The mechanism this whole module exists to guarantee: the tool's output
@@ -319,7 +319,7 @@ describe('askAboutApi — tool calling', () => {
   it('feeds the real advisor JSON result back to the model as structured tool output', async () => {
     const model = new MockLanguageModelV4({
       doGenerate: [
-        toolCallResult('call-1', 'spotcheck_search_endpoints', { query: 'create' }),
+        toolCallResult('call-1', 'docentapi_search_endpoints', { query: 'create' }),
         textResult('ok'),
       ],
     });
@@ -336,8 +336,8 @@ describe('askAboutApi — tool calling', () => {
   it('traces every tool call across multiple steps', async () => {
     const model = new MockLanguageModelV4({
       doGenerate: [
-        toolCallResult('call-1', 'spotcheck_search_endpoints', { query: 'pet' }),
-        toolCallResult('call-2', 'spotcheck_get_call_sequence', { tool: 'create_pet' }),
+        toolCallResult('call-1', 'docentapi_search_endpoints', { query: 'pet' }),
+        toolCallResult('call-2', 'docentapi_get_call_sequence', { tool: 'create_pet' }),
         textResult('Call create_pet directly; it needs no prerequisite.'),
       ],
     });
@@ -345,7 +345,7 @@ describe('askAboutApi — tool calling', () => {
     const result = await askAboutApi(ctx(), 'how do I create a pet?', { model });
 
     expect(result.steps).toBe(3);
-    expect(result.toolCalls.map((c) => c.tool)).toEqual(['spotcheck_search_endpoints', 'spotcheck_get_call_sequence']);
+    expect(result.toolCalls.map((c) => c.tool)).toEqual(['docentapi_search_endpoints', 'docentapi_get_call_sequence']);
   });
 
   it('lets an unknown-tool response from the advisor layer reach the model without throwing', async () => {
@@ -354,7 +354,7 @@ describe('askAboutApi — tool calling', () => {
     // error-shaped but well-formed advisor payload transparently.
     const model = new MockLanguageModelV4({
       doGenerate: [
-        toolCallResult('call-1', 'spotcheck_trace_field', { field: 'totally_unknown_field' }),
+        toolCallResult('call-1', 'docentapi_trace_field', { field: 'totally_unknown_field' }),
         textResult('That field does not exist on this API.'),
       ],
     });
@@ -388,7 +388,7 @@ describe('askAboutApi — grounding and injection resistance', () => {
     // Every step calls a tool; the model never willingly finishes. If the
     // loop were unbounded this would hang the test.
     const alwaysCallsATool = Array.from({ length: 20 }, (_, i) =>
-      toolCallResult(`call-${i}`, 'spotcheck_get_score_explanation', {}),
+      toolCallResult(`call-${i}`, 'docentapi_get_score_explanation', {}),
     );
     const model = new MockLanguageModelV4({ doGenerate: alwaysCallsATool });
 

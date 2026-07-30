@@ -31,7 +31,7 @@ function capSchema(schema: unknown, label: string): unknown {
     omitted: true,
     reason: `This ${label} schema is ${serialized.length} characters — too large to return inline.`,
     topLevelKeys: properties ? Object.keys(properties).slice(0, 60) : undefined,
-    use: 'spotcheck_describe_fields with a filter argument to inspect it field by field.',
+    use: 'docentapi_describe_fields with a filter argument to inspect it field by field.',
   };
 }
 
@@ -185,7 +185,7 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
       totalSendable: sendable.length,
       ...(serverAssigned.length ? { serverAssigned: serverAssigned.slice(0, 20) } : {}),
       ...(sendable.length > FIELD_SUMMARY_LIMIT || map.truncated
-        ? { note: `Showing ${Math.min(sendable.length, FIELD_SUMMARY_LIMIT)} of ${sendable.length}. Call spotcheck_describe_fields for the rest, with a filter.` }
+        ? { note: `Showing ${Math.min(sendable.length, FIELD_SUMMARY_LIMIT)} of ${sendable.length}. Call docentapi_describe_fields for the rest, with a filter.` }
         : {}),
     },
     ...(pagination.model !== 'none' ? { pagination } : {}),

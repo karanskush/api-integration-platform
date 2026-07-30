@@ -1,7 +1,7 @@
 // Advisor tool registry: descriptors for tools/list, and dispatch for
 // tools/call. See TECH_IMPLEMENTATION.md §3.5's "MCP tool strategy" table.
 //
-// Naming: every advisor tool carries a `spotcheck_` prefix. Endpoint tool names
+// Naming: every advisor tool carries a `docentapi_` prefix. Endpoint tool names
 // come from third-party operationIds, so an unprefixed `search_endpoints` could
 // collide with a real operation on somebody's API and silently shadow it. The
 // prefix also tells the calling model, from the tool list alone, which tools
@@ -21,11 +21,11 @@ import { getEndpointSchema, searchEndpoints } from './search';
 import { getScoreExplanation } from './score';
 import type { AdvisorContext } from './types';
 
-export const ADVISOR_PREFIX = 'spotcheck_';
+export const ADVISOR_PREFIX = 'docentapi_';
 
 const TOOL_NAME_ARG = {
   type: 'string' as const,
-  description: 'Tool name exactly as returned by spotcheck_search_endpoints.',
+  description: 'Tool name exactly as returned by docentapi_search_endpoints.',
 };
 
 function descriptor(
@@ -43,7 +43,7 @@ function descriptor(
       title,
       readOnlyHint: true,
       destructiveHint: false,
-      // Advisor tools answer from Spotcheck's stored model, so they never
+      // Advisor tools answer from DocentAPI's stored model, so they never
       // reach outside this server — unlike endpoint tools.
       openWorldHint: false,
     },

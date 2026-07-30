@@ -3,12 +3,12 @@
 // Two features need cryptographic key material: CI sync tokens (ciSync.ts) and
 // the credential vault (vault.ts). Giving each its own env var means two
 // secrets to provision and rotate, and invites reuse of the same bytes for
-// both. Instead a single SPOTCHECK_MASTER_KEY is expanded with HKDF into
+// both. Instead a single DOCENTAPI_MASTER_KEY is expanded with HKDF into
 // domain-separated subkeys, so a subkey leak cannot be walked back to the
 // master or sideways into another purpose.
 //
 // Provisioning:
-//   openssl rand -base64 32   -> SPOTCHECK_MASTER_KEY
+//   openssl rand -base64 32   -> DOCENTAPI_MASTER_KEY
 //
 // Rotation: the master key is the root of trust for issued CI tokens and
 // wrapped credential keys, so rotating it invalidates both. Per-object
@@ -21,7 +21,11 @@
 
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 
-const ENV_VAR = 'SPOTCHECK_MASTER_KEY';
+const ENV_VAR = 'DOCENTAPI_MASTER_KEY';
+// The deployment was provisioned under the pre-rename Spotcheck name; honour
+// that var until it is renamed in Vercel, else every CI token and wrapped
+// credential issued so far would invalidate on deploy.
+const LEGACY_ENV_VAR = 'SPOTCHECK_MASTER_KEY';
 const MIN_KEY_BYTES = 32;
 
 export class MasterKeyError extends Error {
@@ -54,7 +58,7 @@ function parseKeyMaterial(raw: string): Buffer {
 let cached: { raw: string; key: Buffer } | null = null;
 
 function masterKey(): Buffer {
-  const raw = process.env[ENV_VAR];
+  const raw = process.env[ENV_VAR] ?? process.env[LEGACY_ENV_VAR];
   if (!raw) {
     throw new MasterKeyError(
       `${ENV_VAR} is not set — required for CI sync tokens and vaulted credentials. Generate one with: openssl rand -base64 32`,
@@ -67,7 +71,7 @@ function masterKey(): Buffer {
 // Routes check this and return a "not configured" response, matching how every
 // other optional integration in this codebase degrades.
 export function masterKeyReady(): boolean {
-  const raw = process.env[ENV_VAR];
+  const raw = process.env[ENV_VAR] ?? process.env[LEGACY_ENV_VAR];
   if (!raw) return false;
   try {
     parseKeyMaterial(raw);

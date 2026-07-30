@@ -25,7 +25,7 @@ export type PlanLimits = {
   // TECH_IMPLEMENTATION.md §11.
   analytics: boolean;
   // Grounded natural-language Q&A over the advisor tools (lib/ask.ts). Gated
-  // like analytics — it spends real LLM tokens on Spotcheck's account, so it
+  // like analytics — it spends real LLM tokens on DocentAPI's account, so it
   // needs the same paid-tier floor as the other genuinely-costs-money features
   // rather than being free for anyone who can view the page.
   askAssistant: boolean;

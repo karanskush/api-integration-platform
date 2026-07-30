@@ -13,7 +13,7 @@ function action(overrides: Partial<Action> = {}): Action {
     path: '/things/{id}',
     paramsSchema: {
       type: 'object',
-      properties: { id: { type: 'string', 'x-spotcheck-in': 'path' } },
+      properties: { id: { type: 'string', 'x-docentapi-in': 'path' } },
       required: ['id'],
     },
     auth: 'none',
@@ -124,7 +124,7 @@ describe('runErrorQuality', () => {
 
   it('falls back to mutating a path-placed param when there is no required array', async () => {
     const a = action({
-      paramsSchema: { type: 'object', properties: { id: { type: 'string', 'x-spotcheck-in': 'path' } } },
+      paramsSchema: { type: 'object', properties: { id: { type: 'string', 'x-docentapi-in': 'path' } } },
       examples: [{ params: { id: 'abc' } }],
     });
     let seenArgs: Record<string, unknown> | undefined;
@@ -145,7 +145,7 @@ describe('runErrorQuality', () => {
       path: '/b/{id}',
       paramsSchema: {
         type: 'object',
-        properties: { id: { type: 'string', 'x-spotcheck-in': 'path' } },
+        properties: { id: { type: 'string', 'x-docentapi-in': 'path' } },
         required: ['id'],
       },
       examples: [{ params: { id: 'xyz' } }],

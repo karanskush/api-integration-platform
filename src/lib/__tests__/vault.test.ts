@@ -11,7 +11,7 @@ import {
   type CredentialContext,
 } from '../vault';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 
 // Deliberately NOT shaped like any real vendor's key format: a fixture that
@@ -159,7 +159,7 @@ describe('master key dependence', () => {
 
   it('fails clearly when the master key is absent', () => {
     delete process.env[ENV];
-    expect(() => sealCredential(SECRET, ctx)).toThrow(/SPOTCHECK_MASTER_KEY/);
+    expect(() => sealCredential(SECRET, ctx)).toThrow(/DOCENTAPI_MASTER_KEY/);
   });
 });
 

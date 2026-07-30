@@ -18,8 +18,8 @@
 
 import { deriveKey, hmacHex, verifyHmacHex } from './keys';
 
-export const CI_SIGNATURE_HEADER = 'x-spotcheck-signature';
-export const CI_TIMESTAMP_HEADER = 'x-spotcheck-timestamp';
+export const CI_SIGNATURE_HEADER = 'x-docentapi-signature';
+export const CI_TIMESTAMP_HEADER = 'x-docentapi-timestamp';
 
 // Generous enough for a slow CI runner, tight enough that a leaked request
 // body stops being useful in minutes rather than never.
@@ -76,7 +76,7 @@ export function verifyCiRequest(input: CiVerifyInput): CiVerifyResult {
 // Replay key for the storage-backed nonce guard: the signature itself is
 // unique per (token, timestamp, body), so it needs no extra nonce field.
 export function ciReplayKey(apiId: string, signatureHeader: string): string {
-  return `spotcheck:ci:seen:${apiId}:${signatureHeader.replace(/^sha256=/i, '').slice(0, 64)}`;
+  return `docentapi:ci:seen:${apiId}:${signatureHeader.replace(/^sha256=/i, '').slice(0, 64)}`;
 }
 
 export const CI_ERROR_STATUS: Record<Exclude<CiVerifyResult, { ok: true }>['reason'], number> = {

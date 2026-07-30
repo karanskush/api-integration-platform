@@ -46,8 +46,8 @@ async function makeClaim(apiId: string, userId: string, overrides: Partial<typeo
 describe('verifyDnsClaim', () => {
   it('returns true when the token appears in a resolved TXT record', async () => {
     const resolver: DnsResolver = async (hostname) => {
-      expect(hostname).toBe('_spotcheck-verify.example.com');
-      return ['unrelated', 'spotcheck-verify=abc123'];
+      expect(hostname).toBe('_docentapi-verify.example.com');
+      return ['unrelated', 'docentapi-verify=abc123'];
     };
     await expect(verifyDnsClaim('example.com', 'abc123', resolver)).resolves.toBe(true);
   });
@@ -77,17 +77,17 @@ describe('verifyMetaClaim', () => {
   }
 
   it('returns true when a matching meta tag is present', async () => {
-    const html = '<html><head><meta name="spotcheck-verification" content="abc123"></head></html>';
+    const html = '<html><head><meta name="docentapi-verification" content="abc123"></head></html>';
     await expect(verifyMetaClaim('example.com', 'abc123', fakeFetch(html))).resolves.toBe(true);
   });
 
   it('returns true regardless of attribute order', async () => {
-    const html = '<meta content="abc123" name="spotcheck-verification">';
+    const html = '<meta content="abc123" name="docentapi-verification">';
     await expect(verifyMetaClaim('example.com', 'abc123', fakeFetch(html))).resolves.toBe(true);
   });
 
   it('returns false when the token is absent', async () => {
-    const html = '<meta name="spotcheck-verification" content="some-other-token">';
+    const html = '<meta name="docentapi-verification" content="some-other-token">';
     await expect(verifyMetaClaim('example.com', 'abc123', fakeFetch(html))).resolves.toBe(false);
   });
 

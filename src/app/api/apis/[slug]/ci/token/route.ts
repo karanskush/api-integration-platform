@@ -42,7 +42,7 @@ async function requireOwnership(slug: string, clerkUserId: string) {
 
 function notConfigured(): Response {
   return Response.json(
-    { error: 'CI sync is not configured — set SPOTCHECK_MASTER_KEY and redeploy' },
+    { error: 'CI sync is not configured — set DOCENTAPI_MASTER_KEY and redeploy' },
     { status: 503 },
   );
 }
@@ -91,7 +91,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     tokenVersion: version,
     rotated: body.rotate === true,
     usage: {
-      secretName: 'SPOTCHECK_TOKEN',
+      secretName: 'DOCENTAPI_TOKEN',
       endpoint: '/api/ci/sync',
       note: 'Store this in your repository secrets. Rotate with {"rotate":true}, which immediately invalidates every previously issued token for this API.',
     },

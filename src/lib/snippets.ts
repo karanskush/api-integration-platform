@@ -46,7 +46,7 @@ export function buildSampleParts(action: Action, baseUrl: string, authIn?: AuthP
   let bodyContentType = 'application/json';
 
   for (const [name, schema] of Object.entries(props)) {
-    const where = schema['x-spotcheck-in'];
+    const where = schema['x-docentapi-in'];
     const value = sampleValue(name, schema);
     if (where === 'path') path = path.replace(`{${name}}`, encodeURIComponent(String(value)));
     else if (where === 'query') query.push([name, String(value)]);
@@ -56,7 +56,7 @@ export function buildSampleParts(action: Action, baseUrl: string, authIn?: AuthP
       // Emitting Content-Type: application/json for a body the operation
       // declares as octet-stream or multipart produces a snippet that fails
       // against the real API. normalize.ts records the declared type.
-      bodyContentType = String(schema['x-spotcheck-content-type'] ?? 'application/json');
+      bodyContentType = String(schema['x-docentapi-content-type'] ?? 'application/json');
     }
   }
 

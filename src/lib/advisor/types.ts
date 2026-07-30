@@ -102,7 +102,7 @@ function typeOf(schema: SchemaProp): string {
 }
 
 // Flattens paramsSchema back into the per-parameter view the normalizer
-// collapsed, using the 'x-spotcheck-in' annotations it wrote (see ir.ts).
+// collapsed, using the 'x-docentapi-in' annotations it wrote (see ir.ts).
 export function paramsOf(action: Action): ParamInfo[] {
   const props = (action.paramsSchema.properties ?? {}) as Record<string, SchemaProp>;
   const requiredList = Array.isArray(action.paramsSchema.required)
@@ -110,7 +110,7 @@ export function paramsOf(action: Action): ParamInfo[] {
     : [];
 
   return Object.entries(props).map(([name, schema]) => {
-    const where = schema['x-spotcheck-in'];
+    const where = schema['x-docentapi-in'];
     return {
       name,
       in: where === 'path' || where === 'query' || where === 'header' || where === 'body' ? where : 'query',

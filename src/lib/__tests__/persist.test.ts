@@ -211,7 +211,7 @@ describe('buildPersistStatements', () => {
               type: 'object',
               required: ['customerId'],
               properties: { customerId: { type: 'string', format: 'uuid' } },
-              'x-spotcheck-in': 'body',
+              'x-docentapi-in': 'body',
             },
           },
         },

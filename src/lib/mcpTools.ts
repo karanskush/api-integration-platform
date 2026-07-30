@@ -10,7 +10,7 @@ import { buildUpstreamRequest, UpstreamBuildError } from './upstream';
 import { validateParams } from './validate';
 
 // A third-party spec can declare an operationId that collides with an advisor
-// tool's `spotcheck_`-prefixed name. The advisor tool wins — it is part of this
+// tool's `docentapi_`-prefixed name. The advisor tool wins — it is part of this
 // server's fixed contract — so the colliding endpoint tool is suffixed to stay
 // reachable rather than silently shadowed.
 //
@@ -82,7 +82,7 @@ export class InvalidArgsError extends Error {
 export class AuthRequiredError extends Error {
   constructor(auth: string) {
     super(
-      `This API requires ${auth} auth. Supply your key via the x-spotcheck-upstream-key header (or ?key= in the server URL). Spotcheck never stores it.`,
+      `This API requires ${auth} auth. Supply your key via the x-docentapi-upstream-key header (or ?key= in the server URL). DocentAPI never stores it.`,
     );
     this.name = 'AuthRequiredError';
   }

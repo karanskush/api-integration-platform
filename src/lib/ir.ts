@@ -20,7 +20,7 @@ export type Action = {
   description: string; // cleaned, agent-legible, ≤500 chars
   method: string; // GET | POST | ...
   path: string; // /v1/pets/{petId}
-  // Object schema. Top-level properties carry 'x-spotcheck-in' annotations
+  // Object schema. Top-level properties carry 'x-docentapi-in' annotations
   // (path|query|header); the request body is a single 'body' property.
   paramsSchema: JSONSchema;
   auth: AuthScheme;
@@ -63,7 +63,7 @@ export const MAX_ACTIONS = 300;
 export const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 
 export function ttlSeconds(): number {
-  const raw = process.env.SPOTCHECK_TTL_SECONDS;
+  const raw = process.env.DOCENTAPI_TTL_SECONDS ?? process.env.SPOTCHECK_TTL_SECONDS;
   const n = raw ? Number(raw) : NaN;
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_TTL_SECONDS;
 }

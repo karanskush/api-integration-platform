@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Persistence is not configured — connect Postgres and redeploy' }, { status: 503 });
   }
   if (!masterKeyReady()) {
-    return Response.json({ error: 'CI sync is not configured — set SPOTCHECK_MASTER_KEY and redeploy' }, { status: 503 });
+    return Response.json({ error: 'CI sync is not configured — set DOCENTAPI_MASTER_KEY and redeploy' }, { status: 503 });
   }
 
   const rawBody = await req.text();

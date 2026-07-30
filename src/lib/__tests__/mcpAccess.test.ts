@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { actorHashForToken, MCP_ACCESS_HEADER, mcpAccessTokenFor, verifyMcpAccessToken } from '../mcpAccess';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 
 const ORG = 'org-aaaa';
@@ -80,7 +80,7 @@ describe('verifyMcpAccessToken', () => {
   });
 
   it('names the header it is read from', () => {
-    expect(MCP_ACCESS_HEADER).toBe('x-spotcheck-access-token');
+    expect(MCP_ACCESS_HEADER).toBe('x-docentapi-access-token');
   });
 });
 

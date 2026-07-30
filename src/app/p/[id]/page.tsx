@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const record = isValidId(id) ? await kv().getImport(id) : null;
   return {
-    title: record ? `${record.name} — Spotcheck` : 'Expired — Spotcheck',
+    title: record ? `${record.name} — DocentAPI` : 'Expired — DocentAPI',
     robots: { index: false }, // ephemeral pages stay out of search indexes
   };
 }

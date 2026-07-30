@@ -142,7 +142,7 @@ describe('petstore request bodies are described accurately', () => {
     const record = await petstore();
     const upload = record.actions.find((a) => a.name === 'upload_file');
     const body = (upload?.paramsSchema.properties as Record<string, Record<string, unknown>>).body;
-    expect(body['x-spotcheck-content-type']).toBe('application/octet-stream');
+    expect(body['x-docentapi-content-type']).toBe('application/octet-stream');
     expect(body.description).not.toBe('JSON request body');
   });
 });

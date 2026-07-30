@@ -12,7 +12,7 @@ import {
   writeAudit,
 } from '../vaultStore';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 const SECRET = 'fixture-vault-store-credential-0001';
 const ACTOR = { type: 'user' as const, hash: 'actor-hash' };

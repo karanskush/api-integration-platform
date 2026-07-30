@@ -1,4 +1,4 @@
-// spotcheck_describe_fields and spotcheck_trace_field.
+// docentapi_describe_fields and docentapi_trace_field.
 //
 // These are the two tools that answer the questions an operation-level view
 // cannot: "what data can we send it" and "where is this value coming from".
@@ -76,7 +76,7 @@ export type DescribeFieldsArgs = {
 
 export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
   const wanted = typeof args.tool === 'string' ? args.tool.trim() : '';
-  if (!wanted) return { error: 'tool is required — pass the tool name returned by spotcheck_search_endpoints.' };
+  if (!wanted) return { error: 'tool is required — pass the tool name returned by docentapi_search_endpoints.' };
 
   const action = findAction(ctx, wanted);
   if (!action) return { error: `No operation named "${asData(wanted, 80)}" exists on this API.` };
@@ -181,7 +181,7 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
   if (!matches.length) {
     return {
       error: `No field named "${asData(wanted, 80)}" appears anywhere on this API.`,
-      hint: 'Use spotcheck_describe_fields on an operation to see its exact field paths.',
+      hint: 'Use docentapi_describe_fields on an operation to see its exact field paths.',
     };
   }
 

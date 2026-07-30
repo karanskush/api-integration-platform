@@ -152,7 +152,7 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
       detail:
         target.auth === 'oauth2'
           ? 'This operation requires OAuth2, which cannot be completed from a pasted key alone — obtain a token out of band first.'
-          : `Supply ${target.auth} credentials. Over this MCP server, pass them in the x-spotcheck-upstream-key header; they are forwarded to the API and never stored.`,
+          : `Supply ${target.auth} credentials. Over this MCP server, pass them in the x-docentapi-upstream-key header; they are forwarded to the API and never stored.`,
       ...(target.authIn ?? ctx.record.authIn ? { placement: target.authIn ?? ctx.record.authIn } : {}),
       ...(target.scopes ? { requiredScopes: target.scopes } : {}),
       ...(observed
@@ -278,7 +278,7 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
   }
   if (skippedBodySteps > 0) {
     notes.push(
-      `${skippedBodySteps} further required body field(s) also have producers; call spotcheck_describe_fields on this tool to see them all.`,
+      `${skippedBodySteps} further required body field(s) also have producers; call docentapi_describe_fields on this tool to see them all.`,
     );
   }
 

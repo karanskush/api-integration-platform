@@ -24,7 +24,7 @@ function upstashLimiter(scope: string, cfg: Config): Limiter {
   const rl = new Ratelimit({
     redis: Redis.fromEnv(),
     limiter: Ratelimit.slidingWindow(cfg.limit, `${cfg.windowSec} s`),
-    prefix: `spotcheck:rl:${scope}`,
+    prefix: `docentapi:rl:${scope}`,
   });
   return {
     async limit(key) {

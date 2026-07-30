@@ -15,7 +15,7 @@ import { FIELD_ORIGINS } from '@/lib/fieldMap';
 import { appHost } from '@/lib/origin';
 
 // Every hostname this page shows is the one it is actually served from.
-// Hardcoding `spotcheck.dev` meant the page promised URLs that did not
+// Hardcoding `docentapi.dev` meant the page promised URLs that did not
 // resolve — the single thing on a page about not overclaiming that overclaimed.
 // Resolved once here: PUBLIC_APP_ORIGIN is fixed for a deployment's lifetime.
 const HOST = appHost();
@@ -222,7 +222,7 @@ export default function Home() {
             <span className="hl">We go and check.</span>
           </h1>
           <p className="hero-lead">
-            Paste an OpenAPI spec, a Postman collection, or one cURL command. Spotcheck turns it
+            Paste an OpenAPI spec, a Postman collection, or one cURL command. DocentAPI turns it
             into typed tools, works out which call produces the id the next one needs, runs the
             read-safe operations against your live service — and writes down what actually came
             back, with the evidence attached.
@@ -269,7 +269,7 @@ export default function Home() {
           </h2>
           <p className="lead">
             Humans read docs. Agents need tools. Most APIs can answer for only one of them — and the
-            agent traffic is already arriving. Spotcheck answers for both, from a single import.
+            agent traffic is already arriving. DocentAPI answers for both, from a single import.
           </p>
 
           <div className="surfaces">
@@ -315,7 +315,7 @@ export default function Home() {
           <ChapterMark n="03" title="Lineage" />
           <h2 className="display">Which call produces the id the next call needs.</h2>
           <p className="lead">
-            An agent that invents an identifier fails, retries, and fails again. Spotcheck reads
+            An agent that invents an identifier fails, retries, and fails again. DocentAPI reads
             every operation’s output against every other operation’s input and works out what feeds
             what — weighing eleven signals, from a shared schema title down to a type mismatch that
             argues against the link.
@@ -360,12 +360,12 @@ export default function Home() {
           <h2 className="display">Every field says where its value is supposed to come from.</h2>
           <p className="lead">
             The single most expensive question when integrating an API is “what do I put here?” —
-            and a spec answers it for almost nothing. Spotcheck classifies every writable field into
+            and a spec answers it for almost nothing. DocentAPI classifies every writable field into
             one of {FIELD_ORIGINS.length} origins, and records how it knows.
           </p>
 
           <table className="spec-table">
-            <caption className="sr-only">The five field origins Spotcheck classifies into</caption>
+            <caption className="sr-only">The five field origins DocentAPI classifies into</caption>
             <thead>
               <tr>
                 <th scope="col">Origin</th>
@@ -448,7 +448,7 @@ export default function Home() {
           <ChapterMark n="05" title="Verification" />
           <h2 className="display">Anyone can turn OpenAPI into MCP. We prove the tools work.</h2>
           <p className="lead">
-            Transpilers echo the spec and hope. Spotcheck executes the tools, catches where the docs
+            Transpilers echo the spec and hope. DocentAPI executes the tools, catches where the docs
             lie, patches the tool definitions — and re-verifies so drift never reaches an agent.
           </p>
 
@@ -459,7 +459,7 @@ export default function Home() {
             </div>
             <div className="term-body">
               <div className="term-line"><span className="who q">agent</span><span className="caret-q">›</span><span className="type">create a $120 transfer for cust_81</span></div>
-              <div className="term-line"><span className="who r">spotcheck</span> tools/call → create_transfer · <span className="ret">verified 2h ago</span></div>
+              <div className="term-line"><span className="who r">docentapi</span> tools/call → create_transfer · <span className="ret">verified 2h ago</span></div>
               <div className="term-line step"><span className="n">01</span> <span className="m">create_user</span> <span className="ret">→ user_id</span></div>
               <div className="term-line step"><span className="n">02</span> <span className="m">create_account</span> <span className="x">×2</span> <span className="ret">→ account_id</span> <span className="note">· requires user_id</span></div>
               <div className="term-line step"><span className="n">03</span> <span className="m">create_transfer</span> <span className="ret">→ transfer_id</span> <span className="note">· Idempotency-Key attached</span></div>
@@ -477,7 +477,7 @@ export default function Home() {
 
           <p className="versus">
             Stainless generates SDKs. Mintlify renders docs. Speakeasy transpiles MCP.{' '}
-            <em>Spotcheck verifies the surface agents actually touch — and scores it.</em>
+            <em>DocentAPI verifies the surface agents actually touch — and scores it.</em>
           </p>
         </div>
       </section>
@@ -531,7 +531,7 @@ export default function Home() {
           <ChapterMark n="07" title="Deliverables" />
           <h2 className="display">One import. Everything an agent needs.</h2>
           <p className="lead">
-            Paste a spec once. Spotcheck fans it out into {LAYERS.length} surfaces — generated
+            Paste a spec once. DocentAPI fans it out into {LAYERS.length} surfaces — generated
             together, verified together, and kept in sync with every change you ship.
           </p>
 

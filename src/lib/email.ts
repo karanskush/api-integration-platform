@@ -17,7 +17,7 @@ function getResend(): Resend {
   return instance;
 }
 
-const FROM = process.env.WAITLIST_FROM_EMAIL || 'Spotcheck <hello@spotcheck.dev>';
+const FROM = process.env.WAITLIST_FROM_EMAIL || 'DocentAPI <hello@docentapi.dev>';
 
 // Deliberately one transactional email, not a drip sequence — this plumbing
 // (Postgres row, QStash job, Resend send) is what a future sequence would
@@ -27,8 +27,8 @@ export async function sendWaitlistWelcomeEmail(to: string): Promise<void> {
   await resend.emails.send({
     from: FROM,
     to,
-    subject: "You're on the Spotcheck waitlist",
-    text: 'Thanks for joining the Spotcheck waitlist — we\'ll let you know as soon as your access is ready.',
+    subject: "You're on the DocentAPI waitlist",
+    text: 'Thanks for joining the DocentAPI waitlist — we\'ll let you know as soon as your access is ready.',
   });
 }
 

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../db';
 import { orgs } from './schema';
 
-export const SYSTEM_ORG_SLUG = 'spotcheck-unofficial';
+export const SYSTEM_ORG_SLUG = 'docentapi-unofficial';
 
 // Idempotent: the sentinel org that owns unclaimed/seeded API pages, since
 // apis.orgId is NOT NULL and cannot be made nullable without touching every
@@ -10,7 +10,7 @@ export const SYSTEM_ORG_SLUG = 'spotcheck-unofficial';
 export async function getOrCreateSystemOrg(db: Db): Promise<typeof orgs.$inferSelect> {
   const [org] = await db
     .insert(orgs)
-    .values({ name: 'Spotcheck (unofficial pages)', slug: SYSTEM_ORG_SLUG, plan: 'free', isSystem: true })
+    .values({ name: 'DocentAPI (unofficial pages)', slug: SYSTEM_ORG_SLUG, plan: 'free', isSystem: true })
     .onConflictDoNothing({ target: orgs.slug })
     .returning();
   if (org) return org;

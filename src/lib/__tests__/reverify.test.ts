@@ -11,7 +11,7 @@ import type { ScoreEngineResult } from '../probes/run';
 let db: TestDb;
 let neonDb: NeonDb;
 
-const ENV_KEY = 'SPOTCHECK_MASTER_KEY';
+const ENV_KEY = 'DOCENTAPI_MASTER_KEY';
 const originalKey = process.env[ENV_KEY];
 const originalInterval = process.env.SCHEDULED_VERIFY_INTERVAL_HOURS;
 const originalBatch = process.env.SCHEDULED_VERIFY_BATCH;

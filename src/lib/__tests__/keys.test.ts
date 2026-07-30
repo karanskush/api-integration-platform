@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { deriveKey, hmacHex, MasterKeyError, masterKeyReady, randomToken, verifyHmacHex } from '../keys';
 
-const ENV = 'SPOTCHECK_MASTER_KEY';
+const ENV = 'DOCENTAPI_MASTER_KEY';
 const original = process.env[ENV];
 
 // 32 bytes, expressed both ways.

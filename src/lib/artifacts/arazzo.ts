@@ -1,19 +1,19 @@
 // Emits an Arazzo 1.0.1 workflow document (spec.openapis.org/arazzo) from the
 // lineage graph — a portable, standards-based artifact any Arazzo-aware tool
-// can consume, not just Spotcheck's own MCP server.
+// can consume, not just DocentAPI's own MCP server.
 //
 // Scope, deliberately: Arazzo's native `parameters[].value` runtime-expression
 // binding (`$steps.<id>.outputs.<name>`) is only a clean fit for a
 // deterministic, single-valued producer — a POST/PUT whose response yields
 // exactly the value needed next. A GET-list producer ("pick one id from
 // many") has no single value to bind statically; that dependency is still
-// recorded, but via the `x-spotcheck-requires` extension rather than a native
+// recorded, but via the `x-docentapi-requires` extension rather than a native
 // binding that would misrepresent a real choice as an automatic one. Same
 // reasoning for body-field dependencies: Arazzo's Parameter Object only
 // covers path/query/header/cookie, not request bodies, so those are always
 // extension-only.
 //
-// `operationId` here is Spotcheck's own derived tool name, not necessarily
+// `operationId` here is DocentAPI's own derived tool name, not necessarily
 // the source spec's literal operationId (not tracked separately today) —
 // sourceDescriptions still points at the original spec, so a consumer can
 // cross-reference by method+path if it needs the literal one.
@@ -35,7 +35,7 @@ type ArazzoStep = {
   description: string;
   parameters?: ArazzoParameter[];
   outputs?: Record<string, string>;
-  'x-spotcheck-requires'?: RequiresNote[];
+  'x-docentapi-requires'?: RequiresNote[];
 };
 type ArazzoWorkflow = { workflowId: string; summary: string; steps: ArazzoStep[] };
 
@@ -140,7 +140,7 @@ export function buildArazzoDocument(record: ImportRecord, sourceUrl: string): Ar
       operationId: target.name,
       description: `${target.method} ${target.path}`,
       ...(targetParameters.length ? { parameters: targetParameters } : {}),
-      ...(targetRequires.length ? { 'x-spotcheck-requires': targetRequires } : {}),
+      ...(targetRequires.length ? { 'x-docentapi-requires': targetRequires } : {}),
     });
 
     workflows.push({
@@ -153,10 +153,10 @@ export function buildArazzoDocument(record: ImportRecord, sourceUrl: string): Ar
   return {
     arazzo: '1.0.1',
     info: {
-      title: `${record.name} — Spotcheck-derived workflows`,
+      title: `${record.name} — DocentAPI-derived workflows`,
       version: '1.0.0',
       description:
-        "Machine-derived from the field-level data-lineage graph Spotcheck computed for this API. operationId values are Spotcheck's own derived tool names — cross-reference sourceDescriptions for the literal spec.",
+        "Machine-derived from the field-level data-lineage graph DocentAPI computed for this API. operationId values are DocentAPI's own derived tool names — cross-reference sourceDescriptions for the literal spec.",
     },
     sourceDescriptions: [{ name: record.name, url: sourceUrl, type: 'openapi' }],
     workflows,

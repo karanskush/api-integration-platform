@@ -58,12 +58,12 @@ export default function Playground({ id, actions, baseUrls, auth }: Props) {
   // BYOK: the key lives in sessionStorage for this import only — never in
   // URLs, never sent anywhere but our same-origin proxy.
   useEffect(() => {
-    setKey(sessionStorage.getItem(`spotcheck:key:${id}`) ?? '');
+    setKey(sessionStorage.getItem(`docentapi:key:${id}`) ?? '');
   }, [id]);
   const saveKey = (v: string) => {
     setKey(v);
-    if (v) sessionStorage.setItem(`spotcheck:key:${id}`, v);
-    else sessionStorage.removeItem(`spotcheck:key:${id}`);
+    if (v) sessionStorage.setItem(`docentapi:key:${id}`, v);
+    else sessionStorage.removeItem(`docentapi:key:${id}`);
   };
 
   useEffect(() => {
@@ -180,7 +180,7 @@ export default function Playground({ id, actions, baseUrls, auth }: Props) {
               <label htmlFor={`pg-f-${name}`}>
                 {name}
                 {required.has(name) ? ' *' : ''}{' '}
-                <span style={{ color: 'var(--fg-mute)' }}>({String(schema['x-spotcheck-in'])})</span>
+                <span style={{ color: 'var(--fg-mute)' }}>({String(schema['x-docentapi-in'])})</span>
               </label>
               {Array.isArray(schema.enum) ? (
                 <select

@@ -39,7 +39,7 @@ describe('buildArazzoDocument', () => {
     } else {
       // Otherwise (list_pets chosen, or confidence too low) the dependency
       // must still be recorded, just via the extension rather than a binding.
-      expect(getStep?.['x-spotcheck-requires']?.length ?? 0).toBeGreaterThan(0);
+      expect(getStep?.['x-docentapi-requires']?.length ?? 0).toBeGreaterThan(0);
     }
   });
 

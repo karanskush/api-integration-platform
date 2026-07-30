@@ -14,19 +14,19 @@ function withOrigin(value: string | undefined) {
 
 describe('appOrigin', () => {
   it('prefers the configured origin over the request', () => {
-    withOrigin('https://spotcheck.dev');
+    withOrigin('https://docentapi.dev');
     // The request origin is wrong behind a proxy and on preview URLs, which is
     // the whole reason the env var exists.
     expect(appOrigin(new Request('https://internal-7x2.vercel.app/api/import'))).toBe(
-      'https://spotcheck.dev',
+      'https://docentapi.dev',
     );
   });
 
-  it.each(['https://spotcheck.dev/', 'https://spotcheck.dev///', '  https://spotcheck.dev/  '])(
+  it.each(['https://docentapi.dev/', 'https://docentapi.dev///', '  https://docentapi.dev/  '])(
     'normalises %j to a bare origin',
     (configured) => {
       withOrigin(configured);
-      expect(appOrigin()).toBe('https://spotcheck.dev');
+      expect(appOrigin()).toBe('https://docentapi.dev');
     },
   );
 
@@ -48,17 +48,17 @@ describe('appOrigin', () => {
 
 describe('appHost', () => {
   it.each([
-    ['https://spotcheck.dev', 'spotcheck.dev'],
+    ['https://docentapi.dev', 'docentapi.dev'],
     ['http://localhost:3000', 'localhost:3000'],
-    ['https://spotcheckhq.vercel.app/', 'spotcheckhq.vercel.app'],
+    ['https://docentapi.vercel.app/', 'docentapi.vercel.app'],
   ])('%s -> %s', (configured, expected) => {
     withOrigin(configured);
     expect(appHost()).toBe(expected);
   });
 
   it('is what the landing copy renders, so it never carries a scheme', () => {
-    withOrigin('https://spotcheck.dev');
-    // Copy reads "spotcheck.dev/mcp/you", never "https://spotcheck.dev/mcp/you".
+    withOrigin('https://docentapi.dev');
+    // Copy reads "docentapi.dev/mcp/you", never "https://docentapi.dev/mcp/you".
     expect(appHost()).not.toMatch(/^https?:/);
   });
 });

@@ -10,7 +10,7 @@
 // caller_supplied) IS the universal answer space: every archetype below is a
 // specialised, plainer-English wording of "which of these is it?", and every
 // closed option carries the FieldOrigin it resolves to. That is what lets an
-// answer flow straight into x-spotcheck-origin instead of being collected and
+// answer flow straight into x-docentapi-origin instead of being collected and
 // discarded, and it is why there is no free-text fallback — the fallback is the
 // origin picker itself.
 //
@@ -44,7 +44,7 @@ export type AnswerOption = {
   value: string; // stable identifier, stored in the answer
   label: string; // what the owner reads
   detail?: string; // one clarifying line
-  // What choosing this means for x-spotcheck-origin. Absent when the answer
+  // What choosing this means for x-docentapi-origin. Absent when the answer
   // refines something other than the field's origin.
   resolvedOrigin?: FieldOrigin;
   provenance: OptionProvenance;

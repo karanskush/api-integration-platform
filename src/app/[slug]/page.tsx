@@ -49,7 +49,7 @@ function baseUrlHostname(baseUrls: string[]): string {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const record = await loadPersistentRecord(slug);
-  return { title: record ? `${record.name} — Spotcheck` : 'Not found — Spotcheck' };
+  return { title: record ? `${record.name} — DocentAPI` : 'Not found — DocentAPI' };
 }
 
 export default async function PersistentApiPage({ params }: { params: Promise<{ slug: string }> }) {

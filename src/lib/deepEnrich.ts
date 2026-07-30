@@ -174,13 +174,13 @@ function consideredFieldsFor(record: ImportRecord, actions: Action[], limit?: nu
   return out;
 }
 
-// Vocabulary that only makes sense to someone who can see inside Spotcheck. A
+// Vocabulary that only makes sense to someone who can see inside DocentAPI. A
 // question containing any of it is asking the API's owner to adjudicate our own
 // inference — "Is this heuristic noise conflating distinct entity ids?" — which
 // they cannot do. On one Swagger Petstore run these were the majority of the
 // questions raised.
 const INTERNAL_VOCABULARY =
-  /\b(known[\s_]?producers?|heuristics?|lineage|spotcheck|confidence (?:score|level|value)|structural (?:heuristic|signal)|edge (?:score|weight)|scoring)\b/i;
+  /\b(known[\s_]?producers?|heuristics?|lineage|docentapi|confidence (?:score|level|value)|structural (?:heuristic|signal)|edge (?:score|weight)|scoring)\b/i;
 
 function systemInstructions(): string {
   return [

@@ -78,7 +78,7 @@ export default function AskAssistant({
           <p style={{ fontSize: 13.5, whiteSpace: 'pre-wrap' }}>{result.answer}</p>
           {result.toolCalls.length > 0 && (
             <p className="mono" style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-              checked: {result.toolCalls.map((c) => c.tool.replace(/^spotcheck_/, '')).join(', ')}
+              checked: {result.toolCalls.map((c) => c.tool.replace(/^docentapi_/, '')).join(', ')}
             </p>
           )}
         </div>

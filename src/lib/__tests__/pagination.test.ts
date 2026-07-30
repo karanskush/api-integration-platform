@@ -16,7 +16,7 @@ function action(o: Partial<Action> & { name: string; method: string; path: strin
 
 function query(names: Record<string, string>): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
-  for (const [name, type] of Object.entries(names)) properties[name] = { 'x-spotcheck-in': 'query', type };
+  for (const [name, type] of Object.entries(names)) properties[name] = { 'x-docentapi-in': 'query', type };
   return { type: 'object', properties };
 }
 

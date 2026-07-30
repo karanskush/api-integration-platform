@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import PricingTable from '@/components/PricingTable';
 
-export const metadata: Metadata = { title: 'Pricing — Spotcheck' };
+export const metadata: Metadata = { title: 'Pricing — DocentAPI' };
 
 export default function PricingPage() {
   return (

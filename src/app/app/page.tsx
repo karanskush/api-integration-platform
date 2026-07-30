@@ -1,7 +1,7 @@
 import ImportForm from '@/components/ImportForm';
 
 export const metadata = {
-  title: 'Import an API — Spotcheck',
+  title: 'Import an API — DocentAPI',
   description: 'Generate a live API integration workspace and hosted MCP server in seconds.',
 };
 
@@ -12,7 +12,7 @@ export default function AppHome() {
         <p className="eyebrow">Instant generator</p>
         <h1 className="display">Turn an API definition into a working integration.</h1>
         <p className="lead">
-          Import an OpenAPI spec, Postman collection, or cURL command. Spotcheck creates an
+          Import an OpenAPI spec, Postman collection, or cURL command. DocentAPI creates an
           executable workspace for humans and a hosted MCP endpoint for agents.
         </p>
       </header>

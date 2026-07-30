@@ -11,7 +11,7 @@ import { getOrCreateOrgForUser } from '@/lib/org';
 import { loadVerifiedApiIds } from '@/lib/persistentApi';
 import { limitsFor } from '@/lib/plans';
 
-export const metadata: Metadata = { title: 'Dashboard — Spotcheck' };
+export const metadata: Metadata = { title: 'Dashboard — DocentAPI' };
 
 const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 

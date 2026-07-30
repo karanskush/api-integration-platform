@@ -105,7 +105,7 @@ export const specVersions = pgTable('spec_versions', {
   actionCount: integer('action_count').notNull().default(0),
   // Populated by the deep-analysis pipeline's finalize stage (and regenerated
   // whenever a clarification answer changes the picture) — Blob pointers to
-  // the portable Arazzo workflow file and the x-spotcheck-* enriched OpenAPI.
+  // the portable Arazzo workflow file and the x-docentapi-* enriched OpenAPI.
   arazzoBlobRef: text('arazzo_blob_ref'),
   enrichedSpecBlobRef: text('enriched_spec_blob_ref'),
   createdAt: createdAt(),

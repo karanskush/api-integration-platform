@@ -38,7 +38,7 @@ export default function AuthGuide({ record }: { record: ImportRecord }) {
       </p>
       <p style={{ color: 'var(--fg-mute)', fontSize: 12.5, marginTop: 8 }}>
         Bring your own key: credentials stay in your browser session and ride each request pass-through.
-        Spotcheck never stores them.
+        DocentAPI never stores them.
       </p>
     </section>
   );

@@ -40,7 +40,7 @@ function action(o: Partial<Action> & { name: string; method: string; path: strin
 }
 
 function param(where: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { 'x-spotcheck-in': where, ...extra };
+  return { 'x-docentapi-in': where, ...extra };
 }
 
 function body(properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {

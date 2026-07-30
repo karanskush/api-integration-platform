@@ -11,7 +11,7 @@ export default function McpBlock({ record, mcpUrl }: { record: ImportRecord; mcp
       mcpServers: {
         [record.id]: {
           url: mcpUrl,
-          ...(needsKey ? { headers: { 'x-spotcheck-upstream-key': '<your API key>' } } : {}),
+          ...(needsKey ? { headers: { 'x-docentapi-upstream-key': '<your API key>' } } : {}),
         },
       },
     },
@@ -56,7 +56,7 @@ export default function McpBlock({ record, mcpUrl }: { record: ImportRecord; mcp
       </div>
       {needsKey && (
         <p style={{ color: 'var(--fg-mute)', fontSize: 12.5, marginTop: 10 }}>
-          BYOK: put your upstream API key in the <code>x-spotcheck-upstream-key</code> header — it is
+          BYOK: put your upstream API key in the <code>x-docentapi-upstream-key</code> header — it is
           passed through to the API and never stored. Clients that can’t set headers can append{' '}
           <code>?key=&lt;value&gt;</code> to the URL (careful: URLs can end up in logs).
         </p>

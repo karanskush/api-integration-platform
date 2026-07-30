@@ -10,7 +10,7 @@
 // Two acceptance rules, in descending strength:
 //
 //   1. EXACT host match — the proof lands on a hostname the API itself
-//      serves from (`_spotcheck-verify.api.stripe.com`). Always allowed and
+//      serves from (`_docentapi-verify.api.stripe.com`). Always allowed and
 //      always safe: whoever can publish records on the API's own hostname is
 //      as authoritative as it is possible to be, so no public-suffix
 //      reasoning is needed.

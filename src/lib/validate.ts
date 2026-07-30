@@ -5,7 +5,7 @@ import type { Action } from './ir';
 // One Ajv instance + compile cache shared by the playground proxy and the MCP
 // tools/call path — the single source of argument validation.
 const ajv = new Ajv({
-  strict: false, // schemas carry x-spotcheck-in annotations and OAS leftovers
+  strict: false, // schemas carry x-docentapi-in annotations and OAS leftovers
   coerceTypes: true, // form inputs arrive as strings
   useDefaults: true,
   allErrors: true,

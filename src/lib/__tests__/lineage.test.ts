@@ -15,7 +15,7 @@ function action(overrides: Partial<Action> & { name: string; method: string; pat
 }
 
 function param(where: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { 'x-spotcheck-in': where, ...extra };
+  return { 'x-docentapi-in': where, ...extra };
 }
 
 function record(actions: Action[]): ImportRecord {
@@ -686,7 +686,7 @@ describe('lineage across nested entities that share an id field name', () => {
       method: 'POST',
       path: '/pet',
       safety: 'write',
-      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-spotcheck-in': 'body' } } },
+      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-docentapi-in': 'body' } } },
       responseSchema: PET_SCHEMA,
     }),
     action({
@@ -694,7 +694,7 @@ describe('lineage across nested entities that share an id field name', () => {
       method: 'PUT',
       path: '/pet',
       safety: 'write',
-      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-spotcheck-in': 'body' } } },
+      paramsSchema: { type: 'object', required: ['body'], properties: { body: { ...PET_SCHEMA, 'x-docentapi-in': 'body' } } },
       responseSchema: PET_SCHEMA,
     }),
     action({
@@ -794,7 +794,7 @@ describe('lineage across nested entities that share an id field name', () => {
           required: ['body'],
           properties: {
             body: {
-              'x-spotcheck-in': 'body',
+              'x-docentapi-in': 'body',
               type: 'object',
               properties: { id: { type: 'integer', format: 'int64' }, petId: { type: 'integer', format: 'int64' }, quantity: { type: 'integer' } },
             },
@@ -873,7 +873,7 @@ describe('lineage across nested entities that share an id field name', () => {
               required: ['body'],
               properties: {
                 body: {
-                  'x-spotcheck-in': 'body',
+                  'x-docentapi-in': 'body',
                   type: 'object',
                   properties: { status: { type: 'string', enum: ['available', 'pending', 'sold'] } },
                 },

@@ -5,7 +5,7 @@
 // advisor tool reads it that way today. This file exists for the two things an
 // in-memory-only graph cannot give you — BUILD_PLAN.md's "materialize, don't
 // traverse" schema rule, and an audit trail: a stored fact answers "why did
-// spotcheck link these two fields on 2026-07-01" even after the scoring
+// docentapi link these two fields on 2026-07-01" even after the scoring
 // heuristic that produced it has since changed. Nothing currently reads these
 // rows back into a live tool response; they exist as the durable record, the
 // same relationship score_previews already has to the live-recomputed
