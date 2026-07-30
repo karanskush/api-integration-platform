@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ActionCard from '@/components/product/ActionCard';
-import AskAssistant from '@/components/product/AskAssistant';
+import AskChannel from '@/components/product/AskChannel';
 import AuthGuide from '@/components/product/AuthGuide';
 import ClaimOwnershipForm from '@/components/product/ClaimOwnershipForm';
 import McpBlock from '@/components/product/McpBlock';
@@ -11,6 +11,7 @@ import Playground from '@/components/product/Playground';
 import RunVerificationButton from '@/components/product/RunVerificationButton';
 import ScorePreviewPanel from '@/components/product/ScorePreviewPanel';
 import VerifiedScorePanel from '@/components/product/VerifiedScorePanel';
+import { suggestedQuestions } from '@/lib/askSeeds';
 import { getDb } from '@/lib/db';
 import { orgMembers, users } from '@/lib/db/schema';
 import { loadApiVerificationState, loadPersistentRecord } from '@/lib/persistentApi';
@@ -162,7 +163,13 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
           {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
           {clerkReady &&
             (userId ? (
-              <AskAssistant slug={slug} />
+              <AskChannel
+                apiName={record.name}
+                endpoint={`/api/apis/${slug}/ask`}
+                seeds={suggestedQuestions(record)}
+                actionNames={record.actions.map((a) => a.name)}
+                probeVerified={Boolean(verification?.scores)}
+              />
             ) : (
               <div className="panel" style={{ padding: 20, display: 'grid', gap: 8 }}>
                 <h2 style={{ fontSize: 15 }}>Ask this API</h2>

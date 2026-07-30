@@ -21,6 +21,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { asData } from '../advisor/types';
 import { askLanguageModel } from '../ask';
+import { logModelFailure } from '../askLog';
 import type { AnswerOption } from './archetypes';
 import { isRelevant, verifyQuote, type EvidenceEnvelope } from './evidence';
 
@@ -121,7 +122,8 @@ export async function synthesizeMappings(input: SynthesisInput): Promise<Synthes
       prompt: buildPrompt(batch),
     });
     mappings = object.mappings;
-  } catch {
+  } catch (err) {
+    logModelFailure('[synthesize]', { considered: batch.length }, err);
     // No suggestions is the pre-existing behaviour: an empty pair widget the
     // owner fills in themselves. Never a reason to fail the job.
     return { suggestions: new Map(), rejections: [] };

@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MockLanguageModelV4 } from 'ai/test';
-import { AskInputError, aiReady, askAboutApi, askLanguageModel, askModel } from '../ask';
+import { AskInputError, aiReady, askAboutApi, askConfigProblem, askLanguageModel, askModel } from '../ask';
 import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
@@ -107,13 +107,27 @@ describe('aiReady', () => {
     expect(aiReady()).toBe(true);
   });
 
-  // On Vercel the Gateway authenticates via OIDC — no key to configure — so
-  // the platform itself counts as a credential source, unlike every other
-  // xReady() in this codebase which needs an explicit secret regardless of
-  // platform.
-  it('is true when running on Vercel with no explicit key', () => {
+  // Inverted deliberately, and this assertion moving is the honest signal that
+  // the contract changed. `VERCEL` is set on every deployment and authenticates
+  // nothing — the Gateway needs AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN. Treating
+  // the platform flag as a credential made aiReady() unconditionally true in
+  // production, so the 503 both ask routes were written to return could never
+  // fire and a real Azure misconfiguration surfaced as an opaque 502 instead.
+  it('is false on Vercel when the only signal is the platform flag', () => {
     process.env.VERCEL = '1';
-    expect(aiReady()).toBe(true);
+    expect(aiReady()).toBe(false);
+  });
+
+  // The production condition that hid the outage: an azure/ slug selected, the
+  // platform flag set, and the endpoint missing. Resolution must NOT fall through
+  // to the Gateway, which could never serve a private deployment name anyway.
+  it('is false for an azure/ slug with a missing endpoint, even on Vercel', () => {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
+    process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/gpt-5-mini';
+    expect(aiReady()).toBe(false);
+    expect(askConfigProblem()?.hint).toMatch(/AZURE_OPENAI_ENDPOINT/);
   });
 
   // `vercel env pull` writes a short-lived OIDC token into .env.local, which the
@@ -144,7 +158,7 @@ describe('aiReady', () => {
 
 describe('askLanguageModel', () => {
   it('returns the slug itself when the Gateway is the credential', () => {
-    process.env.VERCEL = '1';
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
     process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
     expect(askLanguageModel()).toBe('openai/gpt-5-mini');
   });
@@ -165,9 +179,12 @@ describe('askLanguageModel', () => {
   });
 
   // The key is present but the model is not OpenAI's, so the Gateway still owns
-  // this call — the configured model is never quietly rewritten.
+  // this call — the configured model is never quietly rewritten. Now needs a real
+  // Gateway credential too: resolution returns a slug only when something can
+  // actually authenticate it, rather than handing back an uncallable string.
   it('leaves a non-OpenAI model on the Gateway even with a key set', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
     process.env.DOCENTAPI_ASK_MODEL = 'anthropic/claude-opus-5';
     expect(askLanguageModel()).toBe('anthropic/claude-opus-5');
   });
@@ -236,12 +253,16 @@ describe('askLanguageModel — Azure OpenAI', () => {
     expect(aiReady()).toBe(false);
   });
 
-  // Azure credentials do not make a platform-OpenAI slug callable.
-  it('leaves a non-Azure model alone', () => {
+  // Azure credentials do not make a platform-OpenAI slug callable. This used to
+  // assert that askLanguageModel() handed the slug BACK while aiReady() was
+  // false — two answers that cannot both be acted on. Not ready now means the
+  // builder throws, so an uncallable configuration can no longer be smuggled
+  // past the route's 503 gate as a plausible-looking model string.
+  it('refuses a platform-OpenAI slug that only Azure is credentialed for', () => {
     configureAzure();
     process.env.DOCENTAPI_ASK_MODEL = 'openai/gpt-5-mini';
-    expect(askLanguageModel()).toBe('openai/gpt-5-mini');
     expect(aiReady()).toBe(false);
+    expect(() => askLanguageModel()).toThrow(/no AI Gateway credential/);
   });
 });
 

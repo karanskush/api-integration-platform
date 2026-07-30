@@ -16,6 +16,7 @@
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { askLanguageModel } from './ask';
+import { logModelFailure } from './askLog';
 import { asData } from './advisor/types';
 import { fieldMapFor, originOf, type FieldLocation } from './fieldMap';
 import type { Action, ImportRecord } from './ir';
@@ -64,7 +65,21 @@ export type EnrichResult = {
   // Optional: callers construct EnrichResult literals (including in tests), and
   // a required field would break every one of them.
   lineageDisputes?: LineageDispute[];
+  // ATTEMPTED, not succeeded. Kept under its original name because callers and
+  // the analysis_runs.detail payload already read it, but it is the wrong signal
+  // for "did enrichment actually happen" — see chunksSucceeded.
   chunksProcessed: number;
+  // How many chunks the model actually answered. Optional for the same reason
+  // lineageDisputes is: callers construct EnrichResult literals, including in
+  // tests, and a required field would break every one of them.
+  //
+  // Added because its absence was a real bug. With every chunk failing,
+  // chunksProcessed still equalled chunksTotal, so analyze-enrich's
+  // `enrichmentComplete` evaluated TRUE against a completely empty semantic
+  // picture — and triageQuestions then ran auto-retirement, which is exactly the
+  // partial-picture case it exists to decline.
+  chunksSucceeded?: number;
+  chunksFailed?: number;
   chunksTotal: number;
   truncated: boolean;
 };
@@ -229,6 +244,8 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
   const fields: FieldSemanticsFinding[] = [];
   const openQuestions: OpenQuestion[] = [];
   const lineageDisputes: LineageDispute[] = [];
+  let chunksSucceeded = 0;
+  let chunksFailed = 0;
 
   for (const group of processed) {
     const chunkFields = consideredFieldsFor(input.record, group.actions, MAX_FIELDS_PER_CHUNK);
@@ -286,9 +303,15 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
           reason: asData(d.reason, 300),
         });
       }
-    } catch {
+      chunksSucceeded += 1;
+    } catch (err) {
       // One chunk failing (model error, malformed output) doesn't fail the
-      // whole pass — the remaining chunks still run.
+      // whole pass — the remaining chunks still run. But it is recorded now,
+      // both in the log and in the result: this bare catch is what hid a
+      // provider misconfiguration that failed EVERY chunk of EVERY run, while
+      // the stage still reported success with aiConfigured: true.
+      chunksFailed += 1;
+      logModelFailure('[enrich]', { resource: group.resource, fields: chunkFields.length }, err);
       continue;
     }
   }
@@ -298,6 +321,8 @@ export async function enrichRecord(input: EnrichInput): Promise<EnrichResult> {
     openQuestions,
     lineageDisputes,
     chunksProcessed: processed.length,
+    chunksSucceeded,
+    chunksFailed,
     chunksTotal: groups.length,
     truncated: truncatedByChunkCap,
   };

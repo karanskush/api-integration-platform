@@ -26,6 +26,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { asData } from '../advisor/types';
 import { askLanguageModel } from '../ask';
+import { logModelFailure } from '../askLog';
 import type { AnswerSpec } from './archetypes';
 import { buildEnvelopes, isRelevant, verifyQuote, type EvidenceEnvelope } from './evidence';
 
@@ -160,9 +161,13 @@ export async function triageQuestions(input: TriageInput): Promise<TriageResult>
       prompt: buildPrompt(batch),
     });
     verdicts = object.verdicts;
-  } catch {
+  } catch (err) {
     // A model or transport failure means every question stands, which is the
-    // same outcome as triage never having run. Never a reason to fail the job.
+    // same outcome as triage never having run. Never a reason to fail the job —
+    // but it IS a reason to say so. This catch was silent, so a provider
+    // misconfiguration that failed every call looked identical to a run where
+    // triage simply had nothing to retire.
+    logModelFailure('[triage]', { considered: batch.length }, err);
     return { assumptions: [], rejections: [], considered: batch.length };
   }
 

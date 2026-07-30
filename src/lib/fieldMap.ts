@@ -141,13 +141,16 @@ function typeOf(schema: Schema): { type: string; nullable: boolean } {
 // allOf is a genuine intersection; oneOf/anyOf is a union we flatten and mark
 // by keeping the first member's type, which is the honest approximation.
 function mergeCombinators(schema: Schema): Schema {
-  const branches: Schema[] = [];
+  // Provenance is carried per branch, not read off the parent. A schema can hold
+  // allOf AND oneOf at once, and the guard below has to know which combinator
+  // THIS branch came from.
+  const branches: Array<{ schema: Schema; fromAllOf: boolean }> = [];
   for (const key of ['allOf', 'oneOf', 'anyOf'] as const) {
     const value = schema[key];
     if (Array.isArray(value)) {
       for (const member of value) {
         const sub = asSchema(member);
-        if (sub) branches.push(sub);
+        if (sub) branches.push({ schema: sub, fromAllOf: key === 'allOf' });
       }
     }
   }
@@ -161,14 +164,19 @@ function mergeCombinators(schema: Schema): Schema {
   const properties: Schema = asSchema(merged.properties) ? { ...(merged.properties as Schema) } : {};
   const required = new Set(Array.isArray(merged.required) ? (merged.required as unknown[]).filter((r): r is string => typeof r === 'string') : []);
 
-  for (const branch of branches) {
+  for (const { schema: branch, fromAllOf } of branches) {
     const collapsed = mergeCombinators(branch);
     const branchProps = asSchema(collapsed.properties);
     if (branchProps) for (const [key, value] of Object.entries(branchProps)) properties[key] ??= value;
     // Only allOf members contribute requiredness — a oneOf member's `required`
     // applies to that branch alone, and hoisting it would report a field as
     // mandatory when an alternative branch does not need it.
-    if (Array.isArray(collapsed.required) && Array.isArray(schema.allOf)) {
+    //
+    // This used to test `Array.isArray(schema.allOf)` — the PARENT — while
+    // iterating branches drawn from all three combinators. So a schema carrying
+    // both allOf and oneOf hoisted the oneOf branches' required too, and marked
+    // fields mandatory purely because an allOf happened to sit alongside them.
+    if (Array.isArray(collapsed.required) && fromAllOf) {
       for (const r of collapsed.required) if (typeof r === 'string') required.add(r);
     }
     if (!merged.type && collapsed.type) merged.type = collapsed.type;
