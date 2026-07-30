@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import ActionCard from '@/components/product/ActionCard';
-import AskAssistant from '@/components/product/AskAssistant';
+import AskChannel from '@/components/product/AskChannel';
 import AuthGuide from '@/components/product/AuthGuide';
 import ClaimBanner from '@/components/product/ClaimBanner';
 import McpBlock from '@/components/product/McpBlock';
@@ -9,6 +9,7 @@ import Playground from '@/components/product/Playground';
 import ScorePreviewPanel from '@/components/product/ScorePreviewPanel';
 import TtlNotice from '@/components/product/TtlNotice';
 import { aiReady } from '@/lib/ask';
+import { suggestedQuestions } from '@/lib/askSeeds';
 import { dbReady } from '@/lib/db';
 import { isValidId } from '@/lib/ids';
 import { kv } from '@/lib/kv';
@@ -119,10 +120,14 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
         </section>
       )}
       {aiReady() && (
-        <AskAssistant
-          slug={record.id}
+        <AskChannel
+          apiName={record.name}
           endpoint={`/api/p/${record.id}/ask`}
-          subtitle={`Ask in plain language, free — no sign-in needed. Grounded in this API's own spec, capped to a few questions per paste.`}
+          seeds={suggestedQuestions(record)}
+          actionNames={record.actions.map((a) => a.name)}
+          // An ephemeral paste has never been probed — there is no score row to
+          // point at — so this is always the honest spec-derived state.
+          probeVerified={false}
         />
       )}
       <McpBlock record={record} mcpUrl={mcpUrl} />
