@@ -1,4 +1,24 @@
-# TrueAPI — Product Vision
+# DocentAPI — Product Vision
+
+> Historical note: this document predates two renames (TrueAPI → Spotcheck →
+> DocentAPI). The vision holds; read old names as DocentAPI.
+
+## 0. Codebase map
+
+The live product is **https://www.docentapi.xyz**, built from this repo's root
+(the old Vite site is parked in `legacy-site/`). The route tree is split into
+two shells, and knowing which one you are in answers most "where is X?"
+questions:
+
+| Where | Routes | What it is |
+|---|---|---|
+| `src/app/(site)/` | `/`, `/pricing` | Marketing — the cinematic landing chapters and pricing. |
+| `src/app/(product)/` | `/app`, `/analyze`, `/dashboard`, `/[slug]`, `/p/[id]`, `/apis/[slug]/complete`, sign-in/up | The console — one funnel: instant import first, deep analysis as step two from the workspace it creates. |
+| `src/app/api/`, `/mcp/[id]`, `/badge/[slug]` | machine endpoints | Called by agents, CI, and badges; no shell renders around them. |
+
+Components mirror the same split: `src/components/landing/`,
+`src/components/product/`, shared pieces at the root. Implementation detail
+lives in `TECH_IMPLEMENTATION.md`.
 
 ## 1. One-liner
 
@@ -177,7 +197,7 @@ Three surfaces, one engine. Humans and agents are both first-class consumers.
 
 We are not a docs CMS. We will not build a markdown editor, themes, custom
 domains, page templates, or page analytics. Providers keep their Mintlify /
-ReadMe / Scalar for marketing docs; TrueAPI sits alongside as the **verified
+ReadMe / Scalar for marketing docs; DocentAPI sits alongside as the **verified
 behavior layer**. The moat is the data inside the UI, not the UI chrome —
 every screen renders L2 artifacts that only we have.
 
