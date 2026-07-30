@@ -44,11 +44,30 @@ const jetbrainsMono = JetBrains_Mono({
 const FAVICON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308080c'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' rx='4' fill='none' stroke='%237a5cff' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' rx='1.5' fill='%237a5cff'/%3E%3C/svg%3E";
 
+// Absolute-URL base for OG tags and the sitemap. PUBLIC_APP_ORIGIN is the
+// runtime override origin.ts honours; the literal is the canonical domain.
+const ORIGIN = process.env.PUBLIC_APP_ORIGIN || 'https://www.docentapi.xyz';
+const TITLE = 'DocentAPI — your API, agent-ready in 60 seconds';
+const DESCRIPTION =
+  'Paste an OpenAPI spec, Postman collection, or cURL command. Get a live integration page, a BYOK playground, and a hosted MCP server.';
+
 export const metadata: Metadata = {
-  title: 'DocentAPI — your API, agent-ready in 60 seconds',
-  description:
-    'Paste an OpenAPI spec, Postman collection, or cURL command. Get a live integration page, a BYOK playground, and a hosted MCP server.',
+  metadataBase: new URL(ORIGIN),
+  title: TITLE,
+  description: DESCRIPTION,
   icons: { icon: FAVICON },
+  openGraph: {
+    type: 'website',
+    siteName: 'DocentAPI',
+    title: TITLE,
+    description: DESCRIPTION,
+    url: '/',
+  },
+  twitter: {
+    card: 'summary',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
