@@ -1,15 +1,17 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { eq, sql } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { dbReady, getDb } from '@/lib/db';
 import { analysisRuns, apis } from '@/lib/db/schema';
 import { discoverDocSeeds } from '@/lib/docsCrawler';
+import { findOrgApiForSpec, specContentHash } from '@/lib/existingApi';
 import { ImportInputError, runImport } from '@/lib/importer';
 import { CurlParseError } from '@/lib/importer/curl';
 import { DetectError } from '@/lib/importer/detect';
 import { ParseError } from '@/lib/importer/openapi';
 import { PostmanConvertError } from '@/lib/importer/postman';
 import { getOrCreateOrgForUser } from '@/lib/org';
-import { persistApi } from '@/lib/persist';
+import { persistApi, reimportApi } from '@/lib/persist';
 import { limitsFor } from '@/lib/plans';
 import { publishJob, queueReady } from '@/lib/queue';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
@@ -96,6 +98,67 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const { user: dbUser, org } = await getOrCreateOrgForUser(db, userId, email);
+
+  // Already analysed this spec? Then don't analyse it again. Deep analysis is
+  // the expensive path, and re-running it for known bytes would both burn an
+  // LLM pass and fork a duplicate page. See existingApi.ts.
+  const contentHash = specContentHash(rawText);
+  const existing = await findOrgApiForSpec(db, org.id, { contentHash, sourceUrl: record.sourceUrl });
+  if (existing) {
+    const docSeeds = discoverDocSeeds(record.externalDocsUrl, docUrls);
+
+    // Identical bytes, and the analysis either finished or is still running:
+    // there is nothing new to learn, so spend nothing and send them to the
+    // page they already have. A failed run is the one case where the same
+    // bytes deserve another attempt.
+    if (existing.isCurrentSpec && existing.analysisStatus !== 'failed') {
+      return Response.json({
+        id: existing.apiId,
+        slug: existing.slug,
+        status: existing.analysisStatus,
+        reused: true,
+        pageUrl: `${appOrigin(req)}/${existing.slug}`,
+        note:
+          existing.analysisStatus === 'complete'
+            ? 'This spec is unchanged since we last analysed it, so the existing analysis stands.'
+            : 'The analysis for this spec is already running.',
+      });
+    }
+
+    // The spec moved on (or the last attempt failed): version the API we
+    // already have rather than forking a second page, and re-run the deep
+    // pass over the change.
+    const revision = await reimportApi(db, { apiId: existing.apiId, record, rawText });
+    await db
+      .update(apis)
+      .set({ analysisStatus: 'queued', updatedAt: new Date() })
+      .where(eq(apis.id, existing.apiId));
+    await db.insert(analysisRuns).values({
+      apiId: existing.apiId,
+      specVersionId: revision.specVersionId,
+      stage: 'parse',
+      status: 'succeeded',
+      completedAt: new Date(),
+    });
+    await publishJob('/api/jobs/analyze-crawl', {
+      apiId: existing.apiId,
+      specVersionId: revision.specVersionId,
+      docSeeds,
+    });
+
+    // The page is ISR — it must show "in progress" now, not in an hour.
+    revalidatePath(`/${existing.slug}`);
+
+    return Response.json({
+      id: existing.apiId,
+      slug: existing.slug,
+      status: 'queued',
+      reused: true,
+      revision: revision.status,
+      pageUrl: `${appOrigin(req)}/${existing.slug}`,
+      note: 'This spec changed since we last analysed it — re-analysing the new revision.',
+    });
+  }
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
