@@ -203,8 +203,8 @@ export function describeToolCall(
       const field = str(i.field) ?? 'the field';
       const where = target ? ` in ${target}` : '';
       const results = arr(o?.results);
-      const producers = results.reduce((n, r) => n + arr(obj(r)?.producedBy).length, 0);
-      const consumers = results.reduce((n, r) => n + arr(obj(r)?.consumedBy).length, 0);
+      const producers = results.reduce<number>((n, r) => n + arr(obj(r)?.producedBy).length, 0);
+      const consumers = results.reduce<number>((n, r) => n + arr(obj(r)?.consumedBy).length, 0);
       const allCallerSupplied =
         results.length > 0 && results.every((r) => str(obj(r)?.origin) === 'caller_supplied');
       return {
