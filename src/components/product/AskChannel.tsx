@@ -33,8 +33,12 @@ export type AskChannelProps = {
   seeds: AskSeed[];
   /** Endpoint names on this page, so citations only link where a card exists. */
   actionNames: string[];
-  /** ISO string when probes last ran, or null. The only source of header lime. */
-  verifiedAt: string | null;
+  /**
+   * Whether a verification run has actually produced a score for this API.
+   * The ONLY source of lime in the header — and false for most APIs, which is
+   * the state the design is built around rather than an exception to it.
+   */
+  probeVerified: boolean;
 };
 
 export default function AskChannel({
@@ -42,7 +46,7 @@ export default function AskChannel({
   endpoint,
   seeds,
   actionNames,
-  verifiedAt,
+  probeVerified,
 }: AskChannelProps) {
   const reduce = useReducedMotion();
   const [draft, setDraft] = useState('');
@@ -87,7 +91,7 @@ export default function AskChannel({
         <span className="ask-who">agent ›</span>
         <h2 className="ask-title">Ask this API</h2>
         <span className="ask-basis">
-          {verifiedAt ? (
+          {probeVerified ? (
             <>
               <span className="ask-dot ok" aria-hidden="true" /> probe-verified
             </>
