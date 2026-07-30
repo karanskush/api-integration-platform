@@ -74,8 +74,47 @@ function directOpenAIModel(): string | null {
 const AZURE_PREFIX = 'azure/';
 // The api-version Azure deployments were being created with when this landed.
 // Overridable because Azure retires them on a schedule and the right value is a
-// property of the resource, not of this codebase.
+// property of the resource, not of this codebase. Also the default *surface*
+// selector — see azureSurface below.
 const DEFAULT_AZURE_API_VERSION = '2024-12-01-preview';
+
+// Azure OpenAI has two request surfaces, and the api-version string is what
+// says which one you are on:
+//
+//   legacy  /openai/deployments/<deployment>/chat/completions?api-version=2024-12-01-preview
+//   v1      /openai/v1/chat/completions?api-version=preview
+//
+// A DATED api-version belongs only to the first; the v1 surface takes the
+// literal "preview". @ai-sdk/azure@4 picks the surface from
+// `useDeploymentBasedUrls` and then stamps whatever apiVersion it was handed
+// onto whichever surface it picked (dist/index.js:90-106) — it never checks that
+// the two agree. And because isAzureOpenAIBaseURL(undefined) returns TRUE,
+// omitting the flag lands on /openai/v1 with the dated version still attached:
+// a contradiction Azure rejects with a fast, non-retryable 4xx.
+//
+// That is not hypothetical — it is why every model-backed feature in this
+// codebase was dead. ask returned 502 in ~1s, and enrichRecord's per-chunk catch
+// swallowed the identical failure, so `evidence_facts` held zero
+// llm.field_semantics rows while enrich reported aiConfigured: true.
+//
+// Deriving the surface FROM the version makes the bad pair unrepresentable.
+const DATED_API_VERSION = /^\d{4}-\d{2}-\d{2}(?:-preview)?$/;
+const V1_API_VERSIONS = new Set(['preview', 'v1']);
+
+export type AzureSurface = { apiVersion: string; useDeploymentBasedUrls: boolean };
+
+export function azureSurface(raw: string | undefined): AzureSurface | null {
+  const v = (raw?.trim() || DEFAULT_AZURE_API_VERSION).toLowerCase();
+  if (DATED_API_VERSION.test(v)) return { apiVersion: v, useDeploymentBasedUrls: true };
+  // Normalised rather than passed through: the provider's own fallback is the
+  // string "v1", and ?api-version=v1 is not a value Azure accepts on either
+  // surface. (The installed package's JSDoc claims a "preview" default while the
+  // code defaults to "v1" — don't trust the doc comment.)
+  if (V1_API_VERSIONS.has(v)) return { apiVersion: 'preview', useDeploymentBasedUrls: false };
+  // Unrecognised. Not callable, and saying so here is what turns a silent 502
+  // into a 503 that names the variable.
+  return null;
+}
 
 // Azure exposes OpenAI models under your own resource, so a platform OpenAI key
 // cannot reach it and vice versa: different host, different auth header,
@@ -100,79 +139,159 @@ function azureResourceName(): string | null {
   }
 }
 
-type AzureTarget = { deployment: string; resourceName: string; apiKey: string; apiVersion: string };
+type AzureTarget = {
+  deployment: string;
+  resourceName: string;
+  apiKey: string;
+  apiVersion: string;
+  useDeploymentBasedUrls: boolean;
+};
 
-// All of it or none of it: a key without an endpoint, or an endpoint without a
-// deployment, reports not-configured rather than half-building a client that
-// fails on first call inside enrichRecord's swallowing catch.
-function azureTarget(): AzureTarget | null {
-  const apiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
-  if (!apiKey) return null;
-  const slug = askModel();
-  if (!slug.startsWith(AZURE_PREFIX)) return null;
-  const deployment = slug.slice(AZURE_PREFIX.length);
-  if (!deployment) return null;
-  const resourceName = azureResourceName();
-  if (!resourceName) return null;
-  return {
-    deployment,
-    resourceName,
-    apiKey,
-    apiVersion: process.env.AZURE_OPENAI_API_VERSION?.trim() || DEFAULT_AZURE_API_VERSION,
-  };
+// Why a target/problem union rather than the old `xTarget(): T | null`: a null
+// said "not configured" and nothing else, so aiReady() could OR three nulls
+// together and an azure/* slug with a missing endpoint reported READY via the
+// Gateway — which can never serve a deployment name that only exists inside one
+// Azure resource. Resolution is now EXCLUSIVE: the model slug picks exactly one
+// provider, and a provider that is picked but misconfigured is a *problem*,
+// never a fallthrough to a different provider.
+export type AskConfigProblem = { reason: string; hint: string };
+
+export type AskTarget =
+  | { kind: 'azure'; azure: AzureTarget }
+  | { kind: 'openai'; modelId: string; apiKey: string }
+  | { kind: 'gateway'; slug: string };
+
+export class AskConfigError extends Error {
+  readonly problem: AskConfigProblem;
+  constructor(problem: AskConfigProblem) {
+    super(`ask model is not configured: ${problem.reason}`);
+    this.name = 'AskConfigError';
+    this.problem = problem;
+  }
 }
 
 // Every other xReady() in this codebase demands an explicit secret. The Gateway
-// is the one integration where the platform itself is a credential source, so
-// it accepts any of the three ways the Gateway can actually authenticate:
+// is the one integration where the platform itself is a credential source — but
+// only via a token. @ai-sdk/gateway's getGatewayAuthToken reads
+// AI_GATEWAY_API_KEY, else getVercelOidcToken(), which reads VERCEL_OIDC_TOKEN.
+// Those are the only two things that authenticate a Gateway call.
 //
-//   AI_GATEWAY_API_KEY  explicit key — local dev, non-Vercel deploys
-//   VERCEL              running on Vercel, which injects an OIDC token
-//   VERCEL_OIDC_TOKEN   a token pulled locally by `vercel env pull`
+// `process.env.VERCEL` used to be accepted here as a proxy for "Vercel injects an
+// OIDC token". It authenticates nothing, and because it is set on every single
+// deployment it made aiReady() unconditionally true in production — so the 503
+// both ask routes were written to return could never fire, and a real config
+// error surfaced as an opaque 502 instead. Removed deliberately; VERCEL_OIDC_TOKEN
+// is present on Vercel anyway, so nothing that worked before stops working.
 //
-// The third was missing, and its absence was not theoretical: with a freshly
-// pulled .env.local the Gateway answers a real generateText call while
-// aiReady() reported "not configured", so the enrichment pass silently ran in
-// its heuristic-only fallback and both ask routes returned 503. A readiness
-// check that is stricter than reality is just a feature flag stuck off.
-//
-// Note OIDC tokens are short-lived (~12h). An expired one is a runtime failure,
-// not a readiness question — callers already treat a model error as a degraded
-// pass rather than a dead end.
+// OIDC tokens are short-lived (~12h). An expired one is a runtime failure, not a
+// readiness question — callers already treat a model error as a degraded pass.
 function gatewayReady(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL || process.env.VERCEL_OIDC_TOKEN);
+  return Boolean(process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim());
 }
 
-// Readiness is about the model we would ACTUALLY call, not about credentials in
-// general. An OpenAI key does not make an anthropic/* slug callable, and Gateway
-// OIDC does not make a bare "gpt-5-mini" callable — reporting ready in either
-// case would just move the failure from a clear 503 to a swallowed error inside
-// the enrichment pass, which is the one place this codebase can least afford it.
+// Resolution is about the model we would ACTUALLY call. An OpenAI key does not
+// make an anthropic/* slug callable, and Gateway OIDC does not make a bare
+// "gpt-5-mini" callable — reporting ready in either case just moves the failure
+// from a clear 503 to a swallowed error inside the enrichment pass, which is the
+// one place this codebase can least afford it.
+export function resolveAskTarget():
+  | { ok: true; target: AskTarget }
+  | { ok: false; problem: AskConfigProblem } {
+  const slug = askModel();
+  const fail = (reason: string, hint: string) => ({ ok: false as const, problem: { reason, hint } });
+
+  // An azure/ slug resolves to Azure ONLY, and never falls through — no other
+  // provider can serve a deployment name that lives inside one Azure resource.
+  if (slug.startsWith(AZURE_PREFIX)) {
+    const deployment = slug.slice(AZURE_PREFIX.length).trim();
+    if (!deployment) {
+      return fail('the azure/ slug names no deployment', 'set DOCENTAPI_ASK_MODEL to azure/<your-deployment-name>');
+    }
+    const apiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
+    if (!apiKey) return fail('AZURE_OPENAI_API_KEY is not set', 'set AZURE_OPENAI_API_KEY and redeploy');
+    const resourceName = azureResourceName();
+    if (!resourceName) {
+      return fail(
+        'no Azure resource name — AZURE_OPENAI_ENDPOINT is missing or malformed',
+        'set AZURE_OPENAI_ENDPOINT to https://<resource>.openai.azure.com/',
+      );
+    }
+    const surface = azureSurface(process.env.AZURE_OPENAI_API_VERSION);
+    if (!surface) {
+      return fail(
+        'AZURE_OPENAI_API_VERSION is not a recognised api-version',
+        'use a dated version like 2024-12-01-preview, or "preview" for the /openai/v1 surface',
+      );
+    }
+    return { ok: true, target: { kind: 'azure', azure: { deployment, resourceName, apiKey, ...surface } } };
+  }
+
+  const direct = directOpenAIModel();
+  if (direct) {
+    return { ok: true, target: { kind: 'openai', modelId: direct, apiKey: process.env.OPENAI_API_KEY!.trim() } };
+  }
+
+  // A provider/model slug is the Gateway's shape.
+  if (slug.includes('/')) {
+    if (gatewayReady()) return { ok: true, target: { kind: 'gateway', slug } };
+    return fail(
+      `no AI Gateway credential for "${slug}"`,
+      'set AI_GATEWAY_API_KEY, or deploy where a VERCEL_OIDC_TOKEN is available',
+    );
+  }
+
+  // A bare name is OpenAI's own naming, so it needs OpenAI's key.
+  return fail(
+    `"${slug}" is a bare model name and OPENAI_API_KEY is not set`,
+    'set OPENAI_API_KEY, or configure a provider/model slug instead',
+  );
+}
+
 export function aiReady(): boolean {
-  return directOpenAIModel() !== null || azureTarget() !== null || gatewayReady();
+  return resolveAskTarget().ok;
+}
+
+// The specific reason readiness failed, for the 503 body. Returning the hint
+// rather than a generic string is the whole point: "set AZURE_OPENAI_ENDPOINT"
+// is actionable, "not configured" is what let this sit broken.
+export function askConfigProblem(): AskConfigProblem | null {
+  const resolved = resolveAskTarget();
+  return resolved.ok ? null : resolved.problem;
 }
 
 // What every generateText/generateObject call in this codebase passes as
 // `model`. A plain string routes through the Gateway (the AI SDK resolves
-// "provider/model" itself); a provider instance goes straight to OpenAI.
+// "provider/model" itself); a provider instance goes straight to OpenAI or Azure.
 //
-// Not memoized, unlike kv.ts/email.ts's clients: createOpenAI only closes over
-// config — there is no connection to reuse — and a cached instance would outlive
-// an OPENAI_API_KEY change within a single process.
-export function askLanguageModel(): LanguageModel {
-  const azure = azureTarget();
-  if (azure) {
-    const { deployment, ...config } = azure;
-    // .chat() rather than the provider's default .responses(): the Responses
-    // API needs api-version 2025-03-01-preview or later, and pinning it here
-    // would silently 404 every call on a resource pinned to an older one.
-    // Chat Completions is available on every api-version and carries the
+// `opts.fetch` is a test seam, and it is load-bearing rather than incidental: the
+// api-version/URL bug above shipped green precisely because every existing test
+// injected opts.model, so nothing in the suite ever observed an outgoing request.
+// See __tests__/askAzureUrl.test.ts.
+//
+// Not memoized, unlike kv.ts/email.ts's clients: createOpenAI/createAzure only
+// close over config — there is no connection to reuse — and a cached instance
+// would outlive a key change within a single process.
+export function askLanguageModel(opts: { fetch?: typeof globalThis.fetch } = {}): LanguageModel {
+  const resolved = resolveAskTarget();
+  if (!resolved.ok) throw new AskConfigError(resolved.problem);
+  const { target } = resolved;
+
+  if (target.kind === 'azure') {
+    const { deployment, ...settings } = target.azure;
+    // .chat() rather than the provider's default .responses(): Chat Completions
+    // exists on both request surfaces and on every api-version, and carries the
     // json_schema structured output all four call sites depend on.
-    return createAzure(config).chat(deployment);
+    //
+    // It buys nothing api-version-wise, though. In provider v4 createChatModel and
+    // createResponsesModel are handed the SAME url closure and differ only in the
+    // path they pass, so the comment that used to live here — claiming .chat()
+    // protected api-version compatibility — was stale. azureSurface() protects it.
+    return createAzure({ ...settings, fetch: opts.fetch }).chat(deployment);
   }
-  const direct = directOpenAIModel();
-  if (!direct) return askModel();
-  return createOpenAI({ apiKey: process.env.OPENAI_API_KEY!.trim() })(direct);
+  if (target.kind === 'openai') {
+    return createOpenAI({ apiKey: target.apiKey, fetch: opts.fetch })(target.modelId);
+  }
+  return target.slug;
 }
 
 // Wraps every advisor tool descriptor as an AI SDK tool bound to this
