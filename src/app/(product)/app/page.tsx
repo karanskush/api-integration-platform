@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import ImportForm from '@/components/product/ImportForm';
 
 export const metadata = {
@@ -5,7 +6,12 @@ export const metadata = {
   description: 'Generate a live API integration workspace and hosted MCP server in seconds.',
 };
 
-export default function AppHome() {
+const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+export default async function AppHome() {
+  // Signed-in imports route through the deep-analysis pipeline automatically
+  // (see ImportForm's `deep` prop); anonymous imports stay instant-only.
+  const signedIn = clerkReady ? Boolean((await auth()).userId) : false;
   return (
     <div className="app-home product-page wrap">
       <header className="app-home-head">
@@ -18,7 +24,7 @@ export default function AppHome() {
       </header>
 
       <div className="app-workbench">
-        <ImportForm />
+        <ImportForm deep={signedIn} />
         <aside className="app-output" aria-label="Generated output">
           <p className="eyebrow">Every import includes</p>
           <ol>
@@ -38,8 +44,9 @@ export default function AppHome() {
           <p className="app-privacy">Anonymous workspaces expire after 24 hours. Credentials are never stored.</p>
           <p className="app-privacy">
             This instant pass reads the spec alone. Step two — deep analysis — crawls the
-            provider&apos;s own docs, traces every field, and emails you when it&apos;s verified. You
-            start it from the workspace your import creates.
+            provider&apos;s own docs, traces every field, and emails you when it&apos;s verified.
+            Signed in, it starts automatically with your import; anonymous imports can start it
+            from the workspace they create.
           </p>
         </aside>
       </div>

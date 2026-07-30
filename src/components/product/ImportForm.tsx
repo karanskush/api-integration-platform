@@ -24,7 +24,14 @@ function detectedMode(value: string): ImportMode | null {
   return null;
 }
 
-export default function ImportForm() {
+// `deep` comes from the server component: when the visitor is signed in, the
+// submission routes through /api/apis/analyze — same fast parse, but it
+// persists to their org and starts the deep pipeline automatically, landing
+// on /[slug] where the analysis-in-progress banner gates the page. If the
+// deep path can't run (no quota, persistence not configured, session
+// expired), we fall back to the anonymous instant import rather than fail —
+// the magic moment must survive every misconfiguration.
+export default function ImportForm({ deep = false }: { deep?: boolean }) {
   const [mode, setMode] = useState<ImportMode>('url');
   const [values, setValues] = useState<Record<ImportMode, string>>({ url: '', paste: '', curl: '' });
   const [busy, setBusy] = useState(false);
@@ -74,6 +81,30 @@ export default function ImportForm() {
     setBusy(true);
     startProgress();
     try {
+      if (deep) {
+        const deepResponse = await fetch('/api/apis/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...(mode === 'url' ? { url: value } : { text: value }), docUrls: [] }),
+          signal: AbortSignal.timeout(45_000),
+        });
+        const deepData = await deepResponse.json().catch(() => ({}));
+        if (deepResponse.ok && typeof deepData.slug === 'string') {
+          clearTimers();
+          setStage(STAGES.length);
+          window.location.assign(`/${deepData.slug}`);
+          return;
+        }
+        // Quota exhausted, persistence/queue unconfigured, or session gone —
+        // fall through to the instant import. Anything else (a bad spec) would
+        // fail there identically, so surface the deep error as the error.
+        if (![401, 429, 503].includes(deepResponse.status)) {
+          throw new Error(
+            typeof deepData.error === 'string' ? deepData.error : `Import failed (${deepResponse.status}).`,
+          );
+        }
+      }
+
       const response = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
