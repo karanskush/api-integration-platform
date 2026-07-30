@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/azure": "^4.0.24",
     "@ai-sdk/openai": "^4.0.23",
+    "@ai-sdk/react": "^4.0.45",
     "@clerk/nextjs": "^7.5.19",
     "@modelcontextprotocol/sdk": "1.26.0",
     "@neondatabase/serverless": "^1.1.0",
@@ -40,6 +41,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "resend": "^6.17.2",
+    "streamdown": "^2.5.0",
     "stripe": "^22.3.2",
     "swagger2openapi": "^7.0.8",
     "three": "^0.185.1",
