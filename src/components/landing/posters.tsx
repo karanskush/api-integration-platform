@@ -64,11 +64,19 @@ export function LatticePoster() {
   );
 }
 
+/** A pointy-right hexagon, matching CircleGeometry(r, 6) in the live scene. */
+function hexPoints(cx: number, cy: number, r: number): string {
+  return Array.from({ length: 6 }, (_, i) => {
+    const a = (Math.PI / 3) * i;
+    return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`;
+  }).join(' ');
+}
+
 export function ConstellationPoster() {
   const agents = [
-    { y: 78, name: 'Claude' },
-    { y: 158, name: 'Cursor' },
-    { y: 238, name: 'Copilot' },
+    { y: 74, name: 'Claude' },
+    { y: 160, name: 'Cursor' },
+    { y: 246, name: 'Copilot' },
   ];
 
   return (
@@ -76,44 +84,89 @@ export function ConstellationPoster() {
       className="poster poster-constellation"
       viewBox="0 0 600 320"
       role="img"
-      aria-label="One import in the middle, feeding a human integration page on one side and Claude, Cursor and Copilot on the other."
+      aria-label="One import in the middle: it renders a human integration page on one side, and serves a hosted MCP endpoint on the other that Claude, Cursor and Copilot call."
     >
+      <defs>
+        <pattern id="pc-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle className="p-dot" cx="1.2" cy="1.2" r="1.2" />
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="600" height="320" fill="url(#pc-dots)" />
+
+      {/* broadcast rings — one import, radiating to both surfaces */}
+      <circle className="pc-ring" cx="252" cy="160" r="44" />
+      <circle className="pc-ring far" cx="252" cy="160" r="70" />
+
       {/* page branch */}
-      <path className="pc-edge" d="M 288,158 C 240,158 220,150 176,146" />
-      <rect className="pc-plate" x="52" y="112" width="124" height="72" rx="3" />
-      <text className="p-micro" x="114" y="102" textAnchor="middle">FOR HUMANS</text>
-      <text className="pc-label" x="114" y="153" textAnchor="middle">integration</text>
-      <text className="pc-label" x="114" y="171" textAnchor="middle">page</text>
+      <path className="pc-edge" d="M 230,160 C 214,160 196,160 178,160" />
+      <rect className="pc-plate" x="44" y="118" width="132" height="84" rx="3" />
+      <line className="pc-doc head" x1="56" y1="133" x2="164" y2="133" />
+      <line className="pc-doc" x1="56" y1="149" x2="164" y2="149" />
+      <line className="pc-doc" x1="56" y1="161" x2="164" y2="161" />
+      <line className="pc-doc" x1="56" y1="173" x2="130" y2="173" />
+      <rect className="pc-try" x="56" y="182" width="38" height="12" rx="2" />
+      <text className="p-micro" x="110" y="104" textAnchor="middle">FOR HUMANS</text>
+      <text className="p-micro iris" x="110" y="222" textAnchor="middle">INTEGRATION PAGE</text>
 
       {/* core */}
-      <circle className="pc-core-ring" cx="300" cy="158" r="30" />
-      <circle className="pc-core" cx="300" cy="158" r="12" />
-      <text className="p-micro" x="300" y="212" textAnchor="middle">ONE IMPORT</text>
+      <circle className="pc-core-ring" cx="252" cy="160" r="22" />
+      <circle className="pc-core" cx="252" cy="160" r="9" />
+      <text className="p-micro" x="252" y="216" textAnchor="middle">ONE IMPORT</text>
 
-      {/* agent branch */}
+      {/* agent branch — the hosted MCP server we run, then its clients */}
+      <path className="pc-edge agent" d="M 274,160 C 300,160 332,160 362,160" />
+      <polygon className="pc-hex" points={hexPoints(380, 160, 18)} />
+      <polygon className="pc-hex inner" points={hexPoints(380, 160, 10)} />
+      <text className="p-micro" x="380" y="112" textAnchor="middle">FOR AGENTS</text>
+      <text className="p-micro peri" x="380" y="214" textAnchor="middle">HOSTED MCP</text>
+
       {agents.map((agent) => (
         <g key={agent.name}>
-          <path className="pc-edge agent" d={`M 312,158 C 366,158 388,${agent.y} 432,${agent.y}`} />
-          <circle className="pc-agent" cx="446" cy={agent.y} r="13" />
-          <text className="pc-agent-label" x="470" y={agent.y + 4}>{agent.name}</text>
+          <path className="pc-edge agent" d={`M 398,160 C 428,160 438,${agent.y} 466,${agent.y}`} />
+          <polygon className="pc-hex" points={hexPoints(480, agent.y, 14)} />
+          <circle className="pc-port agent" cx="466" cy={agent.y} r="2.2" />
+          <text className="pc-agent-label" x="502" y={agent.y + 4}>{agent.name}</text>
         </g>
       ))}
-      <text className="p-micro" x="432" y="42">FOR AGENTS · HOSTED MCP</text>
+
+      {/* ports — every edge docks somewhere addressable */}
+      <circle className="pc-port" cx="230" cy="160" r="2.2" />
+      <circle className="pc-port" cx="178" cy="160" r="2.2" />
+      <circle className="pc-port agent" cx="274" cy="160" r="2.2" />
+      <circle className="pc-port agent" cx="362" cy="160" r="2.2" />
+      <circle className="pc-port agent" cx="398" cy="160" r="2.2" />
     </svg>
   );
 }
 
 // The drafting-plate lineage figure, carried over from the previous design and
 // re-pigmented. The fourth row is still the point: trial_period_days has no
-// producer and is drawn with nothing attached to it.
+// producer and is drawn with nothing attached to it — a hollow port, an open
+// stub, and the closing sentence hung off it on a leader line.
 const LINEAGE_ROWS = [
   { field: 'body.customer', note: 'produced_by_api', linked: true },
   { field: 'body.items[].price', note: 'produced_by_api', linked: true },
   { field: 'body.trial_period_days', note: 'caller_supplied', linked: false },
 ];
-const ROW_Y = [92, 140, 188];
-const BOX = { w: 236, h: 72 };
-const CONSUMER = { x: 452, y: 44, w: 292, h: 188 };
+const ROW_Y = [92, 146, 200];
+const LIN_PRODUCERS = [
+  { y: 40, method: 'POST', path: '/customers', field: 'response.id', chipW: 40 },
+  { y: 152, method: 'GET', path: '/prices', field: 'response.data[].id', chipW: 36 },
+];
+const CONSUMER = { x: 452, y: 32, w: 296, h: 204 };
+
+/** Register ticks just off each plate corner — the figure was placed, not screenshotted. */
+function Ticks({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  const g = 3;
+  const l = 7;
+  const d = [
+    `M ${x - g},${y} h ${-l} M ${x},${y - g} v ${-l}`,
+    `M ${x + w + g},${y} h ${l} M ${x + w},${y - g} v ${-l}`,
+    `M ${x - g},${y + h} h ${-l} M ${x},${y + h + g} v ${l}`,
+    `M ${x + w + g},${y + h} h ${l} M ${x + w},${y + h + g} v ${l}`,
+  ].join(' ');
+  return <path className="lin-tick" d={d} />;
+}
 
 export function LineagePoster() {
   return (
@@ -123,47 +176,86 @@ export function LineagePoster() {
       role="img"
       aria-label="Lineage: POST /customers' response id feeds POST /subscriptions' customer field, GET /prices' response id feeds its price field, and trial_period_days has no producer and is left unattached."
     >
-      <g className="lin-node">
-        <rect x="8" y="46" rx="2" width={BOX.w} height={BOX.h} />
-        <text className="lin-op" x="22" y="70">POST /customers</text>
-        <text className="lin-field" x="22" y="92">response.id</text>
-        <text className="lin-tag" x="22" y="110">PRODUCES</text>
-      </g>
-      <g className="lin-node">
-        <rect x="8" y="150" rx="2" width={BOX.w} height={BOX.h} />
-        <text className="lin-op" x="22" y="174">GET /prices</text>
-        <text className="lin-field" x="22" y="196">response.data[].id</text>
-        <text className="lin-tag" x="22" y="214">PRODUCES</text>
-      </g>
+      <defs>
+        <pattern id="lin-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle className="p-dot" cx="1.2" cy="1.2" r="1.2" />
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="760" height="268" fill="url(#lin-dots)" />
+
+      {LIN_PRODUCERS.map((p) => (
+        <g key={p.path}>
+          <rect className="lin-plate" x="8" y={p.y} width="240" height="76" rx="2" />
+          <Ticks x={8} y={p.y} w={240} h={76} />
+          <text className="lin-tag" x="10" y={p.y - 8}>PRODUCES</text>
+          <rect
+            className={p.method === 'GET' ? 'lin-chip get' : 'lin-chip'}
+            x="22"
+            y={p.y + 12}
+            width={p.chipW}
+            height="17"
+            rx="2"
+          />
+          <text
+            className={p.method === 'GET' ? 'lin-chip-text get' : 'lin-chip-text'}
+            x={22 + p.chipW / 2}
+            y={p.y + 24.5}
+            textAnchor="middle"
+          >
+            {p.method}
+          </text>
+          <text className="lin-op" x={22 + p.chipW + 10} y={p.y + 25}>{p.path}</text>
+          <line className="lin-divider" x1="22" y1={p.y + 36} x2="232" y2={p.y + 36} />
+          <text className="lin-field" x="22" y={p.y + 58}>{p.field}</text>
+          <circle className="lin-port" cx="248" cy={p.y + 54} r="3" />
+        </g>
+      ))}
 
       <g className="lin-edges">
-        <path className="lin-edge" d="M 244,82 C 330,82 372,92 452,92" />
-        <text className="lin-why" x="348" y="76" textAnchor="middle">foreign_key_name · high</text>
-        <path className="lin-edge" d="M 244,186 C 330,186 372,140 452,140" />
-        <text className="lin-why" x="348" y="176" textAnchor="middle">distinctive_name · high</text>
+        <path className="lin-edge" d="M 251,94 C 330,94 380,92 448,92" />
+        <path className="lin-edge" d="M 251,206 C 330,206 380,146 448,146" />
+        {/* the signal that produced each link, worn as a chip on the wire */}
+        <rect className="lin-why-chip" x="281" y="84" width="138" height="17" rx="2" />
+        <text className="lin-why" x="350" y="95.5" textAnchor="middle">foreign_key_name · high</text>
+        <rect className="lin-why-chip" x="281" y="168" width="138" height="17" rx="2" />
+        <text className="lin-why" x="350" y="179.5" textAnchor="middle">distinctive_name · high</text>
       </g>
 
-      <g className="lin-node consumer">
-        <rect x={CONSUMER.x} y={CONSUMER.y} rx="2" width={CONSUMER.w} height={CONSUMER.h} />
-        <text className="lin-op" x={CONSUMER.x + 16} y={CONSUMER.y + 26}>POST /subscriptions</text>
-        <text className="lin-tag" x={CONSUMER.x + 16} y={CONSUMER.y + 44}>REQUIRES</text>
+      <g>
+        <rect className="lin-plate consumer" x={CONSUMER.x} y={CONSUMER.y} width={CONSUMER.w} height={CONSUMER.h} rx="2" />
+        <Ticks x={CONSUMER.x} y={CONSUMER.y} w={CONSUMER.w} h={CONSUMER.h} />
+        <text className="lin-tag" x={CONSUMER.x + 2} y={CONSUMER.y - 8}>REQUIRES</text>
+        <rect className="lin-chip" x="468" y="44" width="40" height="17" rx="2" />
+        <text className="lin-chip-text" x="488" y="56.5" textAnchor="middle">POST</text>
+        <text className="lin-op" x="518" y="57">/subscriptions</text>
+        <line className="lin-divider" x1="468" y1="70" x2="732" y2="70" />
+
         {LINEAGE_ROWS.map((row, i) => (
           <g key={row.field}>
-            <text className="lin-field" x={CONSUMER.x + 16} y={ROW_Y[i] + 4}>{row.field}</text>
+            <text className={row.linked ? 'lin-field' : 'lin-field open'} x="472" y={ROW_Y[i] + 4}>{row.field}</text>
             <text
               className={row.linked ? 'lin-origin' : 'lin-origin open'}
-              x={CONSUMER.x + CONSUMER.w - 16}
+              x="732"
               y={ROW_Y[i] + 4}
               textAnchor="end"
             >
               {row.note}
             </text>
+            {row.linked && <circle className="lin-port" cx={CONSUMER.x} cy={ROW_Y[i]} r="3" />}
           </g>
         ))}
-        <text className="lin-none" x={CONSUMER.x + 16} y={ROW_Y[2] + 26}>
-          ← nothing produces this. We say so, rather than guess.
-        </text>
+        <line className="lin-row-rule" x1="468" y1="119" x2="732" y2="119" />
+        <line className="lin-row-rule" x1="468" y1="173" x2="732" y2="173" />
+
+        {/* the honest row — an absence, drawn as one: hollow port, open stub */}
+        <circle className="lin-port open" cx={CONSUMER.x} cy={ROW_Y[2]} r="3.4" />
+        <path className="lin-stub" d="M 446,200 L 408,200 M 408,194 L 408,206" />
+        <text className="lin-why" x="412" y="188" textAnchor="middle">no producer</text>
       </g>
+
+      <path className="lin-leader" d="M 408,206 L 452,244" />
+      <text className="lin-none strong" x="460" y="248">nothing produces this.</text>
+      <text className="lin-none" x="460" y="262">we say so, rather than guess.</text>
     </svg>
   );
 }

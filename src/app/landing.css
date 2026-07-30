@@ -195,6 +195,11 @@
   letter-spacing: 0.18em;
 }
 .p-micro.caught { fill: var(--drift); }
+.p-micro.iris { fill: var(--iris-2); }
+.p-micro.peri { fill: var(--periwinkle); }
+/* The dotted sheet every figure is drawn on — the same substrate move the
+   live scenes make, so the poster and the canvas describe the same world. */
+.p-dot { fill: var(--iris); opacity: 0.13; }
 
 /* lattice poster */
 .pl-cell { fill: var(--iris); opacity: 0.85; }
@@ -205,18 +210,33 @@
 .pc-edge { fill: none; stroke: var(--iris); stroke-width: 1.2; opacity: 0.4; }
 .pc-edge.agent { stroke: var(--periwinkle); }
 .pc-plate { fill: rgba(122, 92, 255, 0.12); stroke: var(--iris); stroke-width: 1; }
-.pc-label { fill: var(--iris-2); font-family: var(--font-mono); font-size: 13px; }
+.pc-ring { fill: none; stroke: var(--iris); stroke-width: 1; opacity: 0.14; }
+.pc-ring.far { opacity: 0.09; }
+.pc-doc { stroke: var(--ink-mute); stroke-width: 2; stroke-linecap: round; opacity: 0.35; }
+.pc-doc.head { stroke: var(--iris); opacity: 0.55; }
+.pc-try { fill: rgba(122, 92, 255, 0.32); }
 .pc-core-ring { fill: none; stroke: var(--iris); stroke-width: 1.2; opacity: 0.6; }
 .pc-core { fill: var(--ink); }
-.pc-agent { fill: rgba(143, 160, 255, 0.16); stroke: var(--periwinkle); stroke-width: 1.2; }
+.pc-hex { fill: rgba(143, 160, 255, 0.14); stroke: var(--periwinkle); stroke-width: 1.2; }
+.pc-hex.inner { fill: none; stroke-width: 1; opacity: 0.5; }
+.pc-port { fill: var(--iris); }
+.pc-port.agent { fill: var(--periwinkle); }
 .pc-agent-label { fill: var(--periwinkle); font-family: var(--font-display); font-weight: 600; font-size: 14px; }
 
 /* lineage poster */
 .poster-lineage { max-width: 860px; }
-.lin-node rect { fill: rgba(122, 92, 255, 0.07); stroke: var(--iris); stroke-width: 1; }
-.lin-node.consumer rect { fill: rgba(122, 92, 255, 0.11); stroke-width: 1.4; }
+.lin-plate { fill: rgba(122, 92, 255, 0.07); stroke: var(--iris); stroke-width: 1; }
+.lin-plate.consumer { fill: rgba(122, 92, 255, 0.11); stroke-width: 1.4; }
+.lin-tick { fill: none; stroke: var(--iris); stroke-width: 1; opacity: 0.4; }
+.lin-chip { fill: var(--iris); }
+.lin-chip.get { fill: rgba(143, 160, 255, 0.12); stroke: var(--periwinkle); stroke-width: 1; }
+.lin-chip-text { fill: var(--void); font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; }
+.lin-chip-text.get { fill: var(--periwinkle); }
+.lin-divider { stroke: var(--iris); stroke-width: 1; opacity: 0.25; }
+.lin-row-rule { stroke: var(--iris); stroke-width: 1; opacity: 0.12; }
 .lin-op { fill: var(--ink); font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
 .lin-field { fill: var(--iris-2); font-family: var(--font-mono); font-size: 12.5px; }
+.lin-field.open { fill: var(--ink); }
 .lin-tag, .lin-why, .lin-origin, .lin-none {
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -227,9 +247,15 @@
 .lin-why { fill: var(--ink-mute); letter-spacing: 0.08em; text-transform: none; font-size: 10px; }
 .lin-origin { fill: var(--ink-mute); letter-spacing: 0.06em; text-transform: none; font-size: 10.5px; }
 /* The unresolved row is the honest one, so it is drawn as an absence rather
-   than dressed up: nothing attached to it, and the origin set in plain ink. */
+   than dressed up: a hollow port, an open stub, and the origin in plain ink. */
 .lin-origin.open { fill: var(--ink-dim); }
+.lin-port { fill: var(--iris-2); }
+.lin-port.open { fill: none; stroke: var(--ink-dim); stroke-width: 1.2; }
+.lin-stub { fill: none; stroke: var(--ink-dim); stroke-width: 1.2; opacity: 0.7; }
+.lin-why-chip { fill: var(--void); stroke: var(--iris); stroke-opacity: 0.35; stroke-width: 1; }
+.lin-leader { fill: none; stroke: var(--ink-mute); stroke-width: 1; opacity: 0.5; }
 .lin-none { fill: var(--ink-mute); letter-spacing: 0.01em; text-transform: none; font-size: 10.5px; }
+.lin-none.strong { fill: var(--ink-dim); }
 .lin-edge { fill: none; stroke: var(--iris); stroke-width: 1.4; }
 
 /* drift poster */
