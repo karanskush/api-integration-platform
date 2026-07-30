@@ -93,6 +93,24 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
 
       <AuthGuide record={record} />
       <ScorePreviewPanel record={record} />
+
+      {claimReady && (
+        <section className="panel" style={{ padding: 20, display: 'grid', gap: 8 }}>
+          <h2 style={{ fontSize: 15 }}>This was the instant pass</h2>
+          <p style={{ color: 'var(--fg-dim)', fontSize: 13.5 }}>
+            Everything above came from the spec alone, in seconds. Deep analysis is the second
+            pass: we crawl the provider&apos;s own docs, verify field by field, and email you when
+            it&apos;s done — or if something needs your word rather than our guess.
+          </p>
+          <a
+            className="btn"
+            href={record.sourceUrl ? `/analyze?src=${encodeURIComponent(record.sourceUrl)}` : '/analyze'}
+            style={{ justifySelf: 'start' }}
+          >
+            Start deep analysis <span aria-hidden="true">→</span>
+          </a>
+        </section>
+      )}
       {aiReady() && (
         <AskAssistant
           slug={record.id}

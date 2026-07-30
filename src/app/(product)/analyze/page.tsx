@@ -25,14 +25,15 @@ export default async function AnalyzePage() {
   return (
     <div className="wrap" style={{ padding: '40px 0', display: 'grid', gap: 20, maxWidth: 640, margin: '0 auto' }}>
       <header>
-        <span className="eyebrow">Deep analysis</span>
+        <span className="eyebrow">Deep analysis · the second pass</span>
         <h1 className="display" style={{ fontSize: 26 }}>
-          Submit an API for a real, verified integration
+          Go deep on this API
         </h1>
         <p style={{ color: 'var(--fg-dim)', fontSize: 13.5, marginTop: 8 }}>
-          Paste a spec and, if you have them, links to the provider&apos;s own docs. We take real time
-          to go deep on every field and body — and if something can&apos;t be figured out automatically,
-          we&apos;ll email you to fill in the gap.
+          The instant import reads the spec alone. This pass takes real time: we crawl the
+          provider&apos;s own docs and go field by field. You&apos;ll land on the API&apos;s workspace right
+          away and can watch the analysis run there — we&apos;ll email you when it&apos;s verified, or
+          sooner if we need you to fill in a gap we couldn&apos;t close ourselves.
         </p>
       </header>
       <AnalyzeForm />

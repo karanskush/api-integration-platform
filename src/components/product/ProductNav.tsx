@@ -2,12 +2,13 @@
 
 import { usePathname } from 'next/navigation';
 
-// The console's three rooms, always all visible — discoverability beats
-// gating. Anonymous visitors clicking Dashboard hit the sign-in redirect,
-// which is the correct introduction.
+// One door in: Import. Deep analysis is deliberately NOT a tab — it is step
+// two of the same funnel, offered from the workspace an import produces
+// (and from /analyze directly, which stays routable). Anonymous visitors
+// clicking Dashboard hit the sign-in redirect, which is the correct
+// introduction.
 const TABS = [
   { href: '/app', label: 'Import' },
-  { href: '/analyze', label: 'Deep analysis' },
   { href: '/dashboard', label: 'Dashboard' },
 ];
 

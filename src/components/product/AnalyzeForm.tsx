@@ -1,20 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Mode = 'url' | 'paste';
 
-// Deliberately fully async, unlike ImportForm: there is no page to redirect
-// to on success — the deep pipeline (doc crawl, LLM enrichment, any human
-// clarification) runs in the background, and the only immediate feedback is
-// a confirmation that it started. See /api/apis/analyze's own header comment.
+// The fast parse + persist happen synchronously server-side, so a workspace
+// page exists the moment this submits — we land there, where the
+// analysis-in-progress banner and the we'll-email-you promise live. Only the
+// deep pipeline (doc crawl, LLM enrichment, any human clarification) stays
+// in the background. See /api/apis/analyze's own header comment.
 export default function AnalyzeForm() {
   const [mode, setMode] = useState<Mode>('url');
   const [values, setValues] = useState<Record<Mode, string>>({ url: '', paste: '' });
   const [docUrls, setDocUrls] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+
+  // Workspaces link here with ?src=<spec url> so the second pass never asks
+  // the visitor to re-find what the first pass already knew.
+  useEffect(() => {
+    const src = new URLSearchParams(window.location.search).get('src');
+    if (src) setValues((current) => (current.url ? current : { ...current, url: src }));
+  }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -58,7 +65,8 @@ export default function AnalyzeForm() {
               : `Submission failed (${response.status}).`,
         );
       }
-      setSubmitted(true);
+      window.location.assign(`/${data.slug}`);
+      return;
     } catch (err) {
       const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
       setError(
@@ -72,22 +80,6 @@ export default function AnalyzeForm() {
       setBusy(false);
     }
   };
-
-  if (submitted) {
-    return (
-      <div className="panel" style={{ padding: 20, display: 'grid', gap: 10 }}>
-        <h2 style={{ fontSize: 15 }}>Submitted — we&apos;re on it</h2>
-        <p style={{ color: 'var(--fg-dim)', fontSize: 13.5 }}>
-          We&apos;re crawling the provider&apos;s docs and running a full field-by-field analysis. This
-          takes real time — we&apos;ll email you the moment it&apos;s ready, or sooner if we need you to
-          clarify something we couldn&apos;t figure out on our own.
-        </p>
-        <a className="btn" href="/dashboard" style={{ justifySelf: 'start' }}>
-          Back to dashboard
-        </a>
-      </div>
-    );
-  }
 
   return (
     <form onSubmit={submit} className="panel import-panel">
