@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import ManageBillingButton from '@/components/product/ManageBillingButton';
 import OrgBadge from '@/components/product/OrgBadge';
+import RemoveApiButton from '@/components/product/RemoveApiButton';
 import { dbReady, getDb } from '@/lib/db';
 import { apis } from '@/lib/db/schema';
 import { getOrCreateOrgForUser } from '@/lib/org';
@@ -95,13 +96,14 @@ export default async function DashboardPage() {
                   </div>
                   <code className="mono" style={{ color: 'var(--fg-mute)', fontSize: 12 }}>/{api.slug}</code>
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Link href={`/${api.slug}`} className="btn">
                     View page
                   </Link>
                   <Link href={`/mcp/${api.slug}`} className="btn">
                     MCP URL
                   </Link>
+                  <RemoveApiButton slug={api.slug} name={api.name} />
                 </div>
               </div>
             ))}
