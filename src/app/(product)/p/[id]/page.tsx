@@ -48,10 +48,10 @@ function Expired() {
         server. Re-import your spec to mint a fresh one, or join the waitlist for permanent pages.
       </p>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-        <a className="btn primary" href="/">
+        <a className="btn primary" href="/app">
           Re-import a spec
         </a>
-        <a className="btn" href={process.env.SITE_WAITLIST_URL || 'http://localhost:5173/#start'}>
+        <a className="btn" href={process.env.SITE_WAITLIST_URL || '/#waitlist'}>
           Join the waitlist
         </a>
       </div>
@@ -142,7 +142,7 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
 
       <footer style={{ textAlign: 'center', padding: '20px 0', color: 'var(--fg-mute)', fontSize: 13 }}>
         This page self-destructs in {Math.max(0, Math.round((record.expiresAt - Date.now()) / 3_600_000))}h.{' '}
-        <a href={process.env.SITE_WAITLIST_URL || 'http://localhost:5173/#start'}>Want it permanent? →</a>
+        <a href={process.env.SITE_WAITLIST_URL || '/#waitlist'}>Want it permanent? →</a>
       </footer>
     </div>
   );

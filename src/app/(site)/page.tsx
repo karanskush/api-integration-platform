@@ -581,7 +581,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="cta">
+      <section className="cta" id="waitlist">
         <div className="wrap-l">
           <h2 className="display">Put your API in front of agents today.</h2>
           <p className="lead cta-lead">

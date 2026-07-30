@@ -1,4 +1,4 @@
-const SITE_WAITLIST_URL = process.env.SITE_WAITLIST_URL || 'http://localhost:5173/#start';
+const SITE_WAITLIST_URL = process.env.SITE_WAITLIST_URL || '/#waitlist';
 
 export default function TtlNotice({ expiresAt }: { expiresAt: number }) {
   const hoursLeft = Math.max(0, Math.round((expiresAt - Date.now()) / 3_600_000));
