@@ -1,4 +1,4 @@
-import ImportForm from '@/components/ImportForm';
+import ImportForm from '@/components/product/ImportForm';
 
 export const metadata = {
   title: 'Import an API — DocentAPI',

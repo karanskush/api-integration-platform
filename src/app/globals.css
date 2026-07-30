@@ -242,6 +242,45 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .footer-inner a { color: var(--fg-mute); transition: color 0.15s; }
 .footer-inner a:hover { color: var(--fg); text-decoration: none; }
 
+/* ============================================================
+   CONSOLE SHELL — the (product) group's header furniture.
+   Same sticky hairline bar as the site; the mono "console" tag
+   and the tab row are what tell you which side you are on.
+   ============================================================ */
+.app-brand-group { display: flex; align-items: center; gap: 10px; }
+.console-tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.app-aside { display: flex; align-items: center; gap: 22px; }
+.app-tabs { display: flex; align-items: center; gap: 4px; }
+.app-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--fg-dim);
+  transition: color 0.15s, background 0.15s;
+}
+.app-tab:hover { color: var(--fg); text-decoration: none; }
+.app-tab[aria-current='page'] {
+  color: var(--fg);
+  background: var(--accent-fill);
+}
+@media (max-width: 600px) {
+  .console-tag { display: none; }
+  .app-aside { gap: 12px; }
+  .app-tab { padding: 0 8px; font-size: 13px; }
+}
+
 
 /* ============================================================
    TYPE PRIMITIVES — the instrument's voice

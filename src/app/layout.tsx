@@ -1,8 +1,14 @@
-import { ClerkProvider, Show, UserButton } from '@clerk/nextjs';
+import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
 import { Geist, Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
-import './landing.css';
+
+// The route tree is split into two shells, and this root carries only what
+// they share: fonts, tokens, metadata, and the Clerk gate.
+//
+//   (site)     — the marketing story: /, /pricing. Cinematic header, chapters.
+//   (product)  — the console: /app, /analyze, /dashboard, generated API pages.
+//   api/, mcp/, badge/ — machine endpoints; no shell renders around them.
 
 // Without Clerk keys configured, auth UI is skipped entirely — the anonymous
 // Phase 0 flow must never depend on Clerk being set up. Mirrors kv.ts's
@@ -55,61 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${geist.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`}
     >
-      <body>
-        <header className="site-header">
-          <div className="header-inner">
-            <a className="brand" href="/">
-              <span className="brand-mark" aria-hidden="true" />
-              DocentAPI
-            </a>
-            <nav className="site-nav" aria-label="Primary">
-              <a className="nav-link" href="/#how">
-                What you get
-              </a>
-              <a className="nav-link" href="/#score">
-                Score
-              </a>
-              <a className="nav-link" href="/pricing">
-                Pricing
-              </a>
-              {clerkReady && (
-                <>
-                  <Show when="signed-out">
-                    <a className="nav-link" href="/sign-in">
-                      Sign in
-                    </a>
-                    <a className="nav-link" href="/sign-up">
-                      Sign up
-                    </a>
-                  </Show>
-                  <Show when="signed-in">
-                    <a className="nav-link" href="/dashboard">
-                      Dashboard
-                    </a>
-                    <a className="nav-link" href="/analyze">
-                      Deep analysis
-                    </a>
-                    <UserButton />
-                  </Show>
-                </>
-              )}
-              <a className="nav-cta" href="/app">
-                Open app <span aria-hidden="true">→</span>
-              </a>
-            </nav>
-          </div>
-        </header>
-        <main className="site-main">{children}</main>
-        <footer className="site-footer">
-          <div className="footer-inner">
-            <span>DocentAPI · behavior-verified API integration</span>
-            <span className="footer-links">
-              <a href="https://github.com/karanskush/api-integration-platform">GitHub</a>
-              <a href="mailto:hello@docentapi.dev">Contact</a>
-            </span>
-          </div>
-        </footer>
-      </body>
+      <body>{children}</body>
     </html>
   );
 

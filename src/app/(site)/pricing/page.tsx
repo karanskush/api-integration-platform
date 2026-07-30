@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import PricingTable from '@/components/PricingTable';
+import PricingTable from '@/components/product/PricingTable';
 
 export const metadata: Metadata = { title: 'Pricing — DocentAPI' };
 

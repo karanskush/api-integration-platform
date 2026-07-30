@@ -1,4 +1,4 @@
-import ImportForm from '@/components/ImportForm';
+import ImportForm from '@/components/product/ImportForm';
 import QuizSpecimen from '@/components/landing/QuizSpecimen';
 import SceneStage from '@/components/landing/SceneStage';
 import SmoothScroll from '@/components/landing/SmoothScroll';
