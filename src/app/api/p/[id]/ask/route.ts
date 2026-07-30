@@ -1,5 +1,6 @@
 import { emptyInsights } from '@/lib/advisor';
-import { AskInputError, aiReady, askAboutApi } from '@/lib/ask';
+import { AskInputError, askAboutApi, askConfigProblem } from '@/lib/ask';
+import { logModelFailure } from '@/lib/askLog';
 import { isValidId } from '@/lib/ids';
 import { ttlSeconds } from '@/lib/ir';
 import { clientIp } from '@/lib/ip';
@@ -23,9 +24,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!storageReady()) {
     return Response.json({ error: 'Storage not configured — connect Upstash Redis and redeploy' }, { status: 503 });
   }
-  if (!aiReady()) {
+  // Names the actual missing variable rather than always blaming
+  // AI_GATEWAY_API_KEY, which was wrong for every Azure-configured deploy. Logged
+  // as well as returned: a visitor cannot act on this, an operator can.
+  const configProblem = askConfigProblem();
+  if (configProblem) {
+    console.error('[ask] anonymous ask not configured', { reason: configProblem.reason });
     return Response.json(
-      { error: 'The ask assistant is not configured — set AI_GATEWAY_API_KEY and redeploy' },
+      { error: `The ask assistant is not configured — ${configProblem.hint}` },
       { status: 503 },
     );
   }
@@ -64,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (err instanceof AskInputError) {
       return Response.json({ error: err.message }, { status: 400 });
     }
-    console.error('[ask] anonymous ask failed', { id });
+    logModelFailure('[ask] anonymous', { id }, err);
     return Response.json({ error: 'The assistant could not answer that question right now.' }, { status: 502 });
   }
 }

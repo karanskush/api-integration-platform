@@ -1,7 +1,8 @@
 import { auth } from '@clerk/nextjs/server';
 import { after } from 'next/server';
 import { loadAdvisorInsights } from '@/lib/advisor/insights';
-import { AskInputError, aiReady, askAboutApi } from '@/lib/ask';
+import { AskInputError, askAboutApi, askConfigProblem } from '@/lib/ask';
+import { logModelFailure } from '@/lib/askLog';
 import { getOrgPlanForSlug } from '@/lib/credits';
 import { dbReady, getDb } from '@/lib/db';
 import { mcpCalls } from '@/lib/db/schema';
@@ -32,9 +33,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (!dbReady()) {
     return Response.json({ error: 'Persistence is not configured — connect Postgres and redeploy' }, { status: 503 });
   }
-  if (!aiReady()) {
+  // Names the actual missing variable rather than always blaming
+  // AI_GATEWAY_API_KEY, which was wrong for every Azure-configured deploy. Logged
+  // as well as returned, so an operator sees the reason even though this response
+  // only ever reaches someone who cannot fix it.
+  const configProblem = askConfigProblem();
+  if (configProblem) {
+    console.error('[ask] not configured', { reason: configProblem.reason });
     return Response.json(
-      { error: 'The ask assistant is not configured — set AI_GATEWAY_API_KEY and redeploy' },
+      { error: `The ask assistant is not configured — ${configProblem.hint}` },
       { status: 503 },
     );
   }
@@ -100,7 +107,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     if (err instanceof AskInputError) {
       return Response.json({ error: err.message }, { status: 400 });
     }
-    console.error('[ask] failed', { slug });
+    logModelFailure('[ask]', { slug }, err);
 
     after(async () => {
       try {
