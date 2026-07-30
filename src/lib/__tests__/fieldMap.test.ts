@@ -322,6 +322,42 @@ describe('fieldMapFor — combinators', () => {
     expect(byPath(union.request, 'body.card')?.required).toBe(false);
     expect(byPath(union.request, 'body.bank')?.required).toBe(false);
   });
+
+  // The case the test above missed. Requiredness used to be gated on whether the
+  // PARENT had an allOf, while the loop iterated branches drawn from all three
+  // combinators — so putting an allOf next to a oneOf hoisted the oneOf branches'
+  // `required` as well, and the presence of an unrelated allOf silently made
+  // alternative-branch fields mandatory.
+  //
+  // Not academic: a schema that composes a shared base via allOf and then offers
+  // payment alternatives via oneOf is an ordinary OpenAPI shape, and the effect
+  // is a UI telling someone to send a field the API does not want.
+  it('does not hoist oneOf requiredness merely because an allOf sits alongside it', () => {
+    const mixed = fieldMapFor(
+      action({
+        name: 'union3',
+        method: 'POST',
+        path: '/union3',
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            body: param('body', {
+              allOf: [{ type: 'object', required: ['currency'], properties: { currency: { type: 'string' } } }],
+              oneOf: [
+                { type: 'object', required: ['card'], properties: { card: { type: 'string' } } },
+                { type: 'object', required: ['bank'], properties: { bank: { type: 'string' } } },
+              ],
+            }),
+          },
+        },
+      }),
+    );
+    // The allOf member still contributes requiredness, as it should.
+    expect(byPath(mixed.request, 'body.currency')?.required).toBe(true);
+    // The oneOf branches still do not.
+    expect(byPath(mixed.request, 'body.card')?.required).toBe(false);
+    expect(byPath(mixed.request, 'body.bank')?.required).toBe(false);
+  });
 });
 
 describe('fieldMapFor — bounds are explicit', () => {
