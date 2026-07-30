@@ -155,7 +155,15 @@ async function handler(req: Request) {
       //
       // Skipped entirely on a partial reading of the API: an incomplete
       // enrichment pass is exactly when an inference drawn from it would be wrong.
-      const enrichmentComplete = !result.truncated && result.chunksProcessed >= result.chunksTotal;
+      //
+      // Keyed on chunksSucceeded, NOT chunksProcessed. chunksProcessed counts
+      // chunks ATTEMPTED, so when the provider was misconfigured and every call
+      // failed, this evaluated true against zero learned fields and triage ran
+      // auto-retirement on an empty picture — the exact case the paragraph above
+      // says to skip. `?? chunksProcessed` keeps older EnrichResult literals
+      // (and every test fixture) behaving as before.
+      const chunksSucceeded = result.chunksSucceeded ?? result.chunksProcessed;
+      const enrichmentComplete = !result.truncated && chunksSucceeded >= result.chunksTotal;
       const triage = aiReady()
         ? await triageQuestions({
             enrichmentComplete,
@@ -269,6 +277,11 @@ async function handler(req: Request) {
         completedAt: new Date(),
         detail: {
           chunksProcessed: result.chunksProcessed,
+          // The column's own comment says caps and failures are "never silently
+          // dropped". A run where every chunk failed used to be indistinguishable
+          // here from one where the model simply found nothing.
+          chunksSucceeded: result.chunksSucceeded ?? result.chunksProcessed,
+          chunksFailed: result.chunksFailed ?? 0,
           chunksTotal: result.chunksTotal,
           truncated: result.truncated,
           fieldsFound: result.fields.length,
