@@ -1,6 +1,7 @@
 import { emptyInsights } from '@/lib/advisor';
-import { AskInputError, askAboutApi, askConfigProblem } from '@/lib/ask';
+import { AskInputError, askConfigProblem, streamAskAboutApi } from '@/lib/ask';
 import { logModelFailure } from '@/lib/askLog';
+import { messagesFromQuestion, sanitizeAskMessages } from '@/lib/askMessages';
 import { isValidId } from '@/lib/ids';
 import { ttlSeconds } from '@/lib/ir';
 import { clientIp } from '@/lib/ip';
@@ -17,8 +18,19 @@ export const maxDuration = 60;
 // over its own remaining TTL so the counter dies alongside the paste) and a
 // broader per-IP ceiling (stop someone re-pasting the same spec repeatedly
 // just to bypass the first cap).
-const IP_ASK_LIMIT = { limit: 20, windowSec: 3600 };
-const PASTE_ASK_LIMIT = 5;
+//
+// Both raised because multi-turn changed what one unit buys: 5 turns is a single
+// truncated thread, too tight to demonstrate the feature to someone deciding
+// whether to sign up. 12 is two or three short threads. The per-IP ceiling stays
+// at roughly 2x the paste cap so the "re-paste to reset" bypass is still bounded.
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+const IP_ASK_LIMIT = { limit: envInt('ASK_TURNS_PER_HOUR_ANON_IP', 40), windowSec: 3600 };
+const PASTE_ASK_LIMIT = envInt('ASK_TURNS_PER_PASTE', 12);
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!storageReady()) {
@@ -55,22 +67,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  let body: { question?: unknown };
+  let body: { question?: unknown; messages?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const question = typeof body.question === 'string' ? body.question : '';
 
+  const advisorCtx = { record, insights: emptyInsights() };
+  let messages;
   try {
-    const result = await askAboutApi({ record, insights: emptyInsights() }, question);
-    return Response.json(result);
+    // Back-compat for one release; see the note in the authenticated route.
+    messages = sanitizeAskMessages(body.messages ?? messagesFromQuestion(body.question), advisorCtx);
   } catch (err) {
-    if (err instanceof AskInputError) {
-      return Response.json({ error: err.message }, { status: 400 });
-    }
-    logModelFailure('[ask] anonymous', { id }, err);
-    return Response.json({ error: 'The assistant could not answer that question right now.' }, { status: 502 });
+    if (err instanceof AskInputError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
   }
+
+  // No ledger here: an anonymous paste has no org to attribute a credit to, and
+  // both quotas above were already consumed before the stream opened. The only
+  // thing left to do on failure is say so in the log — which a 502 used to do
+  // and an in-stream error part no longer can.
+  return streamAskAboutApi(advisorCtx, messages, {
+    abortSignal: req.signal,
+    onOutcome: (outcome) => {
+      if (outcome.status === 'error') logModelFailure('[ask] anonymous', { id }, outcome.error);
+    },
+  });
 }
