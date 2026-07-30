@@ -101,14 +101,21 @@ export default async function IntegrationPage({ params }: { params: Promise<{ id
             Everything above came from the spec alone, in seconds. Deep analysis is the second
             pass: we crawl the provider&apos;s own docs, verify field by field, and email you when
             it&apos;s done — or if something needs your word rather than our guess.
+            {!signedIn && ' Sign in and it runs automatically on every import.'}
           </p>
-          <a
-            className="btn"
-            href={record.sourceUrl ? `/analyze?src=${encodeURIComponent(record.sourceUrl)}` : '/analyze'}
-            style={{ justifySelf: 'start' }}
-          >
-            Start deep analysis <span aria-hidden="true">→</span>
-          </a>
+          {signedIn ? (
+            <a
+              className="btn"
+              href={record.sourceUrl ? `/analyze?src=${encodeURIComponent(record.sourceUrl)}` : '/analyze'}
+              style={{ justifySelf: 'start' }}
+            >
+              Start deep analysis <span aria-hidden="true">→</span>
+            </a>
+          ) : (
+            <a className="btn" href="/sign-in" style={{ justifySelf: 'start' }}>
+              Sign in to go deep <span aria-hidden="true">→</span>
+            </a>
+          )}
         </section>
       )}
       {aiReady() && (
