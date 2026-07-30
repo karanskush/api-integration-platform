@@ -186,6 +186,72 @@ describe('schema constraints', () => {
     await db.insert(schema.clarifications).values(row);
   });
 
+  it('deleting an api row cascades through every child table (what DELETE /api/apis/[slug] relies on)', async () => {
+    const { org, user } = await makeOrgWithUser(db, 'cascade');
+    const [api] = await db.insert(schema.apis).values({ orgId: org.id, slug: 'cascade-api', name: 'Cascade' }).returning();
+    const [specVersion] = await db
+      .insert(schema.specVersions)
+      .values({ apiId: api.id, contentHash: 'hash-cascade', source: 'openapi', parseStatus: 'parsed' })
+      .returning();
+    await db.insert(schema.actions).values({
+      apiId: api.id,
+      specVersionId: specVersion.id,
+      actionKey: 'get:/pets',
+      name: 'list_pets',
+      description: 'List pets',
+      method: 'GET',
+      path: '/pets',
+      paramsSchema: { type: 'object' },
+      auth: 'none',
+      safety: 'read',
+    });
+    await db.insert(schema.evidenceFacts).values({
+      apiId: api.id,
+      specVersionId: specVersion.id,
+      kind: 'parser.auth_scheme',
+      source: 'parser',
+      payload: { scheme: 'none' },
+    });
+    await db.insert(schema.scorePreviews).values({
+      apiId: api.id,
+      specVersionId: specVersion.id,
+      total: 50,
+      subscores: {},
+      explanation: [],
+    });
+    await db.insert(schema.credentials).values({
+      orgId: org.id,
+      apiId: api.id,
+      environment: 'production',
+      encryptedKey: 'x',
+      iv: 'x',
+      authTag: 'x',
+      wrappedDek: 'x',
+      kmsKeyId: 'local',
+      fingerprint: 'fp-cascade',
+      hint: '1234',
+      createdBy: user.id,
+    });
+    await db.insert(schema.analysisRuns).values({
+      apiId: api.id,
+      specVersionId: specVersion.id,
+      stage: 'parse',
+      status: 'succeeded',
+    });
+
+    await db.delete(schema.apis).where(eq(schema.apis.id, api.id));
+
+    expect(await db.select().from(schema.specVersions).where(eq(schema.specVersions.apiId, api.id))).toHaveLength(0);
+    expect(await db.select().from(schema.actions).where(eq(schema.actions.apiId, api.id))).toHaveLength(0);
+    expect(await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, api.id))).toHaveLength(0);
+    expect(await db.select().from(schema.scorePreviews).where(eq(schema.scorePreviews.apiId, api.id))).toHaveLength(0);
+    expect(await db.select().from(schema.credentials).where(eq(schema.credentials.apiId, api.id))).toHaveLength(0);
+    expect(await db.select().from(schema.analysisRuns).where(eq(schema.analysisRuns.apiId, api.id))).toHaveLength(0);
+
+    // The org and its membership are untouched — the cascade only flows down.
+    expect(await db.select().from(schema.orgs).where(eq(schema.orgs.id, org.id))).toHaveLength(1);
+  });
+
   it('getOrCreateSystemOrg is idempotent and creates exactly one system org', async () => {
     const first = await getOrCreateSystemOrg(db);
     const second = await getOrCreateSystemOrg(db);
