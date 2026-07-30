@@ -730,3 +730,299 @@ table.params td.desc { color: var(--fg-dim); }
 .assumptions-reopened { margin: 0; font-size: 12.5px; color: var(--accent); }
 .quiz-suggested-note { margin: 0 0 2px; font-size: 12.5px; color: var(--fg-mute); line-height: 1.5; }
 
+
+/* ============================================================
+   ASK — the agent channel
+   --------------------------------------------------------
+   Not a .panel. Ask is the one surface where an agent speaks, and
+   globals.css already reserves --periwinkle for exactly that ("the agent
+   channel: MCP surfaces, agent nodes"). Dressing it in --iris would put it
+   in the instrument channel with the buttons and links.
+
+   LIME LEDGER. --verified appears in five places on this surface and
+   nowhere else: the header basis meter, a trace row's `probed` token, the
+   collapsed summary's `· n probed`, the citation footer, and
+   get_score_explanation's own total. It is forbidden on the send button,
+   the `agent ›` marker, the rail, any border/focus/hover state, the seed
+   list, the caret, and every "done" indication — a tool FINISHING is not a
+   verification event, which is the same laundering that
+   `.import-progress span[data-state='done'] { color: var(--fg-dim) }`
+   already refuses above.
+
+   The default state has no lime at all, and must look FINISHED rather than
+   deficient: most APIs have never been probed, and if spec-derived reads as
+   a downgraded verified state then the honest case becomes the ugly case
+   and the design creates pressure to over-claim.
+   ============================================================ */
+.ask {
+  position: relative;
+  background: linear-gradient(180deg, var(--raised), color-mix(in oklab, var(--raised) 92%, var(--void)));
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--edge-light), 0 8px 30px rgba(0, 0, 0, 0.22);
+  /* Deliberately NOT overflow:hidden — that clips the composer's 2px-offset
+     focus ring where padding compresses on narrow viewports. */
+}
+.ask::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(180deg, var(--periwinkle), transparent 70%);
+  opacity: 0.55;
+}
+
+.ask-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.ask-who {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--periwinkle);
+}
+.ask-title { font-size: 15px; margin: 0; }
+.ask-basis {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
+}
+
+.ask-body { padding: 20px; }
+
+.ask-lede { font-size: 13.5px; color: var(--fg-dim); margin: 0 0 14px; max-width: 62ch; }
+.ask-seeds { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ask-seed {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--hair-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.ask-seed:hover { border-color: rgba(143, 160, 255, 0.35); color: var(--fg); }
+.ask-seed-tool { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-mute); }
+
+.ask-thread { list-style: none; margin: 0; padding: 0; }
+.ask-turn { padding-top: 24px; border-top: 1px solid var(--hair-soft); }
+.ask-turn:first-child { padding-top: 0; border-top: 0; }
+.ask-q { font-size: 14.5px; color: var(--fg); margin: 0 0 12px; font-weight: 500; }
+
+/* --- the trace ------------------------------------------------------- */
+.ask-trace { border-left: 1px solid rgba(143, 160, 255, 0.22); padding-left: 13px; margin-bottom: 14px; }
+.ask-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-mute);
+  margin-bottom: 8px;
+}
+.ask-trace-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ask-trace-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.ask-trace-n { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-mute); }
+.ask-trace-label { font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); min-width: 0; }
+.ask-trace-verb { overflow-wrap: anywhere; }
+.ask-trace-count { color: var(--ink-mute); }
+.ask-trace-count.drift { color: var(--drift); }
+
+.ask-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--periwinkle);
+  /* 1.4s, not 1.1s: four dots pulsing at 1.1s together reads as an alarm. */
+  animation: ask-pulse 1.4s var(--ease) infinite;
+}
+.ask-dot.ok { background: var(--verified); animation: none; }
+.ask-probed { color: var(--verified); }
+
+.ask-trace-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 26px;
+  padding: 0 0 0 13px;
+  margin-bottom: 12px;
+  border: 0;
+  border-left: 1px solid rgba(143, 160, 255, 0.22);
+  background: transparent;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.ask-trace-summary:hover { color: var(--ink-dim); border-left-color: rgba(143, 160, 255, 0.4); }
+.ask-trace-chevron { margin-left: auto; }
+
+/* --- the answer ------------------------------------------------------ */
+.ask-answer {
+  font-size: 14.5px;
+  line-height: 1.66;
+  color: var(--ink-dim);
+  /* ~62-75 characters. .wrap is 932px inside its padding, so unconstrained
+     prose runs past 100 characters a line — this is the single most visible
+     improvement over the surface this replaces. */
+  max-width: 68ch;
+  contain: layout paint;
+}
+.ask-answer > :first-child { margin-top: 0; }
+.ask-answer p + p { margin-top: 0.85em; }
+.ask-answer strong { color: var(--ink); font-weight: 600; }
+
+/* --font-display is banned in here. An LLM's `##` is a paragraph label, not a
+   document section, and rendering it at display size hands a machine's outline
+   the authority of the page's own headings. */
+.ask-answer h1,
+.ask-answer h2,
+.ask-answer h3,
+.ask-answer h4 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--ink);
+  letter-spacing: 0;
+  margin: 1.4em 0 0.4em;
+}
+.ask-answer ul,
+.ask-answer ol { padding-left: 18px; margin: 0.7em 0; }
+.ask-answer li + li { margin-top: 0.35em; }
+.ask-answer ul li::marker { color: rgba(143, 160, 255, 0.55); }
+.ask-answer ol li::marker { font-family: var(--font-mono); color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+/* Periwinkle where .lead code uses iris — a deliberate divergence, so the
+   agent's own code tokens sit in the agent channel and stay distinguishable
+   from an iris citation LINK. Two mono tokens, two colours, two meanings. */
+.ask-answer :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.855em;
+  color: var(--ink);
+  background: rgba(143, 160, 255, 0.13);
+  padding: 1.5px 5px;
+  border-radius: 3px;
+  word-break: break-word;
+}
+.ask-answer pre { margin: 0.85em 0; max-width: none; overflow-x: auto; }
+.ask-answer blockquote {
+  border-left: 2px solid rgba(143, 160, 255, 0.3);
+  padding-left: 12px;
+  color: var(--ink-mute);
+  margin: 0.85em 0;
+}
+.ask-answer table { font-size: 12.5px; display: block; overflow-x: auto; }
+
+.ask-answer[data-streaming]::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  vertical-align: -0.16em;
+  margin-left: 2px;
+  background: var(--periwinkle);
+  /* steps(1), not a fade: a fading caret reads as a spinner, a hard blink
+     reads as a cursor. */
+  animation: ask-caret 1.05s steps(1) infinite;
+}
+
+.ask-ref {
+  color: var(--iris-2);
+  text-decoration: underline;
+  text-decoration-color: rgba(155, 132, 255, 0.4);
+  text-underline-offset: 2px;
+}
+.ask-ref:hover { text-decoration-color: var(--iris-2); }
+
+/* --- composer and errors --------------------------------------------- */
+.ask-composer { padding: 16px 20px 18px; border-top: 1px solid var(--hair); }
+.ask-input { width: 100%; resize: vertical; min-height: 56px; }
+.ask-controls { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.ask-hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-mute); }
+.ask-send { margin-left: auto; }
+
+.ask-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 95, 126, 0.28);
+  border-radius: 6px;
+  background: var(--danger-fill);
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+.ask-error-act {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--fail);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Announced, never shown. */
+.ask-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes ask-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes ask-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.82); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The caret is positional information, not decoration — it says where the
+     next token lands. Made static and fully opaque rather than hidden. */
+  .ask-answer[data-streaming]::after { animation: none; opacity: 1; }
+  .ask-dot { animation: none; opacity: 0.55; }
+}
+
+@media (max-width: 600px) {
+  .ask-body { padding: 16px; }
+  .ask-composer { padding: 14px 16px 16px; }
+  .ask-trace-label { font-size: 11.5px; }
+  .ask-answer pre { max-height: 320px; }
+}
+@media (max-width: 480px) {
+  /* Enter-to-send is meaningless on a touch keyboard, and the row does not fit. */
+  .ask-hint { display: none; }
+  .ask-seed-tool { display: none; }
+}
