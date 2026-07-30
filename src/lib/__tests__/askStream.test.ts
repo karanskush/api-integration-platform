@@ -8,6 +8,16 @@
 
 import { describe, expect, it } from 'vitest';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
+// The generic on simulateReadableStream has to be explicit. Left to inference,
+// each chunk literal widens into its own shape and the resulting union no longer
+// matches LanguageModelV4StreamResult, so doStream fails to typecheck even though
+// it behaves correctly at runtime. `satisfies` does not help — it checks the
+// literal without changing what the stream is inferred as.
+import type {
+  LanguageModelV4FinishReason,
+  LanguageModelV4StreamPart,
+  LanguageModelV4Usage,
+} from '@ai-sdk/provider';
 import { emptyInsights, type AdvisorContext } from '../advisor';
 import { streamAskAboutApi, type AskOutcome } from '../ask';
 import type { Action, ImportRecord } from '../ir';
@@ -44,18 +54,29 @@ const ask = (text: string): UIMessage[] => [
   { id: 'm1', role: 'user', parts: [{ type: 'text', text }] },
 ];
 
-const USAGE = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+// v4 widened both of these from flat values into objects. Spelling them out
+// rather than casting, so a future provider-spec change fails here loudly
+// instead of being papered over by an `as`.
+// Note the two are NOT the same shape: input splits by cache, output by kind.
+const USAGE: LanguageModelV4Usage = {
+  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 1, text: 1, reasoning: 0 },
+};
+const finished = (unified: LanguageModelV4FinishReason['unified']): LanguageModelV4FinishReason => ({
+  unified,
+  raw: undefined,
+});
 
 function textModel(text: string) {
   return new MockLanguageModelV4({
     doStream: async () => ({
-      stream: simulateReadableStream({
+      stream: simulateReadableStream<LanguageModelV4StreamPart>({
         chunks: [
           { type: 'stream-start', warnings: [] },
           { type: 'text-start', id: '0' },
           { type: 'text-delta', id: '0', delta: text },
           { type: 'text-end', id: '0' },
-          { type: 'finish', finishReason: 'stop', usage: USAGE },
+          { type: 'finish', finishReason: finished('stop'), usage: USAGE },
         ],
       }),
     }),
@@ -113,7 +134,7 @@ describe('streamAskAboutApi', () => {
   it('surfaces an advisor tool call as a named tool part', async () => {
     const model = new MockLanguageModelV4({
       doStream: async () => ({
-        stream: simulateReadableStream({
+        stream: simulateReadableStream<LanguageModelV4StreamPart>({
           chunks: [
             { type: 'stream-start', warnings: [] },
             {
@@ -122,7 +143,7 @@ describe('streamAskAboutApi', () => {
               toolName: 'docentapi_search_endpoints',
               input: JSON.stringify({ query: 'pet' }),
             },
-            { type: 'finish', finishReason: 'tool-calls', usage: USAGE },
+            { type: 'finish', finishReason: finished('tool-calls'), usage: USAGE },
           ],
         }),
       }),
