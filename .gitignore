@@ -9,3 +9,8 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .env*
+
+# Pulled env snapshots (vercel env pull). NEVER commit: the .env* patterns
+# above do not match a filename with no leading dot.
+prod.env
+*.env
