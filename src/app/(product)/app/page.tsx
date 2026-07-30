@@ -37,9 +37,9 @@ export default function AppHome() {
           </ol>
           <p className="app-privacy">Anonymous workspaces expire after 24 hours. Credentials are never stored.</p>
           <p className="app-privacy">
-            Want it verified in depth instead — every field traced, the provider&apos;s own docs
-            folded in, a human loop for anything ambiguous?{' '}
-            <a href="/analyze">Try deep analysis →</a>
+            This instant pass reads the spec alone. Step two — deep analysis — crawls the
+            provider&apos;s own docs, traces every field, and emails you when it&apos;s verified. You
+            start it from the workspace your import creates.
           </p>
         </aside>
       </div>
