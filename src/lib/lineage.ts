@@ -570,27 +570,108 @@ export function consumersFor(graph: LineageGraph, tool: string, fieldPath: strin
   return graph.consumersOf.get(tool)?.get(fieldPath) ?? [];
 }
 
-// Every field across the API whose leaf name matches, for the "I have a user id
-// — what accepts it?" direction where the caller names a field rather than a
-// path.
+// A field path stripped of its section root and its array/map markers:
+//
+//   update_pet        body.category.name       -> category_name
+//   find_pets_by_tag  response[].category.name -> category_name
+//   get_pet_by_id     response.category.name   -> category_name
+//   update_pet        body.tags[].name         -> tags_name
+//   update_pet        body.name                -> name
+//
+// This is the identity that makes a DOTTED query discriminating. `category.name`,
+// `tags[].name` and a bare `name` are three different things in Petstore, and a
+// leaf-name comparison collapses all three into one — which is exactly how
+// trace_field("category.name") came to answer about the pet's own name.
+const SECTION_ROOTS = new Set(['body', 'response', 'error', 'path', 'query', 'header']);
+
+export function fieldPathKey(path: string): string {
+  const segments = path.replace(/\[\]/g, '').replace(/\{\*\}/g, '').split('.');
+  if (segments.length > 1 && SECTION_ROOTS.has(segments[0])) segments.shift();
+  return segments.map(normalizeFieldName).join('.');
+}
+
+// Every field across the API matching the caller's name, for the "I have a user
+// id — what accepts it?" direction where the caller names a field rather than a
+// path. Three tiers, most specific first:
+//
+//   1. the exact full path;
+//   2. the same path key — `category.name` finds `body.category.name` and
+//      `response[].category.name`, and nothing else;
+//   3. the same leaf name at any depth.
+//
+// Tier 3 is the whole answer for a bare name like `customerId`. For a DOTTED
+// query it is a last resort only, used when tiers 1 and 2 found nothing:
+// answering "where does category.name come from?" with rows about `body.name`
+// is worse than answering with nothing.
 export function findFieldsByName(record: ImportRecord, name: string): Array<{ tool: string; field: FieldNode }> {
   const index = buildFieldIndex(record);
-  const wanted = normalizeFieldName(name);
-  const bare = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : name;
-  const wantedBare = normalizeFieldName(bare);
-  const out: Array<{ tool: string; field: FieldNode }> = [];
+  const dotted = name.includes('.');
+  const wantedKey = fieldPathKey(name);
+  const wantedLeaf = normalizeFieldName(name.slice(name.lastIndexOf('.') + 1));
+
+  const exact: Array<{ tool: string; field: FieldNode }> = [];
+  const sameKey: Array<{ tool: string; field: FieldNode }> = [];
+  const sameLeaf: Array<{ tool: string; field: FieldNode }> = [];
 
   for (const [tool, map] of index) {
     for (const field of [...map.request, ...map.response]) {
       if (field.path === name) {
-        out.unshift({ tool, field }); // exact path match ranks first
+        exact.push({ tool, field });
         continue;
       }
-      const normalized = normalizeFieldName(field.name);
-      if (normalized === wanted || normalized === wantedBare) out.push({ tool, field });
+      if (fieldPathKey(field.path) === wantedKey) {
+        sameKey.push({ tool, field });
+        continue;
+      }
+      if (normalizeFieldName(field.name) === wantedLeaf) sameLeaf.push({ tool, field });
     }
   }
-  return out;
+
+  const fallback = dotted && !exact.length && !sameKey.length ? sameLeaf : dotted ? [] : sameLeaf;
+  return [...exact, ...sameKey, ...fallback];
+}
+
+// Which operations RETURN a given field, keyed by path key.
+//
+// Deliberately separate from the lineage graph, and deliberately not an edge.
+// lineage.ts refuses to claim a flow for a generic name like `name` without
+// corroboration (see scoreGenericMatch), and that refusal is correct: "call
+// get_pet first to learn the category name you are about to send" is a wrong
+// call sequence. But "no flow edge" is not "no operation returns this", and
+// reporting the two as the same thing is how trace_field came to state that
+// category.name "isn't produced by any endpoint in this API" about a field that
+// sits in five response schemas. This is the honest middle: the value is yours
+// to supply, AND here is where the values already in use can be read.
+export type FieldOccurrence = { tool: string; field: FieldNode };
+
+const responseIndexCache = new WeakMap<ImportRecord, Map<string, FieldOccurrence[]>>();
+
+export function responseFieldsByKey(record: ImportRecord): Map<string, FieldOccurrence[]> {
+  const hit = responseIndexCache.get(record);
+  if (hit) return hit;
+
+  const byKey = new Map<string, FieldOccurrence[]>();
+  for (const [tool, map] of buildFieldIndex(record)) {
+    for (const field of map.response) {
+      if (field.container) continue; // a branch has no value to read
+      const key = fieldPathKey(field.path);
+      const bucket = byKey.get(key);
+      if (bucket) bucket.push({ tool, field });
+      else byKey.set(key, [{ tool, field }]);
+    }
+  }
+
+  responseIndexCache.set(record, byKey);
+  return byKey;
+}
+
+// The operations that return this exact field, excluding the one being asked
+// about (a field is not its own source).
+export function returnedBy(record: ImportRecord, tool: string, fieldPath: string): FieldOccurrence[] {
+  const key = fieldPathKey(fieldPath);
+  return (responseFieldsByKey(record).get(key) ?? []).filter(
+    (o) => !(o.tool === tool && o.field.path === fieldPath),
+  );
 }
 
 export { singularize };

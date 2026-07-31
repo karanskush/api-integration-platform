@@ -620,6 +620,61 @@ describe('findFieldsByName', () => {
   it('returns nothing for an unknown field', () => {
     expect(findFieldsByName(record(REST), 'no_such_field')).toEqual([]);
   });
+
+  // A dotted query names a POSITION, not just a leaf. Matching it on the leaf
+  // alone is how trace_field("category.name") came to return rows about a
+  // sibling `name` field at the top of the body.
+  it('matches a dotted query on position, not on its last segment', () => {
+    const api = record([
+      action({
+        name: 'create_thing',
+        method: 'POST',
+        path: '/things',
+        safety: 'write',
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            body: param('body', {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                category: { type: 'object', properties: { name: { type: 'string' } } },
+                tags: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+              },
+            }),
+          },
+        },
+      }),
+    ]);
+
+    const paths = findFieldsByName(api, 'category.name').map((h) => h.field.path);
+    expect(paths).toEqual(['body.category.name']);
+  });
+
+  it('ignores array markers, so response[].category.name is the same position', () => {
+    const api = record([
+      action({
+        name: 'list_things',
+        method: 'GET',
+        path: '/things',
+        responseSchema: {
+          type: 'array',
+          items: { type: 'object', properties: { category: { type: 'object', properties: { name: { type: 'string' } } } } },
+        },
+      }),
+    ]);
+
+    expect(findFieldsByName(api, 'category.name').map((h) => h.field.path)).toEqual([
+      'response[].category.name',
+    ]);
+  });
+
+  // Precision must not become brittleness: a dotted query that matches no
+  // position should still find the field rather than reporting it absent.
+  it('falls back to the leaf name when no position matches', () => {
+    const hits = findFieldsByName(record(REST), 'customer.customerId');
+    expect(hits.map((h) => h.tool)).toContain('create_order');
+  });
 });
 
 describe('computeLineage — robustness', () => {
