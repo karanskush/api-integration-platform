@@ -140,7 +140,7 @@ function typeOf(schema: Schema): { type: string; nullable: boolean } {
 // path once per branch would multiply the field count by the branch factor.
 // allOf is a genuine intersection; oneOf/anyOf is a union we flatten and mark
 // by keeping the first member's type, which is the honest approximation.
-function mergeCombinators(schema: Schema): Schema {
+export function mergeCombinators(schema: Schema): Schema {
   // Provenance is carried per branch, not read off the parent. A schema can hold
   // allOf AND oneOf at once, and the guard below has to know which combinator
   // THIS branch came from.

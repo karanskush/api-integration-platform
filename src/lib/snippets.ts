@@ -1,28 +1,90 @@
+import { mergeCombinators } from './fieldMap';
 import type { Action, AuthPlacement, ImportRecord } from './ir';
 
 // Generates copy-paste snippets per action. Placeholder values come from the
 // schema's examples/defaults where available.
+//
+// THE SNIPPET AND THE PARAMETER TABLE MUST AGREE. They are rendered inches
+// apart on the same page and read as one claim about the operation, so a field
+// the table lists and the snippet omits reads as "this endpoint does not really
+// take that". Petstore's PUT /pet is the case that exposed it: the table listed
+// category.name, and the body walked only the `required` list, so the snippet
+// emitted {"name":"doggie","photoUrls":[]} — dropping category and tags
+// entirely, along with every example ("doggie", 10, "Dogs") the spec's own
+// author wrote for exactly this purpose.
+//
+// So the sample is the FULL declared shape, not the minimal valid one:
+//   * optional properties are included, not just `required` ones;
+//   * arrays carry one sample item built from `items` rather than being `[]`;
+//   * allOf/oneOf/anyOf are merged the same way fieldMap.ts merges them for the
+//     table, so a composed schema cannot render differently in the two places;
+//   * readOnly fields are skipped — the API assigns those, and sending one is
+//     wrong regardless of what the table shows.
 
 type SchemaProp = Record<string, unknown>;
 
-function sampleValue(name: string, schema: SchemaProp): unknown {
+// Bounds. Unlike fieldMap.ts these cannot report truncation — there is nowhere
+// in a JSON body to say "and 40 more" — so they are set generously enough that
+// an ordinary operation is never clipped, and exist only to keep a pathological
+// or self-referential schema from producing an unusable wall of JSON.
+const MAX_SAMPLE_DEPTH = 6;
+const MAX_SAMPLE_PROPS = 24;
+
+function asSchema(value: unknown): SchemaProp | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as SchemaProp) : null;
+}
+
+// Mirrors fieldMap.ts typeOf(): a schema with `properties` is an object and one
+// with `items` is an array even when it never says so, which is common enough
+// in hand-written specs that inferring it is the difference between a real body
+// and a "<body>" placeholder.
+function typeOf(schema: SchemaProp): string {
+  const raw = schema.type;
+  const declared = Array.isArray(raw) ? raw.find((t) => typeof t === 'string' && t !== 'null') : raw;
+  if (typeof declared === 'string') return declared;
+  if (schema.properties) return 'object';
+  if (schema.items) return 'array';
+  return 'unknown';
+}
+
+// Required first, then the rest in spec order: requiredness is what a reader
+// scans for, and it also decides what survives if MAX_SAMPLE_PROPS ever bites.
+function orderedKeys(props: Record<string, SchemaProp>, required: Set<string>): string[] {
+  const keys = Object.keys(props);
+  return [...keys.filter((k) => required.has(k)), ...keys.filter((k) => !required.has(k))];
+}
+
+function sampleValue(name: string, raw: SchemaProp, depth = 0): unknown {
+  const schema = mergeCombinators(raw);
+
   if (schema.example !== undefined) return schema.example;
   if (schema.default !== undefined) return schema.default;
   if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
-  switch (type) {
+  if (schema.const !== undefined) return schema.const;
+
+  switch (typeOf(schema)) {
     case 'integer':
     case 'number':
       return 1;
     case 'boolean':
       return true;
-    case 'array':
-      return [];
+    case 'array': {
+      const items = asSchema(schema.items);
+      if (!items || depth >= MAX_SAMPLE_DEPTH) return [];
+      return [sampleValue(name, items, depth + 1)];
+    }
     case 'object': {
-      const props = (schema.properties ?? {}) as Record<string, SchemaProp>;
+      const props = asSchema(schema.properties) as Record<string, SchemaProp> | null;
+      if (!props || depth >= MAX_SAMPLE_DEPTH) return {};
+      const required = new Set(
+        Array.isArray(schema.required) ? (schema.required as unknown[]).filter((r): r is string => typeof r === 'string') : [],
+      );
       const out: Record<string, unknown> = {};
-      const required = Array.isArray(schema.required) ? (schema.required as string[]) : Object.keys(props).slice(0, 3);
-      for (const key of required) if (props[key]) out[key] = sampleValue(key, props[key]);
+      for (const key of orderedKeys(props, required).slice(0, MAX_SAMPLE_PROPS)) {
+        const child = asSchema(props[key]);
+        if (!child || child.readOnly === true) continue;
+        out[key] = sampleValue(key, child, depth + 1);
+      }
       return out;
     }
     default:

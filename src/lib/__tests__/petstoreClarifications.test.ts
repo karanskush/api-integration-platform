@@ -20,8 +20,11 @@ import { fieldMapFor } from '../fieldMap';
 import { clusterQuestions, consideredFieldsFor, reconcileOpenQuestions, type OpenQuestion } from '../deepEnrich';
 import { parseOpenApi } from '../importer/openapi';
 import type { ImportRecord } from '../ir';
-import { lineageFor, producersFor } from '../lineage';
+import { findFieldsByName, lineageFor, producersFor } from '../lineage';
 import { normalizeOpenApi } from '../normalize';
+import { curlSnippet } from '../snippets';
+import { traceField } from '../advisor/fields';
+import { emptyInsights } from '../advisor/types';
 
 const SPEC_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/petstore/openapi.json');
 
@@ -203,5 +206,115 @@ describe('the questions petstore actually raises', () => {
     // The classifier assigns the rank; the enrich job sorts on it. Assert the
     // ordering is available and meaningful rather than all-equal.
     expect(new Set(ranks).size).toBeGreaterThan(1);
+  });
+});
+
+// The parameter table for PUT /pet lists category.name, and the cURL sample
+// rendered directly beneath it did not send category at all. Two components,
+// both individually "correct", disagreeing about the same operation on the same
+// screen — which reads to a developer as "this endpoint does not really take
+// that field".
+describe('petstore snippets show the shape the parameter table promises', () => {
+  it('sends the optional nested object the table lists, not just the required fields', async () => {
+    const record = await petstore();
+    const update = record.actions.find((a) => a.name === 'update_pet')!;
+    const body = JSON.parse(curlSnippet(update, record).match(/-d '(.*)'$/s)![1]);
+
+    expect(body.category).toEqual({ id: 1, name: 'Dogs' });
+    expect(body.tags?.[0]).toHaveProperty('name');
+    expect(body.status).toBe('available');
+  });
+
+  it('uses the examples the spec author wrote rather than discarding them', async () => {
+    const record = await petstore();
+    const add = record.actions.find((a) => a.name === 'add_pet')!;
+    const body = JSON.parse(curlSnippet(add, record).match(/-d '(.*)'$/s)![1]);
+
+    expect(body.name).toBe('doggie'); // Pet.name example
+    expect(body.id).toBe(10); // Pet.id example
+    expect(body.category.name).toBe('Dogs'); // Category.name example
+  });
+
+  it('fills an array with a sample item instead of emitting []', async () => {
+    const record = await petstore();
+    const add = record.actions.find((a) => a.name === 'add_pet')!;
+    const body = JSON.parse(curlSnippet(add, record).match(/-d '(.*)'$/s)![1]);
+
+    // photoUrls is required; `[]` satisfies the schema but shows a reader
+    // nothing about what belongs in it.
+    expect(body.photoUrls).toHaveLength(1);
+    expect(typeof body.photoUrls[0]).toBe('string');
+  });
+});
+
+describe('petstore field tracing distinguishes a nested field from its leaf name', () => {
+  // "category.name" used to degrade into a search for any field named `name`,
+  // so the first row returned was update_pet body.name — the PET's name. Every
+  // answer built on that row was about the wrong field.
+  it('resolves category.name to category.name and never to the bare name', async () => {
+    const record = await petstore();
+    const hits = findFieldsByName(record, 'category.name');
+
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) {
+      expect(hit.field.path, `${hit.tool} ${hit.field.path}`).toContain('category.name');
+    }
+    expect(hits.some((h) => h.field.path === 'body.name')).toBe(false);
+    expect(hits.some((h) => h.field.path.includes('tags[].name'))).toBe(false);
+  });
+
+  it('still finds a bare leaf name at any depth', async () => {
+    const record = await petstore();
+    const paths = findFieldsByName(record, 'name').map((h) => h.field.path);
+    expect(paths).toContain('body.name');
+    expect(paths).toContain('body.category.name');
+    expect(paths).toContain('body.tags[].name');
+  });
+
+  // The defect this whole block exists for: trace_field reported category.name
+  // as a value "not produced by any endpoint in this API" while it sits in five
+  // response schemas. lineage.ts is right to refuse a FLOW edge for a generic
+  // name like `name` — "call get_pet first to learn the category you are about
+  // to send" is a wrong call sequence — but silence about the flow is not
+  // licence to assert the field is never returned.
+  it('reports where a caller-supplied value can actually be read', async () => {
+    const record = await petstore();
+    const res = traceField({ record, insights: emptyInsights() }, {
+      field: 'category.name',
+      tool: 'update_pet',
+    }) as Record<string, unknown>;
+
+    const results = res.results as Array<Record<string, unknown>>;
+    const body = results.find((r) => r.field === 'body.category.name')!;
+    expect(body).toBeDefined();
+
+    // No producer edge — lineage's precision gate is unchanged.
+    expect(body.producedBy).toEqual([]);
+    expect(body.origin).toBe('caller_supplied');
+
+    // ...but the operations that DO return it are named.
+    const returned = (body.alsoReturnedBy as Array<{ tool: string }>).map((o) => o.tool);
+    expect(returned).toContain('get_pet_by_id');
+    expect(returned).toContain('find_pets_by_status');
+    expect(body.guidance).toContain('alsoReturnedBy');
+
+    // And the tool's own note must not tell a reader the opposite.
+    expect(res.note).toContain('does NOT mean the field never appears in a response');
+  });
+
+  it('says nothing produces OR returns a value that genuinely has no source', async () => {
+    const record = await petstore();
+    // DELETE /pet/{petId}'s api_key header is the caller's own credential: no
+    // petstore operation mints it and none returns it. The strong claim is
+    // still available where it is actually true — the fix narrows it, it does
+    // not remove it.
+    const res = traceField({ record, insights: emptyInsights() }, { field: 'api_key' }) as Record<string, unknown>;
+    const results = res.results as Array<Record<string, unknown>>;
+    const key = results.find((r) => String(r.field).includes('api_key'))!;
+
+    expect(key.origin).toBe('caller_supplied');
+    expect(key.producedBy).toEqual([]);
+    expect(key.alsoReturnedBy).toBeUndefined();
+    expect(key.guidance).toContain('produces or returns');
   });
 });
