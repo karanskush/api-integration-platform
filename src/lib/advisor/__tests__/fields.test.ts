@@ -241,7 +241,11 @@ describe('traceField', () => {
   it('states its basis and its default confidence policy', () => {
     const res = traceField(store, { field: 'customerId' });
     expect(res.basis).toContain('spec structure only');
-    expect(res.note).toContain('do not invent one');
+    expect(res.note).toContain('do not invent a source');
+    // ...but the note must not license the OTHER overclaim. An empty
+    // producedBy is a statement about what mints the value, not about whether
+    // any response carries it.
+    expect(res.note).toContain('alsoReturnedBy');
   });
 
   it('says so when low-confidence links are included', () => {

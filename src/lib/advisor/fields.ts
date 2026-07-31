@@ -7,7 +7,7 @@
 
 import { fieldMapFor, originOf, type FieldNode, type FieldMap } from '../fieldMap';
 import type { Action } from '../ir';
-import { consumersFor, findFieldsByName, lineageFor, producersFor, type LineageEdge } from '../lineage';
+import { consumersFor, findFieldsByName, lineageFor, producersFor, returnedBy, type LineageEdge } from '../lineage';
 import { paginationFor } from '../pagination';
 import { asData, type AdvisorContext } from './types';
 
@@ -143,7 +143,7 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
         }
       : {}),
     origins: {
-      caller_supplied: 'You must provide this value; nothing in this API produces it.',
+      caller_supplied: 'You must provide this value — no operation mints it. It may still be echoed back in responses; docentapi_trace_field reports where.',
       produced_by_api: 'Another operation returns it — see the "from" list on the field.',
       server_generated: 'The API assigns it. Do not send it.',
       enum_constrained: 'Pick one of the listed allowed values.',
@@ -196,6 +196,12 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     const consumers = consumersFor(graph, tool, field.path);
     const origin = originOf(field, producers.length > 0);
 
+    // Only when there is no producer edge. With one, `producedBy` already IS
+    // the answer and this would be noise; without one, it is the difference
+    // between "you invent this value" and "you supply it, and here is where the
+    // values already in use can be read".
+    const alsoReturnedBy = producers.length ? [] : returnedBy(ctx.record, tool, field.path);
+
     return {
       tool,
       field: field.path,
@@ -228,7 +234,15 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
             })),
           }
         : {}),
-      guidance: guidanceFor(origin, field, producers.length),
+      ...(alsoReturnedBy.length
+        ? {
+            alsoReturnedBy: alsoReturnedBy.slice(0, MAX_EDGES_REPORTED).map((o) => ({
+              tool: o.tool,
+              field: o.field.path,
+            })),
+          }
+        : {}),
+      guidance: guidanceFor(origin, field, producers.length, alsoReturnedBy.length),
     };
   });
 
@@ -241,11 +255,11 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     basis: 'spec structure only — derived from declared schemas, not observed traffic',
     note: includeLow
       ? 'Low-confidence links are included. Treat anything below "high" as a lead to verify, not a fact.'
-      : 'Only high and medium confidence links are shown. A field with no producer genuinely has none in this API — do not invent one.',
+      : 'Only high and medium confidence links are shown. An empty "producedBy" means no operation MINTS this value — do not invent a source for it. It does NOT mean the field never appears in a response: check "alsoReturnedBy" for operations that return the same field, which is where values already in use can be read.',
   };
 }
 
-function guidanceFor(origin: string, field: FieldNode, producerCount: number): string {
+function guidanceFor(origin: string, field: FieldNode, producerCount: number, echoCount: number): string {
   switch (origin) {
     case 'server_generated':
       return 'The API assigns this. Do not send it; read it from the response.';
@@ -256,6 +270,11 @@ function guidanceFor(origin: string, field: FieldNode, producerCount: number): s
     case 'enum_constrained':
       return 'Choose one of the allowed values listed above.';
     default:
-      return 'Nothing in this API produces this value — it originates with you (or your user). Supplying an invented one will fail or, worse, address the wrong record.';
+      // Two genuinely different situations, and conflating them is what made
+      // this tool report a field sitting in five response schemas as one no
+      // endpoint returns.
+      return echoCount
+        ? `No operation mints this value — you choose it. It is not free-form in practice, though: ${echoCount} operation(s) return the same field (see alsoReturnedBy), so call one of those to see the values already in use rather than inventing one.`
+        : 'Nothing in this API produces or returns this value — it originates with you (or your user). Supplying an invented one will fail or, worse, address the wrong record.';
   }
 }
