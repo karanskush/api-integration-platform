@@ -622,3 +622,28 @@ Deliver:
 
 Exit gate: a sandbox API can be explored end to end with zero unowned fixtures, bounded effects, repeatable findings, and explicit uncovered obligations.
 
+### Phase 3 — behavioral twin and provider review
+
+Deliver:
+
+- entity/resource lifecycle and state-machine synthesis;
+- error, retry/idempotency, pagination, eventual-consistency models;
+- webhook/event correlation and retry/signature model;
+- scoped claims, contradictions, freshness/retraction;
+- readiness questionnaire and evidence-gap review UI;
+- coverage matrix and review/publish release gate.
+
+Exit gate: a provider can review, dispute, approve, and publish a versioned behavioral release whose claims are all scoped and reproducible.
+
+### Phase 4 — product outputs and additional protocols
+
+Deliver:
+
+- task-first MCP with OAuth/capability grants and plan-before-effect;
+- SDK helpers, conformance/consumer tests, mock twin, reference app;
+- Arazzo/Overlay/AsyncAPI export;
+- GraphQL adapter, then gRPC/customer-hosted runner;
+- CI and scheduled drift releases.
+
+Exit gate: an unfamiliar developer or agent can complete selected real integration outcomes using only published artifacts, while every material instruction cites current evidence or is labeled unknown.
+
