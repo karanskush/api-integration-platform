@@ -294,3 +294,19 @@ Many valuable APIs are private, IP-allowlisted, or cannot send data to a multi-t
 
 The hosted runner is a major enterprise capability, not an optional deployment detail.
 
+## 6. Safety and authorization architecture
+
+OWASP’s API Security Top 10 includes broken object authorization, broken authentication/property authorization, unrestricted resource consumption, sensitive business-flow abuse, SSRF, inventory failures, and unsafe consumption of third-party APIs ([OWASP API Security 2023](https://owasp.org/API-Security/editions/2023/en/0x10-api-security-risks/)). An autonomous probe system sits directly on these fault lines.
+
+### Risk classes
+
+| Class | Examples | Default policy |
+|---|---|---|
+| R0 passive | parse spec/docs, generate plan | automatic |
+| R1 observation | approved GET/HEAD, introspection | automatic in sandbox after allowlist |
+| R2 reversible mutation | create/update namespaced test object with proven cleanup | explicit environment policy |
+| R3 consequential | delete, payment authorization, email/SMS, account changes, external publication | per-operation approval and tiny budgets |
+| R4 irreversible/regulated | money movement, production deletion, identity/legal/health action | disabled for SaaS autonomous probing; customer-run controlled validation only |
+
+Method names are only a hint. `GET` can trigger bad legacy behavior, `POST` can be safely idempotent, and “cancel” may have financial consequences. Store provider-approved risk and effect metadata at operation and workflow level.
+
