@@ -647,3 +647,56 @@ Deliver:
 
 Exit gate: an unfamiliar developer or agent can complete selected real integration outcomes using only published artifacts, while every material instruction cites current evidence or is labeled unknown.
 
+## 14. Metrics that reflect the real mission
+
+Avoid optimizing only endpoint count, questions answered, or one composite score. Track:
+
+- percent of eligible obligations covered, broken down by dimension;
+- percent of published claims reproduced independently;
+- stale/disputed/retracted claim rate and time to resolution;
+- value-provenance coverage for required inputs;
+- workflow and terminal-state coverage;
+- known error-code coverage and unknown error discovery rate;
+- cleanup success and orphaned fixture count (target: zero);
+- unapproved side effects and policy escapes (target: zero);
+- developer task success on a cold integration;
+- median time from source import to first useful verified workflow;
+- drift detection latency;
+- provider minutes required per high-impact unknown resolved;
+- evidence citation correctness in Q&A and agent plans.
+
+The north-star product metric should be **verified integration task success**, not generated documentation volume.
+
+## 15. Strategic position
+
+Postman spans multi-protocol design, testing, workflows, governance, monitoring, a catalog, and agent capabilities ([Postman product](https://www.postman.com/product/)). ReadMe combines documentation with API logs and developer request history ([ReadMe API logs](https://docs.readme.com/main/docs/sending-api-logs)). Speakeasy and Stainless generate agent/developer interfaces from specs. Schemathesis and RESTler explore runtime behavior.
+
+Therefore:
+
+- “paste a spec, get docs/playground/MCP” is an acquisition wedge, not the moat;
+- “we crawl docs with an LLM” is useful, but others can reproduce it;
+- “we make calls” is not enough—testing tools already do;
+- the moat is the **scoped evidence graph + governed experiment runtime + provider-approved behavioral release**, continuously improving from specs, tests, human answers, and optional telemetry.
+
+The best category description is:
+
+> **API Behavior Intelligence and Control Plane**
+
+or, more plainly:
+
+> **The verified behavioral twin for every API.**
+
+If the platform earns that description, it can become the layer a company uses to publish its API’s operational truth to developers, agents, SDKs, support, QA, and internal governance. That is what “own the API part of the company” can realistically mean.
+
+## Final recommendation
+
+Preserve the existing import → page → Q&A → MCP → clarification product; it is a good front door. Reorient the next major build around:
+
+1. honest verification scope;
+2. a lossless API model;
+3. a policy-controlled sandbox runner;
+4. immutable observations and retractable claims;
+5. coverage/review/releases;
+6. task-first outputs.
+
+Do not broaden into generic app generation until the platform can prove a handful of consequential, stateful API workflows end to end. A reliable behavioral twin will make generated apps valuable later. Without it, app generation dilutes the one genuinely differentiated idea already present in this repository.
