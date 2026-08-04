@@ -78,3 +78,14 @@ The platform flattens request/response fields, infers resource relationships, an
 
 The clarification system is also well conceived: questions are clustered across repeated fields, can be supported or reopened, and human answers become higher-trust evidence. This is an important foundation, not throwaway work.
 
+### 2.3 Current live verification
+
+The “live” score runs four probes concurrently ([score runner](./src/lib/probes/run.ts#L21)):
+
+- auth clarity is mainly a static score plus one possible unauthenticated read request;
+- error quality corrupts at most two read-operation examples and looks for a readable JSON message;
+- doc drift checks at most three read operations and compares only top-level property names and JavaScript types;
+- idempotency is entirely static and only looks for an idempotency-like parameter ([idempotency probe](./src/lib/probes/idempotency.ts#L7)).
+
+Unavailable dimensions are removed from the denominator ([score runner](./src/lib/probes/run.ts#L34)). This means a high total can be computed from a small eligible subset. The UI nevertheless calls it a “verified” score “computed from live probes run against the real API” ([score panel](./src/components/product/VerifiedScorePanel.tsx#L20)). That wording overstates the demonstrated coverage.
+
