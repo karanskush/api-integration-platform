@@ -72,3 +72,9 @@ The current IR is intentionally small: one dominant auth type, path/query/header
 
 That makes the UI and MCP compiler simple, but it is too lossy to be the source of truth for behavioral ownership.
 
+### 2.2 Structural and semantic knowledge
+
+The platform flattens request/response fields, infers resource relationships, and records lineage facts. It then crawls a bounded set of provider documentation pages—five seeds, twenty pages, 2 MB, depth two—and sends bounded field/resource chunks to an LLM ([crawler](./src/lib/docsCrawler.ts#L34), [enrichment](./src/lib/deepEnrich.ts#L87)). The enrichment code is unusually careful about prompt injection, hallucinated fields, disputed lineage, and preferring an open question over a guess.
+
+The clarification system is also well conceived: questions are clustered across repeated fields, can be supported or reopened, and human answers become higher-trust evidence. This is an important foundation, not throwaway work.
+
