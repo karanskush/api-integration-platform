@@ -238,3 +238,35 @@ Use pairwise/boundary/property-based generation for broad input coverage, then a
 
 Microsoft’s RESTler research is also directly relevant: it derives producer-consumer dependencies and explores request sequences rather than isolated calls ([RESTler paper](https://www.microsoft.com/en-us/research/wp-content/uploads/2021/03/RESTler.pdf)).
 
+### 5.2 Run lifecycle
+
+1. **Compile passive evidence**  
+   Parse specs, docs, examples, changelogs, SDKs, and optional telemetry. Record conflicts instead of overwriting one source with another.
+
+2. **Readiness gate**  
+   Require base URLs, environments, credential profiles, role/scopes, rate limits, allowed operations, forbidden data, financial/message limits, test-data rules, callback reachability, cleanup rules, and an emergency owner.
+
+3. **Plan obligations**  
+   Expand operations into positive, negative, boundary, auth, media, pagination, concurrency, retry, lifecycle, and asynchronous obligations. Mark each `planned`, `covered`, `blocked`, `unsafe`, `not_applicable`, or `stale`.
+
+4. **Seed and discover**  
+   Run known-good reads/examples, inventory accessible resources, and populate scoped resource pools. Never use arbitrary production objects as mutation fixtures.
+
+5. **Create controlled fixtures**  
+   Create namespaced test resources with a run marker, TTL, ownership tag, and cleanup/compensation plan. Track every object in a resource ledger.
+
+6. **Exercise stateful workflows**  
+   Chain producer output into consumer input, infer transitions, poll eventual results, and test legal/illegal transitions. Hold resource leases to prevent parallel runs from corrupting each other.
+
+7. **Explore values and failures**  
+   Vary one dimension where causal attribution matters; use boundary, omission, null, type, format, enum, relational, auth-role, concurrency, and conditional-field partitions. Shrink a failure into the smallest reproducible case.
+
+8. **Verify asynchronous behavior**  
+   Correlate request IDs, resource IDs, webhook IDs, attempt numbers, timestamps, and traces. Observe ordering, duplicates, retry backoff, replay windows, signatures, and terminal timeout.
+
+9. **Test retries and unknown outcomes**  
+   In an explicitly approved sandbox, simulate client timeouts/retries and determine whether idempotency keys, duplicate requests, and reconciliation are safe. HTTP’s safe/idempotent method semantics are useful defaults, but business side effects still require observation and provider policy ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)). The emerging `Idempotency-Key` header specification is still an Internet-Draft and must be labeled as such ([draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header)).
+
+10. **Cleanup, replay, and publish**  
+    Run compensations, quarantine anything that fails cleanup, replay important results, synthesize claims, route contradictions/questions to a reviewer, and publish a signed verification release.
+
