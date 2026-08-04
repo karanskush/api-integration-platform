@@ -381,3 +381,29 @@ Raw bodies should go to a quarantined, access-controlled artifact store only whe
 
 OpenTelemetry’s HTTP semantic conventions give a common vocabulary for client/server spans, retries, status, and attributes, which makes optional provider-side correlation valuable ([OpenTelemetry HTTP conventions](https://opentelemetry.io/docs/specs/semconv/http/)). Traffic/telemetry ingestion is complementary evidence, not proof of completeness: production traces only show behavior that happened to be used.
 
+### Scoped, retractable claim
+
+```text
+Claim
+  subject, predicate, object
+  scope = api_version + environment + tenant_class + identity_role + region
+  epistemic_status = declared | inferred | observed | human_confirmed
+  confidence and completeness
+  supporting_observation_ids
+  contradicting_observation_ids
+  sample_size and reproduction_count
+  valid_from, valid_until, last_observed_at
+  synthesis_version
+  state = candidate | reviewed | published | disputed | superseded | retracted
+```
+
+Examples:
+
+- “`create_order.body.customer_id` is produced by `create_customer.response.id`”;
+- “with role `viewer`, `GET /orders/{id}` returns 403 for another tenant’s object”;
+- “duplicate POSTs with the same idempotency key return the same resource for 24 hours”;
+- “state `processing → completed` was observed after 3–18 seconds in sandbox”;
+- “webhook delivery is at-least-once; duplicate event IDs were observed.”
+
+Contradiction is a first-class result. Never update a fact in place because a new run disagrees. Add evidence, mark the claim disputed, and require a synthesis/review decision. Claims must automatically become stale when their source spec, environment, policy, credential role, or important dependency changes.
+
