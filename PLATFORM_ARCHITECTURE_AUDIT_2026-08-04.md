@@ -532,3 +532,28 @@ Do not initially promise arbitrary product generation. Produce a **verified inte
 
 Once these outputs are reliable, a broader app builder can consume them. Generating an app before the behavior model is trustworthy merely automates integration bugs.
 
+## 11. Concrete storage additions
+
+Keep the existing tables, but add first-class structures rather than putting the whole system into open-ended JSON facts:
+
+| Table/group | Purpose |
+|---|---|
+| `source_artifacts`, `source_edges` | raw specs/docs/collections/SDK/changelog/telemetry, hashes, fetch manifest, provenance |
+| `api_versions`, `environments`, `protocol_surfaces` | explicit version/environment/protocol graph |
+| `operations`, `parameters`, `representations`, `responses`, `security_requirements` | lossless compiled contract |
+| `entities`, `entity_keys`, `value_domains`, `field_bindings` | semantic data and provenance model |
+| `workflows`, `workflow_steps`, `step_bindings` | Arazzo-like task and dependency graph |
+| `states`, `transitions`, `invariants` | lifecycle behavior |
+| `error_contracts`, `event_contracts`, `retry_contracts` | failures and asynchronous/retry semantics |
+| `identity_profiles`, `credential_refs` | multiple tenant/role/scope credential bundles |
+| `probe_policies`, `policy_approvals` | immutable safety authorization |
+| `run_plans`, `run_steps`, `step_attempts`, `leases` | durable orchestration |
+| `fixtures`, `resource_instances`, `cleanup_attempts` | created object ownership and compensation |
+| `observations`, `artifact_refs`, `redaction_results` | immutable experiment output |
+| `claims`, `claim_support`, `claim_conflicts`, `claim_history` | current truth plus full derivation/retraction history |
+| `coverage_obligations`, `coverage_results` | denominator-aware completeness |
+| `review_items`, `questions`, `answers` | provider review and structured knowledge gaps |
+| `verification_releases`, `release_artifacts`, `signatures` | publish gate and attestations |
+
+Postgres remains appropriate for control/knowledge metadata. Keep large encrypted artifacts in blob/object storage. Use Redis for short-lived leases, queues, pools, and caches—not as the canonical evidence ledger.
+
