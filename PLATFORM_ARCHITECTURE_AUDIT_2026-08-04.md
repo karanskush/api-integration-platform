@@ -340,3 +340,19 @@ Replace “one string per API/environment” with typed credential bundles:
 
 Use a real cloud KMS/HSM root, short-lived unwrap authority, rotation/revocation, and fail-closed authorization. Audit should be tamper-evident and alert on gaps. Never put credentials in query parameters: the current MCP fallback explicitly does this ([MCP block](./src/components/product/McpBlock.tsx#L57)) and should be removed.
 
+### MCP authorization
+
+The MCP authorization specification uses OAuth 2.1 patterns, resource/audience binding, and PKCE; access tokens must not be in the URI query string ([MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)). MCP’s security guidance explicitly covers token passthrough, confused-deputy risks, SSRF, consent, and least-privilege scopes ([MCP security](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices)).
+
+Implement:
+
+- OAuth-based access for private MCP servers;
+- resource-bound tokens and per-tool/per-effect scopes;
+- separate inbound MCP authorization from the upstream provider credential;
+- explicit human consent for consequential calls;
+- no raw write tools by default;
+- task/workflow tools that can present a plan before execution;
+- a capability grant tied to operation, environment, identity profile, budget, and expiry.
+
+The July 2026 MCP release candidate adds task handles for long-running tools, including status and cancellation. It is an RC, not yet a stable dependency, so support it behind capability negotiation while keeping a normal run API fallback ([MCP RC announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)).
+
