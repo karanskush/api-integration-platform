@@ -326,3 +326,17 @@ Every run should bind an immutable `ProbePolicy` containing:
 
 Use a central policy decision point; Open Policy Agent is one option for separating declarative policy decisions from enforcement ([OPA](https://www.openpolicyagent.org/docs)). Enforce the decision again inside the runner immediately before the network call—never only in the UI/planner.
 
+### Credentials and identities
+
+Replace “one string per API/environment” with typed credential bundles:
+
+- API key/header/query/cookie;
+- bearer token with expiry;
+- basic username/password;
+- OAuth client credentials/device/authorization-code with scopes and refresh handling;
+- mTLS certificate/private-key reference;
+- multiple tenants and roles per environment;
+- provider-managed secret reference for customer-hosted runners.
+
+Use a real cloud KMS/HSM root, short-lived unwrap authority, rotation/revocation, and fail-closed authorization. Audit should be tamper-evident and alert on gaps. Never put credentials in query parameters: the current MCP fallback explicitly does this ([MCP block](./src/components/product/McpBlock.tsx#L57)) and should be removed.
+
