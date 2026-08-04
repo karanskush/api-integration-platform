@@ -105,3 +105,71 @@ Credential audit writes are best-effort and never fail a credential use ([vault 
 
 The analysis chain uses plain QStash messages and database stage checks. The queue module itself correctly notes that a workflow system is the fit for multi-step probe orchestration ([queue](./src/lib/queue.ts#L3)). The existing sliding-window rate limiter protects the application, but it does not implement per-provider weighted budgets, adaptive backoff, or distributed resource leases ([rate limiter](./src/lib/ratelimit.ts#L23)).
 
+## 3. The missing system: a governed API behavioral twin
+
+```mermaid
+flowchart LR
+    subgraph Inputs["Provider inputs"]
+      S["Specs and collections"]
+      D["Docs, changelogs, examples"]
+      T["Optional traffic and telemetry"]
+      H["Human answers and policies"]
+    end
+
+    subgraph Control["Control plane"]
+      R["Source registry and version graph"]
+      IR["Lossless canonical API IR"]
+      P["Coverage planner"]
+      POL["Policy, approvals, budgets, kill switch"]
+      V["Credential and identity profiles"]
+      REL["Review and release manager"]
+    end
+
+    subgraph Execution["Execution plane"]
+      O["Durable run orchestrator"]
+      W["SaaS or customer-hosted runner"]
+      F["Fixture factory and resource pools"]
+      A["Protocol adapters and test generators"]
+      C["Async correlator, poller, webhook receiver"]
+      X["Cleanup and compensation"]
+    end
+
+    subgraph Knowledge["Knowledge plane"]
+      OBS["Immutable redacted observations"]
+      CL["Scoped claims and contradictions"]
+      VD["Value domains, entities, states, failures"]
+      CV["Coverage and freshness views"]
+    end
+
+    subgraph Products["Serving plane"]
+      Q["Evidence-grounded Q&A"]
+      M["Task-first MCP and SDK"]
+      UI["Explorer and provider review"]
+      ART["Overlay, Arazzo, AsyncAPI, tests, mock twin"]
+      CI["Drift monitor and CI release gate"]
+    end
+
+    Inputs --> R --> IR --> P
+    H --> POL
+    V --> O
+    P --> O
+    POL --> O --> W
+    F --> W
+    A --> W
+    W --> C --> OBS
+    W --> OBS
+    W --> X
+    OBS --> CL --> VD --> CV
+    CL --> REL
+    CV --> REL
+    REL --> Products
+    T --> OBS
+```
+
+This separation matters:
+
+- the **control plane** decides what may be tested and what coverage remains;
+- the **execution plane** performs bounded experiments;
+- the **knowledge plane** preserves evidence and turns it into retractable claims;
+- the **serving plane** exposes only reviewed, scoped knowledge and permitted actions.
+
