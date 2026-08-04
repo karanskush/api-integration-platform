@@ -436,3 +436,23 @@ Evidence release: sha256:…
 
 Display both **quality** and **coverage**. A 95% pass rate over 5% coverage is not “95% verified.” Do not renormalize away the unknown set without making the denominator visible.
 
+### Coverage obligations
+
+Track at least:
+
+- operation × environment × identity profile × outcome class × media type;
+- parameter/field × valid/boundary/invalid/omitted/null/relational partitions;
+- every documented response/error class and important observed undocumented class;
+- workflow edges and state transitions, including terminal states;
+- pagination and resource lifecycle;
+- retries, idempotency, concurrency, rate limits, and eventual consistency;
+- callbacks/webhooks/events, duplicate/order/replay behavior;
+- sandbox/production divergence where production observation is allowed;
+- freshness and reproducibility.
+
+Use weighted coverage for planning, but preserve raw counts so the weighting cannot hide gaps. Treat rate-limit header conventions as hints: the IETF `RateLimit` fields are still an Internet-Draft as of this audit, while HTTP 429 is standardized ([RateLimit draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/), [RFC 6585](https://www.rfc-editor.org/rfc/rfc6585.html)).
+
+### Signed releases
+
+Publish an immutable verification release containing source hashes, plan/policy hashes, covered obligations, claims, evidence hashes, runner versions, reviewer decision, and expiry. A Sigstore bundle is one established packaging model for everything needed to verify a signature and can carry DSSE attestations ([Sigstore bundle](https://docs.sigstore.dev/about/bundle/)).
+
