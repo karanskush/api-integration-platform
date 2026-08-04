@@ -517,3 +517,18 @@ Generate standards-based deltas rather than pretending inferred behavior was in 
 
 Pact’s distinction is useful: schema/provider conformance and consumer-driven contracts answer different questions. Consumer contracts capture the interactions actual clients depend on and can be replayed against providers ([Pact](https://docs.pact.io/)). Exporting both provider-side conformance tests and consumer examples increases the platform’s operational value.
 
+### What “build an MVP” should mean
+
+Do not initially promise arbitrary product generation. Produce a **verified integration kit**:
+
+- a reference workflow UI or sample app;
+- authenticated client setup;
+- verified happy path and recoveries;
+- typed SDK/task tools;
+- webhook receiver and signature verification;
+- contract tests and fixtures;
+- mock twin for local development;
+- an evidence-linked runbook.
+
+Once these outputs are reliable, a broader app builder can consume them. Generating an app before the behavior model is trustworthy merely automates integration bugs.
+
