@@ -557,3 +557,26 @@ Keep the existing tables, but add first-class structures rather than putting the
 
 Postgres remains appropriate for control/knowledge metadata. Keep large encrypted artifacts in blob/object storage. Use Redis for short-lived leases, queues, pools, and caches—not as the canonical evidence ledger.
 
+## 12. Code-specific gap audit
+
+| Priority | Current condition | Required change | Why it matters |
+|---|---|---|---|
+| P0 | UI calls a shallow sampled score “verified” | Rename to `Sampled live check`; add manifest/coverage/unknowns before restoring “verified” | Trust claim exceeds evidence |
+| P0 | All non-destructive writes can be MCP tools | Disable raw writes by default; capability grants and approval for effects | Agents can cause unreviewed side effects |
+| P0 | Upstream keys may be placed in `?key=` | Remove URL credentials; headers/OAuth only | URLs leak through history, logs, analytics, referrers |
+| P0 | No experiment policy/kill switch/object ledger | Add risk policy, budgets, approvals, fixtures, cleanup, global/provider stop | Autonomous mutation is otherwise unsafe |
+| P0 | Local app secret derives wrapping KEK | Move root wrapping to KMS/HSM; typed secret references | “KMS” semantics are not actually present |
+| P1 | IR collapses auth, media, responses, serialization, callbacks, links | Build lossless versioned IR and keep raw source locations | Planner/executor cannot test behavior it discarded |
+| P1 | Generic facts mix evidence and conclusions | Separate observations, claims, support/conflict, validity, retraction | Cannot reproduce or safely update knowledge |
+| P1 | Plain QStash stage chain | Durable runs, steps, leases, cancellation, queues, DLQ/replay | Stateful probes span minutes/hours and fail partially |
+| P1 | Request builder handles a narrow JSON-ish subset | Protocol-complete HTTP serialization and adapter boundary | Incorrect calls create false behavioral findings |
+| P2 | Probes sample isolated reads | Stateful property/workflow testing with fixture pools and shrinking | Core behavioral promise |
+| P2 | One credential per API/environment | Identity profiles by tenant/role/scope/auth flow | Authorization behavior is part of the contract |
+| P2 | No async correlator | Webhook receiver, poller, trace/event correlation | Modern APIs finish out of band |
+| P2 | Questions focus on field origins | Readiness plus contradiction/coverage review | Human attention should resolve highest-value unknowns |
+| P3 | Endpoint-centric page and tool list | Entity/state/workflow/error/event/coverage explorer; task-first tools | Users integrate outcomes, not endpoint inventories |
+| P3 | Enriched replacement OpenAPI | Overlay + Arazzo + AsyncAPI + verification release | Preserve provenance and use portable standards |
+| P3 | No customer-hosted runner | Signed-plan VPC runner | Private/regulated enterprise APIs otherwise unreachable |
+| P4 | No passive provider telemetry ingestion | Optional redacted OTel/API-gateway connector | Faster discovery and production drift evidence |
+| P4 | “MVP” is undefined | Verified integration kit/reference app first | Keeps generation tied to proven workflows |
+
