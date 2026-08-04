@@ -212,3 +212,13 @@ For HTTP/OpenAPI, preserve:
 
 Use a **safe external-reference resolver**, not a permanent ban: allowlisted hosts, public DNS/IP validation at every redirect, content/byte/depth limits, cycle detection, cached content hashes, and an explicit fetched-source manifest.
 
+### Multiple protocols
+
+API ownership cannot stop at REST:
+
+- AsyncAPI models message-driven APIs across protocols ([AsyncAPI 3.0](https://www.asyncapi.com/docs/reference/specification/v3.0.0));
+- GraphQL exposes a typed schema through introspection and has query, mutation, and subscription behavior ([GraphQL introspection](https://spec.graphql.org/September2025/#sec-Introspection));
+- gRPC reflection can expose protobuf services and types to clients ([gRPC reflection](https://grpc.io/docs/guides/reflection/)).
+
+Build adapters behind the same canonical model. Start with faithful OpenAPI/HTTP, then add GraphQL, then webhooks/AsyncAPI, then gRPC. Do not force all protocols into HTTP endpoint-shaped rows.
+
