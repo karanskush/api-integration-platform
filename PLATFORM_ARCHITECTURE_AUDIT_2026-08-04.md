@@ -456,3 +456,36 @@ Use weighted coverage for planning, but preserve raw counts so the weighting can
 
 Publish an immutable verification release containing source hashes, plan/policy hashes, covered obligations, claims, evidence hashes, runner versions, reviewer decision, and expiry. A Sigstore bundle is one established packaging model for everything needed to verify a signature and can carry DSSE attestations ([Sigstore bundle](https://docs.sigstore.dev/about/bundle/)).
 
+## 9. Provider workflow and question design
+
+The questionnaire should not begin after random probes fail. It should have two stages.
+
+### Stage A: readiness questionnaire
+
+Ask only high-leverage operational questions:
+
+- Which environment and tenant may be tested?
+- Which roles/scopes must be covered?
+- How are fixtures created and deleted?
+- Which calls spend money, send messages, publish content, or touch real people?
+- Which operations are forbidden?
+- What limits, maintenance windows, IP allowlists, and cleanup SLAs apply?
+- Where should webhooks arrive, and how are signatures/rotations handled?
+- Who owns emergency stop and unresolved contradictions?
+
+Without these answers, the planner can compile but must not mutate.
+
+### Stage B: evidence-gap review
+
+Generate questions from failed obligations and contradictory claims, not just unexplained writable fields. Each question should show:
+
+- what DocentAPI believes;
+- exact scope and confidence;
+- evidence excerpts/observations;
+- the contradiction or missing obligation;
+- why the answer changes an integration;
+- suggested structured answers plus “unknown/depends”;
+- the release/coverage impact.
+
+Answers become scoped claims, not timeless global truths. Require re-approval when the spec version or environment changes materially.
+
