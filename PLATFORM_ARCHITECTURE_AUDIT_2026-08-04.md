@@ -222,3 +222,19 @@ API ownership cannot stop at REST:
 
 Build adapters behind the same canonical model. Start with faithful OpenAPI/HTTP, then add GraphQL, then webhooks/AsyncAPI, then gRPC. Do not force all protocols into HTTP endpoint-shaped rows.
 
+## 5. The experiment engine
+
+### 5.1 It is a planner, not a Cartesian fuzzer
+
+Trying every combination is impossible and unsafe. The planner should generate test obligations and choose experiments by risk-adjusted information gain:
+
+```text
+priority(test) = expected_unknowns_resolved × claim_importance × drift_risk
+                 -------------------------------------------------------
+                 call_cost × side_effect_risk × flakiness × rate_pressure
+```
+
+Use pairwise/boundary/property-based generation for broad input coverage, then adapt based on observed constraints. Schemathesis already provides OpenAPI/GraphQL generation, stateful links between responses and later requests, shrinking, lifecycle checks, and adaptive learning from repeated errors ([stateful testing](https://schemathesis.readthedocs.io/en/stable/explanations/stateful/), [adaptive testing](https://schemathesis.readthedocs.io/en/stable/explanations/adaptive-testing/)). Integrate it as a runner engine instead of recreating its generator. DocentAPI’s proprietary layer should be policy, fixtures, business semantics, cross-protocol correlation, evidence, and provider review.
+
+Microsoft’s RESTler research is also directly relevant: it derives producer-consumer dependencies and explores request sequences rather than isolated calls ([RESTler paper](https://www.microsoft.com/en-us/research/wp-content/uploads/2021/03/RESTler.pdf)).
+
