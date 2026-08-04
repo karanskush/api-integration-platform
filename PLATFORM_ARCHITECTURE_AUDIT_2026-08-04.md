@@ -413,3 +413,26 @@ Normalize errors using provider codes plus HTTP status and machine-readable stru
 
 For webhooks, preserve the exact raw payload for signature verification within the approved ephemeral boundary, test duplicates/retries/replay windows, and model event IDs/attempts separately. The Standard Webhooks specification signs an ID, timestamp, and exact payload and describes retry identity/rotation behavior ([Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md)). CloudEvents provides a protocol-neutral event envelope and bindings ([CloudEvents](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)).
 
+## 8. Coverage, score, and release semantics
+
+### Stop using one global “verified” adjective
+
+Verification is always scoped. Replace the current badge with a `VerificationManifest`:
+
+```text
+API version: sha256:…
+Environment: sandbox
+Identity profiles: anonymous, viewer, editor
+Verified at: …
+Freshness policy: 7 days
+Eligible obligations: 1,284
+Covered: 842
+Blocked: 211
+Unsafe/not authorized: 179
+Failed: 52
+Dimensions: operation, schema, failures, auth, workflows, async, retry
+Evidence release: sha256:…
+```
+
+Display both **quality** and **coverage**. A 95% pass rate over 5% coverage is not “95% verified.” Do not renormalize away the unknown set without making the denominator visible.
+
