@@ -173,3 +173,42 @@ This separation matters:
 - the **knowledge plane** preserves evidence and turns it into retractable claims;
 - the **serving plane** exposes only reviewed, scoped knowledge and permitted actions.
 
+## 4. Canonical model: preserve first, simplify later
+
+OpenAPI 3.2.0 is now the current published OpenAPI specification. It includes Links, callbacks, webhooks, richer media/streaming descriptions, parameter serialization rules, and security combinations including API keys in cookies and mutual TLS ([OpenAPI 3.2.0](https://spec.openapis.org/oas/v3.2.0.html)). The current normalizer drops or collapses much of this.
+
+The target importer should retain the raw source and compile it into a protocol-neutral graph without discarding alternatives.
+
+### Core objects
+
+```text
+ApiProduct
+  ├─ ApiVersion
+  ├─ Environment (sandbox, staging, production, region)
+  ├─ ProtocolSurface (HTTP, GraphQL, gRPC, async/message)
+  ├─ IdentityProfile (tenant, user, role, OAuth scopes, credential bundle)
+  ├─ Operation / Channel / Message
+  ├─ SchemaDialect + Schema
+  ├─ Entity + EntityKey
+  ├─ ValueDomain
+  ├─ Workflow + StepDependency
+  ├─ StateMachine + Transition + Invariant
+  ├─ ErrorContract
+  ├─ RetryAndIdempotencyContract
+  ├─ EventAndWebhookContract
+  ├─ ProbePolicy
+  └─ VerificationRelease
+```
+
+For HTTP/OpenAPI, preserve:
+
+- every response status/range/default, content type, header, link, callback, and example;
+- all request content alternatives and encoding metadata;
+- path/query/header/cookie parameters with `style`, `explode`, `allowReserved`, and examples;
+- security requirement logic: schemes inside one requirement are AND; separate requirement objects are alternatives;
+- OAuth flows/scopes, OIDC, API-key placement, mTLS, and anonymous alternatives;
+- read/write-only, discriminator, XML, deprecated, external docs, server variables, tags, and source locations;
+- the declared JSON Schema dialect. JSON Schema 2020-12 has vocabularies and semantics that should not be reduced to a small keyword allowlist ([JSON Schema 2020-12](https://json-schema.org/draft/2020-12)).
+
+Use a **safe external-reference resolver**, not a permanent ban: allowlisted hosts, public DNS/IP validation at every redirect, content/byte/depth limits, cycle detection, cached content hashes, and an explicit fetched-source manifest.
+
