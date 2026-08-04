@@ -489,3 +489,31 @@ Generate questions from failed obligations and contradictory claims, not just un
 
 Answers become scoped claims, not timeless global truths. Require re-approval when the spec version or environment changes materially.
 
+## 10. Serving layer: from endpoints to outcomes
+
+### Task-first MCP and SDK
+
+A 300-operation API becoming 300 tools is expensive for agents to understand and risky to authorize. Current products already illustrate alternatives: Speakeasy can generate operation tools from OpenAPI ([Speakeasy MCP](https://www.speakeasy.com/docs/standalone-mcp/overview)), while Stainless emphasizes a compact code-execution and documentation-search interface to reduce tool/context overhead ([Stainless MCP](https://www.stainless.com/docs/mcp/)). Postman Flows can package visual, conditional workflows and deploy them as MCP tools ([Postman Flows](https://www.postman.com/postman-best-practices/flows/)).
+
+DocentAPI should expose three layers:
+
+1. **knowledge tools**: search capabilities, explain fields, trace value provenance, inspect claims/evidence/unknowns;
+2. **task tools**: `create_refunded_order`, `sync_customer`, `subscribe_to_events`, compiled from verified workflows;
+3. **raw operation tools**: opt-in, scope-restricted, primarily for debugging and expert clients.
+
+Every task tool returns a dry-run plan, required permissions, side effects, cost/budget impact, evidence age, and compensation behavior before consequential execution.
+
+### Generated artifacts
+
+Generate standards-based deltas rather than pretending inferred behavior was in the provider’s original spec:
+
+- an OpenAPI Overlay for repeatable corrections/enrichment while preserving source provenance ([Overlay 1.1](https://spec.openapis.org/overlay/latest.html));
+- Arazzo workflows for sequences and dependencies ([Arazzo 1.1](https://spec.openapis.org/arazzo/latest.html));
+- AsyncAPI for event/webhook surfaces;
+- provider conformance tests and consumer contract examples;
+- a mock twin with explicit confidence/scope labels;
+- integration recipes, SDK helpers, and task-first MCP;
+- a signed verification manifest and drift diff.
+
+Pact’s distinction is useful: schema/provider conformance and consumer-driven contracts answer different questions. Consumer contracts capture the interactions actual clients depend on and can be replayed against providers ([Pact](https://docs.pact.io/)). Exporting both provider-side conformance tests and consumer examples increases the platform’s operational value.
+
