@@ -270,3 +270,27 @@ Microsoft’s RESTler research is also directly relevant: it derives producer-co
 10. **Cleanup, replay, and publish**  
     Run compensations, quarantine anything that fails cleanup, replay important results, synthesize claims, route contradictions/questions to a reviewer, and publish a signed verification release.
 
+### 5.3 Durable execution requirements
+
+Replace the three-message chain with a real workflow/run model:
+
+- immutable run plan and versioned planner inputs;
+- step leases, heartbeat, attempt count, retry class, deadline, and idempotency key;
+- pause/resume/cancel and a global/provider/org kill switch;
+- per-provider queues and concurrency limits;
+- callbacks, dead-letter visibility, and operator replay;
+- compensation steps that run even after cancellation;
+- deterministic step inputs and content-addressed artifacts;
+- separate `run status` from `claim publication status`.
+
+QStash Workflow is a reasonable first orchestrator given the existing stack. The system still needs database-backed resource ownership and idempotency; a queue alone is not the source of truth.
+
+### 5.4 SaaS and customer-hosted runners
+
+Many valuable APIs are private, IP-allowlisted, or cannot send data to a multi-tenant SaaS. Support two execution modes sharing the same signed plan format:
+
+- DocentAPI-managed isolated egress workers;
+- a small customer-hosted Docker/Kubernetes/VPC runner that fetches a signed plan, obtains secrets locally, emits redacted observations, and can be revoked.
+
+The hosted runner is a major enterprise capability, not an optional deployment detail.
+
