@@ -310,3 +310,19 @@ OWASP’s API Security Top 10 includes broken object authorization, broken authe
 
 Method names are only a hint. `GET` can trigger bad legacy behavior, `POST` can be safely idempotent, and “cancel” may have financial consequences. Store provider-approved risk and effect metadata at operation and workflow level.
 
+### Policy object
+
+Every run should bind an immutable `ProbePolicy` containing:
+
+- allowed hosts, regions, protocols, environments, operations, and time window;
+- identity profiles and least-privilege scopes;
+- maximum calls, concurrency, duration, bytes, objects, and monetary/message effects;
+- data classification and prohibited fields;
+- read/write/destructive/consequential grants;
+- fixture namespaces and cleanup SLA;
+- webhook destinations and outbound allowlists;
+- redaction/retention/export rules;
+- approver identity and policy version.
+
+Use a central policy decision point; Open Policy Agent is one option for separating declarative policy decisions from enforcement ([OPA](https://www.openpolicyagent.org/docs)). Enforce the decision again inside the runner immediately before the network call—never only in the UI/planner.
+
