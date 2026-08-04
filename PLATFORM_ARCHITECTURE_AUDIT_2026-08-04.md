@@ -407,3 +407,9 @@ Examples:
 
 Contradiction is a first-class result. Never update a fact in place because a new run disagrees. Add evidence, mark the claim disputed, and require a synthesis/review decision. Claims must automatically become stale when their source spec, environment, policy, credential role, or important dependency changes.
 
+### Error, webhook, and event contracts
+
+Normalize errors using provider codes plus HTTP status and machine-readable structure. RFC 9457 defines a standard Problem Details shape, but its human-readable `detail` field should not be parsed as a stable programmatic code ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)).
+
+For webhooks, preserve the exact raw payload for signature verification within the approved ephemeral boundary, test duplicates/retries/replay windows, and model event IDs/attempts separately. The Standard Webhooks specification signs an ID, timestamp, and exact payload and describes retry identity/rotation behavior ([Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md)). CloudEvents provides a protocol-neutral event envelope and bindings ([CloudEvents](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)).
+
