@@ -89,3 +89,11 @@ The “live” score runs four probes concurrently ([score runner](./src/lib/pro
 
 Unavailable dimensions are removed from the denominator ([score runner](./src/lib/probes/run.ts#L34)). This means a high total can be computed from a small eligible subset. The UI nevertheless calls it a “verified” score “computed from live probes run against the real API” ([score panel](./src/components/product/VerifiedScorePanel.tsx#L20)). That wording overstates the demonstrated coverage.
 
+### 2.4 Execution and MCP
+
+The upstream executor validates arguments, chooses the first base URL, sends one request with a 30-second/1-MB bound, and returns the body ([MCP execution](./src/lib/mcpTools.ts#L106)). SSRF protection and URL pinning are strong defensive work.
+
+The request builder is not protocol-complete: query values are stringified, OAuth is treated as a bearer token, and multipart, cookies, parameter `style`/`explode`, XML, streaming, and complex encodings are not faithfully represented ([upstream builder](./src/lib/upstream.ts#L23)). MCP exposes every non-destructive endpoint, including ordinary writes; only the `destructive` class is filtered ([IR exposure](./src/lib/ir.ts#L71)).
+
+The MCP surface already has a better idea hiding inside it: advisor tools search and explain the API before execution. That should become the primary interface, while raw write tools become separately permissioned implementation details.
+
