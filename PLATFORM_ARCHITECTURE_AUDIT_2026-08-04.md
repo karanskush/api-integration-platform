@@ -356,3 +356,28 @@ Implement:
 
 The July 2026 MCP release candidate adds task handles for long-running tools, including status and cancellation. It is an RC, not yet a stable dependency, so support it behind capability negotiation while keeping a normal run API fallback ([MCP RC announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)).
 
+## 7. Evidence, claims, and the truth model
+
+The current generic `evidence_facts` table is a useful seed ([schema](./src/lib/db/schema.ts#L146)), but observations and claims must be separate.
+
+### Immutable observation
+
+```text
+Observation
+  id, run_id, step_id, attempt
+  api_version, environment, region
+  identity_profile, tenant
+  operation/channel, request_variant
+  started_at, completed_at, latency
+  request metadata + redacted/body artifact hash
+  response status/headers + redacted/body artifact hash
+  trace/correlation/resource/event IDs
+  generator + runner + validator versions
+  redaction policy + redaction result
+  fixture IDs and cleanup state
+```
+
+Raw bodies should go to a quarantined, access-controlled artifact store only when policy permits. The normal evidence path should contain deterministic redacted structures, schema fingerprints, hashes, selected safe values, and pointers. Redaction happens before durable storage and again before model use.
+
+OpenTelemetry’s HTTP semantic conventions give a common vocabulary for client/server spans, retries, status, and attributes, which makes optional provider-side correlation valuable ([OpenTelemetry HTTP conventions](https://opentelemetry.io/docs/specs/semconv/http/)). Traffic/telemetry ingestion is complementary evidence, not proof of completeness: production traces only show behavior that happened to be used.
+
