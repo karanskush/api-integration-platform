@@ -97,3 +97,11 @@ The request builder is not protocol-complete: query values are stringified, OAut
 
 The MCP surface already has a better idea hiding inside it: advisor tools search and explain the API before execution. That should become the primary interface, while raw write tools become separately permissioned implementation details.
 
+### 2.5 Credentials and jobs
+
+Credential storage uses per-secret AES-GCM data keys and binds ciphertext to org/API/environment context. However, the wrapping key is derived from an application master secret using HKDF, not held by a cloud KMS/HSM ([vault](./src/lib/vault.ts#L7)). The database field named `kmsKeyId` records this local scheme. A real KMS should protect the root key; AWS’s KMS guidance describes envelope encryption specifically as encrypting the data key under a KMS-managed root key that does not leave its HSM unencrypted ([AWS KMS](https://docs.aws.amazon.com/kms/latest/developerguide/kms-cryptography.html)).
+
+Credential audit writes are best-effort and never fail a credential use ([vault store](./src/lib/vaultStore.ts#L29)). That is reasonable for an early product, but it is not sufficient for a high-assurance “we operate your API” tier unless audit gaps trigger containment and alerting.
+
+The analysis chain uses plain QStash messages and database stage checks. The queue module itself correctly notes that a workflow system is the fit for multi-step probe orchestration ([queue](./src/lib/queue.ts#L3)). The existing sliding-window rate limiter protects the application, but it does not implement per-provider weighted budgets, adaptive backoff, or distributed resource leases ([rate limiter](./src/lib/ratelimit.ts#L23)).
+
