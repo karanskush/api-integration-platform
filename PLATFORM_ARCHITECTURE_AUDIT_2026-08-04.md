@@ -580,3 +580,45 @@ Postgres remains appropriate for control/knowledge metadata. Keep large encrypte
 | P4 | No passive provider telemetry ingestion | Optional redacted OTel/API-gateway connector | Faster discovery and production drift evidence |
 | P4 | “MVP” is undefined | Verified integration kit/reference app first | Keeps generation tied to proven workflows |
 
+## 13. Recommended build sequence and exit gates
+
+### Phase 0 — make the trust boundary honest
+
+Deliver:
+
+- rename/qualify current verified UI and API responses;
+- remove query-string secrets;
+- raw MCP writes off by default;
+- operation risk/effect overrides;
+- provider/org kill switch and basic call/concurrency budgets;
+- credential root wrapped by a real KMS for production;
+- a visible current-run manifest even for the existing sampler.
+
+Exit gate: no interface claims more coverage or authorization than its evidence/policy demonstrates.
+
+### Phase 1 — lossless contract and evidence foundation
+
+Deliver:
+
+- raw-source registry and safe external-ref manifest;
+- OpenAPI 3.0/3.1/3.2-fidelity IR with multiple representations/responses/security logic/links/callbacks/webhooks;
+- first-class run plan, step attempt, observation, artifact, claim, conflict, and coverage tables;
+- redaction pipeline with golden tests;
+- Overlay output alongside the original spec.
+
+Exit gate: round-trip fixtures prove important OpenAPI semantics are not silently discarded, and every published claim resolves to evidence.
+
+### Phase 2 — controlled sandbox experiment runtime
+
+Deliver:
+
+- durable workflow orchestration, cancel/retry/DLQ/replay;
+- policy enforcement inside runners;
+- typed identity profiles and credential bundles;
+- fixture/resource ledger, leases, cleanup/compensation;
+- Schemathesis-backed positive/negative/boundary/stateful HTTP testing;
+- adaptive vendor-rate budgets and 429/backoff handling;
+- deterministic repro bundles.
+
+Exit gate: a sandbox API can be explored end to end with zero unowned fixtures, bounded effects, repeatable findings, and explicit uncovered obligations.
+
