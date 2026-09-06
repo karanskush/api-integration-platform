@@ -14,6 +14,8 @@
 // agent as a quoted string in a `description` field rather than as prose the
 // model might read as its own directive.
 
+import type { ChangeSummary } from '../changes/query';
+import type { ChangeRow } from '../changes/ledger';
 import type { Action, ImportRecord } from '../ir';
 
 export type AdvisorInsights = {
@@ -26,6 +28,11 @@ export type AdvisorInsights = {
     idempotency: number;
     explanation: Array<{ factId: string; message: string }>;
     verifiedAt: string;
+    // True when the API's current spec version has moved past the one this
+    // score was earned against — the score still exists, but the tool must say
+    // it describes a superseded contract (version fencing).
+    stale: boolean;
+    specVersionId: string;
   } | null;
   // Observed probe findings, keyed by the action id used in ImportRecord.
   errorObservations: Array<{
@@ -46,6 +53,10 @@ export type AdvisorInsights = {
     matchedParam?: string;
   }>;
   authObservations: Array<{ statusObserved: number; expectedAuth: string }>;
+  // Recent classified changes plus the freshness summary, so an agent can ask
+  // whether what it learned still holds. `summary` is null for an ephemeral
+  // import, which has no stored history to report.
+  changes: { recent: ChangeRow[]; summary: ChangeSummary | null };
 };
 
 export function emptyInsights(): AdvisorInsights {
@@ -55,6 +66,7 @@ export function emptyInsights(): AdvisorInsights {
     driftObservations: [],
     idempotencyObservations: [],
     authObservations: [],
+    changes: { recent: [], summary: null },
   };
 }
 
