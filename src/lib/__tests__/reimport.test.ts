@@ -303,3 +303,162 @@ describe('buildReimportStatements', () => {
     expect(rows.every((r) => r.specVersionId === result.specVersionId)).toBe(true);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// The change ledger hook: a re-import that alters the contract must SAY what
+// it altered, not merely record that a new version exists.
+
+describe('buildReimportStatements change ledger', () => {
+  // The default record() above carries ONE action; these tests need a second
+  // one to remove.
+  const twoActions = () =>
+    record({
+      actions: [action(), action({ id: 'a2', name: 'delete_thing', method: 'DELETE', path: '/things/{id}', safety: 'destructive' })],
+    });
+
+  async function changeRows(apiId: string) {
+    return db.select().from(schema.apiChanges).where(eq(schema.apiChanges.apiId, apiId));
+  }
+
+  async function diffFacts(apiId: string) {
+    return db
+      .select()
+      .from(schema.evidenceFacts)
+      .where(and(eq(schema.evidenceFacts.apiId, apiId), eq(schema.evidenceFacts.kind, 'diff.spec_change')));
+  }
+
+  it('writes classified rows fenced to both versions, and a diff receipt', async () => {
+    const { apiId, specVersionId: firstVersion } = await seedApi('{"v":1}', twoActions());
+    const result = await buildReimportStatements(db, { apiId, record: record(), rawText: '{"v":2}', source: 'ci_push' });
+    await runSequentially(result.statements as Statements);
+
+    const rows = await changeRows(apiId);
+    const removed = rows.find((r) => r.kind === 'operation.removed')!;
+    expect(removed).toBeDefined();
+    expect(removed.severity).toBe('breaking');
+    expect(removed.tool).toBe('delete_thing');
+    expect(removed.source).toBe('ci_push');
+    expect(removed.fromSpecVersionId).toBe(firstVersion);
+    expect(removed.toSpecVersionId).toBe(result.specVersionId);
+
+    const [fact] = await diffFacts(apiId);
+    expect(fact.specVersionId).toBe(result.specVersionId);
+    expect(fact.payload).toMatchObject({ fromSpecVersionId: firstVersion, toSpecVersionId: result.specVersionId, truncated: false });
+    expect((fact.payload as { counts: Record<string, number> }).counts.breaking).toBeGreaterThan(0);
+
+    // The ChangeSet is returned to the caller too, so CI can print it.
+    expect(result.changes?.highest).toBe('breaking');
+  });
+
+  it('links a removed operation to the previous version row and a changed one to the new row', async () => {
+    const { apiId, specVersionId: firstVersion } = await seedApi('{"v":1}', twoActions());
+    const edited = record({ actions: [action({ description: 'Now described differently' })] });
+    const result = await buildReimportStatements(db, { apiId, record: edited, rawText: '{"v":2}' });
+    await runSequentially(result.statements as Statements);
+
+    const rows = await changeRows(apiId);
+    const oldRows = await db
+      .select()
+      .from(schema.actions)
+      .where(and(eq(schema.actions.apiId, apiId), eq(schema.actions.specVersionId, firstVersion)));
+    const newRows = await db
+      .select()
+      .from(schema.actions)
+      .where(and(eq(schema.actions.apiId, apiId), eq(schema.actions.specVersionId, result.specVersionId)));
+
+    const removed = rows.find((r) => r.kind === 'operation.removed')!;
+    expect(removed.actionId).toBe(oldRows.find((r) => r.actionKey === 'a2')!.id);
+    const described = rows.find((r) => r.kind === 'operation.description_changed')!;
+    expect(described.actionId).toBe(newRows.find((r) => r.actionKey === 'a1')!.id);
+  });
+
+  it('records the receipt but no rows when only whitespace changed', async () => {
+    const { apiId } = await seedApi('{"v":1}');
+    const result = await buildReimportStatements(db, { apiId, record: record(), rawText: '{"v": 1}' });
+    await runSequentially(result.statements as Statements);
+
+    expect(result.status).toBe('updated');
+    expect(await changeRows(apiId)).toHaveLength(0);
+    // "The bytes moved and the contract did not" is itself worth recording.
+    const [fact] = await diffFacts(apiId);
+    expect((fact.payload as { counts: Record<string, number> }).counts).toEqual({ breaking: 0, risky: 0, additive: 0, cosmetic: 0 });
+    expect((fact.payload as { highest: string | null }).highest).toBeNull();
+  });
+
+  it('writes no ledger rows at all for an unchanged re-import', async () => {
+    const raw = '{"v":1}';
+    const { apiId } = await seedApi(raw);
+    const result = await buildReimportStatements(db, { apiId, record: record(), rawText: raw });
+
+    expect(result.status).toBe('unchanged');
+    expect(result.changes).toBeNull();
+    expect(await changeRows(apiId)).toHaveLength(0);
+    expect(await diffFacts(apiId)).toHaveLength(0);
+  });
+
+  it('diffs a revert too, from the current version back to the older one', async () => {
+    const first = '{"v":1}';
+    const { apiId, specVersionId: firstVersion } = await seedApi(first, twoActions());
+    const second = await buildReimportStatements(db, { apiId, record: record(), rawText: '{"v":2}' });
+    await runSequentially(second.statements as Statements);
+
+    // Reverting re-parses the original bytes, so the incoming model is the
+    // two-action one again.
+    const back = await buildReimportStatements(db, { apiId, record: twoActions(), rawText: first });
+    await runSequentially(back.statements as Statements);
+
+    expect(back.status).toBe('reverted');
+    const reverted = (await changeRows(apiId)).filter((r) => r.toSpecVersionId === firstVersion);
+    // Going back restores delete_thing, which reads as an addition.
+    expect(reverted.some((r) => r.kind === 'operation.added' && r.tool === 'delete_thing')).toBe(true);
+    expect(reverted.every((r) => r.fromSpecVersionId === second.specVersionId)).toBe(true);
+  });
+
+  it('defaults the source to manual when the caller does not name one', async () => {
+    const { apiId } = await seedApi('{"v":1}', twoActions());
+    const result = await buildReimportStatements(db, { apiId, record: record(), rawText: '{"v":2}' });
+    await runSequentially(result.statements as Statements);
+
+    const rows = await changeRows(apiId);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.source === 'manual')).toBe(true);
+  });
+
+  it('classifies a newly required body field as breaking', async () => {
+    const { apiId } = await seedApi('{"v":1}');
+    const withBody = (required: string[]) =>
+      record({
+        actions: [
+          action({
+            id: 'w1',
+            name: 'create_thing',
+            method: 'POST',
+            path: '/things',
+            safety: 'write',
+            paramsSchema: {
+              type: 'object',
+              required: ['body'],
+              properties: {
+                body: {
+                  type: 'object',
+                  required,
+                  properties: { name: { type: 'string' }, owner: { type: 'string' } },
+                  'x-docentapi-in': 'body',
+                },
+              },
+            },
+          }),
+        ],
+      });
+
+    const before = await buildReimportStatements(db, { apiId, record: withBody(['name']), rawText: '{"v":2}' });
+    await runSequentially(before.statements as Statements);
+    const after = await buildReimportStatements(db, { apiId, record: withBody(['name', 'owner']), rawText: '{"v":3}' });
+    await runSequentially(after.statements as Statements);
+
+    const rows = (await changeRows(apiId)).filter((r) => r.toSpecVersionId === after.specVersionId);
+    const required = rows.find((r) => r.kind === 'field.required_changed')!;
+    expect(required).toMatchObject({ severity: 'breaking', fieldPath: 'body.owner', location: 'request' });
+  });
+});
