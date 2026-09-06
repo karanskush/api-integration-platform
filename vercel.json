@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/poll-specs",
-      "schedule": "0 * * * *"
+      "schedule": "0 1 * * *"
     },
     {
       "path": "/api/cron/reverify",
