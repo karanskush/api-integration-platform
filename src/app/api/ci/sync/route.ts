@@ -1,5 +1,4 @@
 import { eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 import {
   CI_ERROR_MESSAGE,
   CI_ERROR_STATUS,
@@ -17,6 +16,7 @@ import { ParseError } from '@/lib/importer/openapi';
 import { PostmanConvertError } from '@/lib/importer/postman';
 import { masterKeyReady } from '@/lib/keys';
 import { reimportApi } from '@/lib/persist';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { markSeen } from '@/lib/replay';
 import { scorePreview } from '@/lib/scorePreview';
@@ -116,13 +116,13 @@ export async function POST(req: Request) {
 
   try {
     const { record, rawText } = await runImport({ url: specUrl, text: specText });
-    const result = await reimportApi(db, { apiId: api.id, record, rawText });
+    const result = await reimportApi(db, { apiId: api.id, record, rawText, source: 'ci_push' });
 
     if (result.status !== 'unchanged') {
-      // Purge the ISR page and the badge so a README badge cannot keep
-      // advertising a score computed against a spec that no longer exists.
-      revalidatePath(`/${api.slug}`);
-      revalidatePath(`/badge/${api.slug}`);
+      // Purge every cached surface (page, changelog, feed, badge, manifest)
+      // so a README badge cannot keep advertising a score computed against a
+      // spec that no longer exists, and the changelog shows the new rows now.
+      purgeApiSurfaces(api.slug);
     }
 
     const preview = scorePreview(record);
@@ -136,6 +136,19 @@ export async function POST(req: Request) {
       contentHash: result.contentHash,
       actionCount: record.actions.length,
       counts: record.counts,
+      // The classified diff against the version that was current, so the CI
+      // log says WHAT changed, not just that something did. Null on the first
+      // version of an API and when the bytes were unchanged.
+      changes: result.changes
+        ? {
+            counts: result.changes.counts,
+            highest: result.changes.highest,
+            truncated: result.changes.truncated,
+            toolsChanged: result.changes.toolsChanged,
+            // The most severe rows first — the ones a reviewer must see.
+            top: result.changes.changes.slice(0, 20).map((c) => ({ kind: c.kind, severity: c.severity, summary: c.summary })),
+          }
+        : null,
       scorePreview: {
         total: preview.total,
         verified: false,
@@ -147,7 +160,7 @@ export async function POST(req: Request) {
           ? 'Spec content is byte-identical to the current version — nothing was rewritten.'
           : result.status === 'reverted'
             ? 'Spec content matches an earlier version of this API; the page now points back at it.'
-            : 'A new spec version was recorded and the page and badge were purged.',
+            : 'A new spec version was recorded; the page, changelog, feed, and badge were purged.',
     };
 
     // A failed score gate is a build signal, not a server error — 422 so the
