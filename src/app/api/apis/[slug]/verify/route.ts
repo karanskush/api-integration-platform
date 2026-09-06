@@ -1,10 +1,10 @@
 import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 import { dbReady, getDb } from '@/lib/db';
 import { apis, orgMembers, scoreRuns, users } from '@/lib/db/schema';
 import { loadPersistentRecord } from '@/lib/persistentApi';
 import { runScoreEngine } from '@/lib/probes/run';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { applyScoreRun } from '@/lib/scoreWrite';
 
@@ -76,10 +76,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       .set({ status: 'succeeded', findings: result, completedAt: new Date() })
       .where(eq(scoreRuns.id, run.id));
 
-    // A new verified score changes both the page's score panel and the badge
-    // colour, so neither may serve its cached pre-run version.
-    revalidatePath(`/${slug}`);
-    revalidatePath(`/badge/${slug}`);
+    // A new verified score changes the page's score panel, the badge colour,
+    // and the badge manifest, so none may serve its cached pre-run version.
+    purgeApiSurfaces(slug);
 
     return Response.json(result);
   } catch {
