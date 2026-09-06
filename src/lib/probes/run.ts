@@ -5,6 +5,7 @@ import { runAuthClarity } from './authClarity';
 import { runDocDrift } from './docDrift';
 import { runErrorQuality } from './errorQuality';
 import { runIdempotency } from './idempotency';
+import { dedupeLifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
 export type ScoreEngineResult = {
@@ -45,6 +46,13 @@ export async function runScoreEngine(
       docDrift: docDrift.insufficientData ? null : docDrift.subscore,
       idempotency: idempotency.subscore,
     },
-    evidence: [...authClarity.evidence, ...errorQuality.evidence, ...docDrift.evidence, ...idempotency.evidence],
+    // Several probes can hit the same operation and see the same lifecycle
+    // header; the graph should carry one fact, not one per probe.
+    evidence: dedupeLifecycleEvidence([
+      ...authClarity.evidence,
+      ...errorQuality.evidence,
+      ...docDrift.evidence,
+      ...idempotency.evidence,
+    ]),
   };
 }
