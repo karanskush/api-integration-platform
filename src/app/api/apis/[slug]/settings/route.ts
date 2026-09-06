@@ -1,10 +1,10 @@
 import { auth } from '@clerk/nextjs/server';
 import { eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 import { ownershipError, resolveApiOwnership } from '@/lib/apiOwnership';
 import { dbReady, getDb } from '@/lib/db';
 import { apis } from '@/lib/db/schema';
 import { can } from '@/lib/plans';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 
 export const maxDuration = 30;
@@ -69,8 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string 
   await db.update(apis).set({ visibility, updatedAt: new Date() }).where(eq(apis.id, owned.api.id));
 
   // Going private must take effect now, not when the cache happens to expire.
-  revalidatePath(`/${owned.api.slug}`);
-  revalidatePath(`/badge/${owned.api.slug}`);
+  purgeApiSurfaces(owned.api.slug);
 
   return Response.json({
     slug: owned.api.slug,
