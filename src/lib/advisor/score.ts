@@ -51,8 +51,21 @@ export function getScoreExplanation(ctx: AdvisorContext) {
       total: verified.total,
       outOf: 100,
       verified: true,
-      basis: 'live probes against the running API',
+      // Version fencing: a stale score is still a verified measurement — of a
+      // contract that has since changed. Say both, and never let `verified`
+      // alone imply the number describes what the API serves today.
+      stale: verified.stale,
+      basis: verified.stale
+        ? 'live probes against the running API, verified against a PREVIOUS spec version'
+        : 'live probes against the running API',
       verifiedAt: verified.verifiedAt,
+      specVersionId: verified.specVersionId,
+      ...(verified.stale
+        ? {
+            staleNote:
+              'The spec changed after this score was verified. The score describes the previous version until the next verification run; call docentapi_get_changes_since to see what changed.',
+          }
+        : {}),
       interpretation: band(verified.total),
       scoring:
         'Each sub-score is graded out of 25. Sub-scores that could not be probed are excluded and the total is renormalized over the ones that ran, so an unprobeable check never reads as a failed one.',
