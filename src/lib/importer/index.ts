@@ -15,7 +15,17 @@ export class ImportInputError extends Error {
   }
 }
 
-export type ImportInput = { url?: string; text?: string };
+export type ImportInput = {
+  url?: string;
+  text?: string;
+  // Where `text` came from, when the caller fetched it itself. The spec poller
+  // (specPoll.ts) does its own conditional GET so it can act on a 304, and
+  // without this the re-imported version would lose its source_url — dropping
+  // the API out of the poll set after one successful poll — and would fail to
+  // resolve relative `servers` entries, inventing a base-URL change that never
+  // happened. Ignored unless `text` is supplied.
+  sourceUrl?: string;
+};
 
 const MAX_SPEC_BYTES = 5 * 1024 * 1024;
 
@@ -42,6 +52,7 @@ export async function runImport(input: ImportInput): Promise<ImportResult> {
     sourceUrl = res.finalUrl;
   } else if (input.text) {
     text = input.text;
+    sourceUrl = input.sourceUrl;
   } else {
     throw new ImportInputError('Provide a spec url or pasted text');
   }
