@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { ImportRecord } from '../ir';
 import { invokeAction } from '../mcpTools';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
 
 const FULL = 25;
@@ -46,6 +47,8 @@ export async function runAuthClarity(ctx: ProbeContext): Promise<ProbeOutcome> {
           payload: { statusObserved: result.status, expectedAuth: record.auth },
         });
       }
+      // A 401 carries lifecycle headers as readily as a 200 does.
+      evidence.push(...lifecycleEvidence(target, result.headers));
     } catch {
       // Live call couldn't be made (no key path reachable, SSRF-blocked, spec
       // has no resolvable example, ...) — this is a bonus confirmation on

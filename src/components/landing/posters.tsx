@@ -272,7 +272,7 @@ export function DriftPoster() {
       className="poster poster-drift"
       viewBox="0 0 600 320"
       role="img"
-      aria-label="The documented response shape beside the shape the running service actually returned, with one extra undocumented status value caught and patched into the tool schema."
+      aria-label="The documented response shape beside the shape the running service actually returned, with one extra undocumented status value caught and recorded against the operation."
     >
       <text className="p-micro" x="42" y="46">DOCUMENTED</text>
       <text className="p-micro" x="330" y="46">OBSERVED</text>

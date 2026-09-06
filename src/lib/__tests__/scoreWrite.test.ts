@@ -183,3 +183,78 @@ describe('buildScoreRunStatements', () => {
     expect(fact.actionId).toBeNull();
   });
 });
+
+describe('buildScoreRunStatements lifecycle evidence', () => {
+  const lifecycleEvidence = (at: string): EvidenceFactInput => ({
+    kind: 'probe.lifecycle_signal',
+    source: 'probe',
+    actionId: 'a1',
+    payload: {
+      actionId: 'a1',
+      tool: 'get_thing',
+      method: 'GET',
+      path: '/things/{id}',
+      kind: 'sunset',
+      header: 'sunset',
+      raw: 'Wed, 30 Jun 2027 23:59:59 GMT',
+      at,
+    },
+  });
+
+  const probeEvidence: EvidenceFactInput = {
+    kind: 'probe.auth_reject',
+    source: 'probe',
+    payload: { statusObserved: 401, expectedAuth: 'bearer' },
+  };
+
+  function input(api: { apiId: string; specVersionId: string }, evidence: EvidenceFactInput[]): ScoreRunInput {
+    return {
+      apiId: api.apiId,
+      specVersionId: api.specVersionId,
+      total: 80,
+      subscores: { authClarity: 25, errorQuality: 20, docDrift: 15, idempotency: 20 },
+      evidence,
+    };
+  }
+
+  // The score explains what MOVED it. A provider's sunset announcement is
+  // recorded, but claiming it "contributed to score" would be false.
+  it('stores a lifecycle fact as evidence but keeps it out of the score explanation', async () => {
+    const api = await makeApi('lifecycle-a');
+    const built = await buildScoreRunStatements(db, input(api, [probeEvidence, lifecycleEvidence('2027-06-30T23:59:59.000Z')]));
+    for (const statement of built.statements) await statement;
+
+    const facts = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, api.apiId));
+    expect(facts.some((f) => f.kind === 'probe.lifecycle_signal')).toBe(true);
+
+    const [score] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, api.apiId));
+    const explanation = score.explanation as Array<{ message: string }>;
+    expect(explanation).toHaveLength(1);
+    expect(explanation[0].message).toContain('Auth clarity');
+  });
+
+  it('creates the header-sourced change row once across repeated runs', async () => {
+    const api = await makeApi('lifecycle-b');
+    for (let i = 0; i < 2; i++) {
+      const built = await buildScoreRunStatements(db, input(api, [lifecycleEvidence('2027-06-30T23:59:59.000Z')]));
+      for (const statement of built.statements) await statement;
+    }
+
+    const rows = await db.select().from(schema.apiChanges).where(eq(schema.apiChanges.apiId, api.apiId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ source: 'header', kind: 'operation.sunset_scheduled', severity: 'risky' });
+    // Linked to the concrete action row, not just the stable key.
+    expect(rows[0].actionId).not.toBeNull();
+  });
+
+  it('writes a second row when the announced date moves', async () => {
+    const api = await makeApi('lifecycle-c');
+    for (const at of ['2027-06-30T23:59:59.000Z', '2028-01-01T00:00:00.000Z']) {
+      const built = await buildScoreRunStatements(db, input(api, [lifecycleEvidence(at)]));
+      for (const statement of built.statements) await statement;
+    }
+
+    const rows = await db.select().from(schema.apiChanges).where(eq(schema.apiChanges.apiId, api.apiId));
+    expect(rows).toHaveLength(2);
+  });
+});

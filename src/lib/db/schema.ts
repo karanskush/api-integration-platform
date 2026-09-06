@@ -108,6 +108,15 @@ export const specVersions = pgTable('spec_versions', {
   // the portable Arazzo workflow file and the x-docentapi-* enriched OpenAPI.
   arazzoBlobRef: text('arazzo_blob_ref'),
   enrichedSpecBlobRef: text('enriched_spec_blob_ref'),
+  // Conditional-GET state for the spec poller (specPoll.ts). Validators come
+  // from the last fetch of source_url; a 304 bumps last_polled_at without a
+  // new version. poll_status: ok|not_modified|failed|unsupported. poll_error is
+  // an error NAME or http_NNN, never a message that could echo provider text.
+  etag: text('etag'),
+  lastModified: text('last_modified'),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  pollStatus: text('poll_status'),
+  pollError: text('poll_error'),
   createdAt: createdAt(),
 }, (t) => [
   uniqueIndex('spec_versions_api_id_content_hash_idx').on(t.apiId, t.contentHash),
@@ -130,7 +139,17 @@ export const actions = pgTable('actions', {
   auth: text('auth').notNull(),
   authIn: jsonb('auth_in'),
   safety: text('safety').notNull(), // read|write|destructive
+  // OpenAPI `deprecated: true` and oasdiff's `x-sunset` on the operation —
+  // the provider's own declaration of lifecycle, which the diff engine
+  // (changes/diff.ts) compares across versions. Undefined-in-IR is stored as
+  // false / null; Postman and cURL imports never set either.
+  deprecated: boolean('deprecated').notNull().default(false),
+  sunsetAt: timestamp('sunset_at', { withTimezone: true }),
   resourceName: text('resource_name'),
+  // documented|inferred|observed|drifted. Still written only as the default:
+  // 'drifted' is reserved for the behavioral canary (design doc §5 package 5),
+  // which compares an operation's live responses to its previous observation.
+  // Spec-to-spec changes are recorded in api_changes, not here.
   operationStability: text('operation_stability').notNull().default('documented'),
   idempotency: text('idempotency').notNull().default('unknown'),
   requiresConfirmation: boolean('requires_confirmation').notNull().default(false),
@@ -333,6 +352,72 @@ export const clarifications = pgTable('clarifications', {
   uniqueIndex('clarifications_spec_version_group_key_idx')
     .on(t.specVersionId, t.groupKey)
     .where(sql`${t.groupKey} is not null`),
+]);
+
+// The classified change ledger (SELF_MAINTAINING_APIS_2026-09-06.md §3.3):
+// one row per change to an API's contract (spec diff between two versions) or
+// observed lifecycle (a Deprecation/Sunset header seen on a live response).
+// tool/method/path are denormalized because a REMOVED operation has no row in
+// the current version's actions and the changelog must still name it.
+// action_id references the new version's row for changed/added operations and
+// the previous version's row for removed ones; API-level rows leave it null.
+// dedupe_key is set only by header-observed rows so the same Sunset date seen
+// on every probe run collapses to one entry via the partial unique index —
+// a DB-level guarantee rather than a read-before-write that could race a
+// manual /verify against the reverify cron. Kinds, severities, and sources
+// are closed in changes/ledger.ts (zod), same pattern as evidence.ts.
+export const apiChanges = pgTable('api_changes', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  fromSpecVersionId: uuid('from_spec_version_id').references(() => specVersions.id, { onDelete: 'set null' }),
+  toSpecVersionId: uuid('to_spec_version_id').references(() => specVersions.id, { onDelete: 'set null' }),
+  actionId: uuid('action_id').references(() => actions.id, { onDelete: 'set null' }),
+  actionKey: text('action_key'),
+  tool: text('tool'),
+  method: text('method'),
+  path: text('path'),
+  kind: text('kind').notNull(), // changes/diff.ts ChangeKind
+  severity: text('severity').notNull(), // breaking|risky|additive|cosmetic
+  source: text('source').notNull(), // ci_push|poll|manual|reverify|header|probe
+  fieldPath: text('field_path'),
+  location: text('location'), // request|response|error
+  summary: text('summary').notNull(),
+  detail: jsonb('detail').notNull().default({}), // { before?, after?, ... } — scalars and enums only, never schemas
+  dedupeKey: text('dedupe_key'),
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+}, (t) => [
+  index('api_changes_api_id_observed_at_idx').on(t.apiId, t.observedAt),
+  index('api_changes_api_id_severity_idx').on(t.apiId, t.severity),
+  uniqueIndex('api_changes_api_id_dedupe_key_idx')
+    .on(t.apiId, t.dedupeKey)
+    .where(sql`${t.dedupeKey} is not null`),
+]);
+
+// One row per canary run per operation: the shape that operation actually
+// returned, so the NEXT run can compare against it. This is the only change
+// source that can catch behaviour moving while the documentation stays still.
+//
+// `shape` holds field paths, JSON type names, and per-sample presence counts —
+// never a value. A response body is the likeliest place for customer PII or a
+// live token, so the body is inferred into a shape and discarded; there is no
+// column here that could hold one.
+export const operationObservations = pgTable('operation_observations', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  actionId: uuid('action_id').references(() => actions.id, { onDelete: 'set null' }),
+  actionKey: text('action_key').notNull(), // stable across versions, unlike actionId
+  specVersionId: uuid('spec_version_id').references(() => specVersions.id, { onDelete: 'set null' }),
+  environment: text('environment').notNull().default('production'),
+  statusCounts: jsonb('status_counts').notNull().default({}), // {"200": 3}
+  sampleCount: integer('sample_count').notNull().default(0),
+  shape: jsonb('shape').notNull().default({}), // { path: { types, presentIn } }
+  latencyP50Ms: integer('latency_p50_ms'),
+  latencyMaxMs: integer('latency_max_ms'),
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+}, (t) => [
+  index('operation_observations_api_action_observed_idx').on(t.apiId, t.actionKey, t.observedAt),
 ]);
 
 // Zero rows in Phase 1 (everything here is pre-claimed at creation) — exists

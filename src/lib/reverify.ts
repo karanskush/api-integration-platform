@@ -20,12 +20,14 @@
 // insufficient data rather than as failure.
 
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { applyCanaryRun } from './canaryRun';
 import type { Db, NeonDb } from './db';
 import { apis, orgs, scores, scoreRuns, specVersions } from './db/schema';
 import { runImport } from './importer';
 import { loadPersistentRecord } from './persistentApi';
 import { PLAN_LIMITS, type Plan } from './plans';
 import { reimportApi } from './persist';
+import { runCanary } from './probes/canary';
 import { runScoreEngine } from './probes/run';
 import { applyScoreRun } from './scoreWrite';
 import { resolveCredential } from './vaultStore';
@@ -87,8 +89,14 @@ export async function findCandidates(db: Db, limit = batchSize()): Promise<Rever
       and(
         eq(apis.claimStatus, 'claimed'),
         sql`${orgs.plan} in ${plans}`,
-        // Never verified, or verified longer ago than the cadence allows.
-        or(isNull(scores.verifiedAt), sql`${scores.verifiedAt} < ${staleBefore.toISOString()}`),
+        // Never verified, verified longer ago than the cadence allows, or
+        // verified against a spec version that a re-import has since
+        // superseded — a stale score is stale regardless of its age.
+        or(
+          isNull(scores.verifiedAt),
+          sql`${scores.verifiedAt} < ${staleBefore.toISOString()}`,
+          sql`${scores.specVersionId} <> ${apis.currentSpecVersionId}`,
+        ),
       ),
     )
     // Stalest first: with a bounded batch, this is what stops one API from
@@ -103,6 +111,13 @@ export type ReverifyOutcome = {
   scored: boolean;
   total?: number;
   usedVaultedCredential: boolean;
+  // The behavioural canary's result for this API: how many operations were
+  // sampled, how many could be compared against a previous run, and what that
+  // comparison found. Absent when the canary did not run.
+  // `inconclusive` is reported alongside the rest because "we looked and
+  // nothing changed" and "we could not get a usable response" are different
+  // statements, and a freshness surface that conflates them is lying quietly.
+  canary?: { sampled: number; inconclusive: number; compared: number; changes: number; drifted: number };
   error?: string;
 };
 
@@ -111,6 +126,7 @@ export type ReverifyDeps = {
   importSpec?: typeof runImport;
   loadRecord?: typeof loadPersistentRecord;
   scoreEngine?: typeof runScoreEngine;
+  canary?: typeof runCanary;
   now?: () => Date;
 };
 
@@ -122,6 +138,7 @@ export async function reverifyOne(
   const importSpec = deps.importSpec ?? runImport;
   const loadRecord = deps.loadRecord ?? loadPersistentRecord;
   const scoreEngine = deps.scoreEngine ?? runScoreEngine;
+  const canary = deps.canary ?? runCanary;
 
   let specStatus: ReverifyOutcome['specStatus'] = 'skipped';
 
@@ -130,7 +147,7 @@ export async function reverifyOne(
   if (candidate.sourceUrl) {
     try {
       const { record, rawText } = await importSpec({ url: candidate.sourceUrl });
-      const result = await reimportApi(db, { apiId: candidate.apiId, record, rawText });
+      const result = await reimportApi(db, { apiId: candidate.apiId, record, rawText, source: 'reverify' });
       specStatus = result.status;
     } catch (err) {
       // A spec that has moved or gone 404 must not stop the score refresh: the
@@ -193,7 +210,36 @@ export async function reverifyOne(
       .set({ status: 'succeeded', findings: result, completedAt: new Date() })
       .where(eq(scoreRuns.id, run.id));
 
-    return { slug: candidate.slug, specStatus, scored: true, total: result.total, usedVaultedCredential };
+    // The canary rides the same run: the credential is already resolved, the
+    // budget is already accounted for, and comparing today's responses to the
+    // last run's is only meaningful on a regular cadence. A failure here must
+    // not undo a good score — the score is written above and stays written.
+    let canaryOutcome: ReverifyOutcome['canary'];
+    try {
+      const { snapshots, inconclusive } = await canary({ record, upstreamKey });
+      const applied = snapshots.length
+        ? await applyCanaryRun(db, {
+            apiId: candidate.apiId,
+            specVersionId,
+            snapshots,
+            actionsByKey: new Map(record.actions.map((a) => [a.id, a])),
+          })
+        : { comparedAgainstPrevious: 0, changes: [], driftedActionKeys: [] };
+      canaryOutcome = {
+        sampled: snapshots.length,
+        inconclusive: inconclusive.length,
+        compared: applied.comparedAgainstPrevious,
+        changes: applied.changes.length,
+        drifted: applied.driftedActionKeys.length,
+      };
+    } catch (err) {
+      console.error('[reverify] canary failed', {
+        slug: candidate.slug,
+        reason: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+
+    return { slug: candidate.slug, specStatus, scored: true, total: result.total, usedVaultedCredential, ...(canaryOutcome ? { canary: canaryOutcome } : {}) };
   } catch (err) {
     await db
       .update(scoreRuns)

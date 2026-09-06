@@ -228,3 +228,34 @@ describe('buildPersistStatements', () => {
     expect(rows[0].specVersionId).toBe(result.specVersionId);
   });
 });
+
+describe('buildPersistStatements lifecycle columns', () => {
+  it('round-trips deprecated and sunsetAt onto the actions row', async () => {
+    const org = await makeOrg('j');
+    const rec = record({
+      actions: [action({ deprecated: true, sunsetAt: '2027-01-31T00:00:00.000Z' })],
+      counts: { total: 1, read: 1, write: 0, destructive: 0 },
+    });
+
+    const result = await buildPersistStatements(db, { orgId: org.id, record: rec, rawText: 'lifecycle' });
+    await runSequentially(result.statements);
+
+    const [row] = await db.select().from(schema.actions).where(eq(schema.actions.apiId, result.apiId));
+    expect(row.deprecated).toBe(true);
+    expect(row.sunsetAt?.toISOString()).toBe('2027-01-31T00:00:00.000Z');
+  });
+
+  it('stores false / null when the action declares no lifecycle', async () => {
+    const org = await makeOrg('k');
+    const result = await buildPersistStatements(db, {
+      orgId: org.id,
+      record: record({ actions: [action()], counts: { total: 1, read: 1, write: 0, destructive: 0 } }),
+      rawText: 'no-lifecycle',
+    });
+    await runSequentially(result.statements);
+
+    const [row] = await db.select().from(schema.actions).where(eq(schema.actions.apiId, result.apiId));
+    expect(row.deprecated).toBe(false);
+    expect(row.sunsetAt).toBeNull();
+  });
+});

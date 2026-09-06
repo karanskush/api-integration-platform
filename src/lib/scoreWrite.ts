@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
+import { buildLifecycleChangeStatements, type LifecycleFactInput } from './changes/ledger';
 import type { Db, NeonDb } from './db';
 import { actions, evidenceFacts, scores } from './db/schema';
 import type { EvidenceFactInput, EvidencePayload } from './evidence';
@@ -27,6 +28,17 @@ export type ScoreRunInput = {
 };
 
 export type ScoreRunStatements = { statements: BatchItem<'pg'>[] };
+
+// The kinds that actually MOVED the number. A probe run now also records
+// lifecycle headers, which are provider announcements rather than measurements
+// — listing them under "why this API scored what it scored" would claim they
+// contributed when they did not.
+const SCORING_KINDS = new Set<EvidenceFactInput['kind']>([
+  'probe.auth_reject',
+  'probe.error_quality',
+  'probe.doc_drift',
+  'probe.idempotency_signal',
+]);
 
 function describeEvidence(e: EvidenceFactInput): string {
   switch (e.kind) {
@@ -93,7 +105,30 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     );
   }
 
-  const explanation = evidence.map((e, i) => ({ factId: factIds[i], message: describeEvidence(e) }));
+  // Lifecycle observations become ledger rows so the changelog shows "the
+  // provider announced a sunset on this endpoint" alongside spec diffs. The
+  // partial unique index makes the repeat-observation case a no-op, so this is
+  // safe to run on every score run without a read-before-write.
+  const lifecycleFacts: LifecycleFactInput[] = [];
+  for (const e of evidence) {
+    if (e.kind !== 'probe.lifecycle_signal') continue;
+    const p = e.payload as EvidencePayload['probe.lifecycle_signal'];
+    lifecycleFacts.push({
+      actionKey: p.actionId,
+      tool: p.tool,
+      method: p.method,
+      path: p.path,
+      signal: { kind: p.kind, header: p.header, raw: p.raw, ...(p.at ? { at: p.at } : {}), ...(p.url ? { url: p.url } : {}) },
+    });
+  }
+  statements.push(
+    ...buildLifecycleChangeStatements(db, { apiId, specVersionId, facts: lifecycleFacts, actionIdByKey }),
+  );
+
+  const explanation = evidence
+    .map((e, i) => ({ factId: factIds[i], kind: e.kind, message: describeEvidence(e) }))
+    .filter((e) => SCORING_KINDS.has(e.kind))
+    .map(({ factId, message }) => ({ factId, message }));
   const scoreValues = {
     specVersionId,
     total,

@@ -232,6 +232,21 @@ describe('findCandidates', () => {
     const found = await findCandidates(db, 50);
     expect(found.find((c) => c.slug === seeded.slug)?.sourceUrl).toBe('https://example.test/openapi.json');
   });
+
+  // Version fencing: a score earned an hour ago against a version that a
+  // re-import has since replaced is stale now, not next week.
+  it('includes a fresh score whose spec version is no longer current', async () => {
+    const seeded = await seedApi({ verifiedAt: new Date(Date.now() - 60 * 60 * 1000) }); // 1h ago
+    expect((await findCandidates(db, 50)).map((c) => c.slug)).not.toContain(seeded.slug);
+
+    const [newer] = await db
+      .insert(schema.specVersions)
+      .values({ apiId: seeded.apiId, source: 'openapi', contentHash: `fence-${seeded.slug}`, parseStatus: 'parsed' })
+      .returning();
+    await db.update(schema.apis).set({ currentSpecVersionId: newer.id }).where(eq(schema.apis.id, seeded.apiId));
+
+    expect((await findCandidates(db, 50)).map((c) => c.slug)).toContain(seeded.slug);
+  });
 });
 
 describe('reverifyOne', () => {

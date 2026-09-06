@@ -41,7 +41,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
 
   const db = getDb();
   const [row] = await db
-    .select({ claimStatus: apis.claimStatus, visibility: apis.visibility, total: scores.total })
+    .select({
+      claimStatus: apis.claimStatus,
+      visibility: apis.visibility,
+      total: scores.total,
+      scoreSpecVersionId: scores.specVersionId,
+      currentSpecVersionId: apis.currentSpecVersionId,
+    })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
     .where(eq(apis.slug, slug))
@@ -60,6 +66,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
 
   if (row.claimStatus !== 'claimed' || row.total == null) {
     return unverifiedBadge();
+  }
+
+  // Version fence: the score was earned against one spec version. Once a
+  // re-import moves the API past it, the number describes a contract that no
+  // longer serves, so the badge goes grey and says so instead of keeping the
+  // green the previous version earned (GAP_ANALYSIS_2026-08-04.md §0.3).
+  if (row.scoreSpecVersionId !== row.currentSpecVersionId) {
+    return badgeResponse(badgeSvg({ label: 'agent-ready', message: 'stale', color: UNVERIFIED_COLOR }));
   }
 
   return badgeResponse(badgeSvg({ label: 'agent-ready', message: `${row.total}/100`, color: VERIFIED_COLOR }));

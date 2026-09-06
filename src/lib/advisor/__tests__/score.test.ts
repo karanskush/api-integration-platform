@@ -13,6 +13,8 @@ const verified = {
   idempotency: 15,
   explanation: [{ factId: 'fact-1', message: 'Auth clarity: a request without valid bearer credentials was rejected with 401' }],
   verifiedAt: '2026-07-20T10:00:00.000Z',
+  stale: false,
+  specVersionId: 'v1',
 };
 
 describe('getScoreExplanation', () => {
@@ -59,6 +61,21 @@ describe('getScoreExplanation', () => {
     expect(res.evidence).toEqual([
       { factId: 'fact-1', finding: expect.stringContaining('rejected with 401') },
     ]);
+  });
+
+  // Version fencing: the number stays, the claim about the current contract
+  // does not. An agent reading only `verified: true` must not be misled.
+  it('flags a score fenced to a superseded spec version as stale, with a note', () => {
+    const fresh = getScoreExplanation(ctx(petstoreActions(), { verified }));
+    expect(fresh.stale).toBe(false);
+    expect(fresh.staleNote).toBeUndefined();
+
+    const stale = getScoreExplanation(ctx(petstoreActions(), { verified: { ...verified, stale: true } }));
+    expect(stale.verified).toBe(true);
+    expect(stale.stale).toBe(true);
+    expect(stale.basis).toContain('PREVIOUS spec version');
+    expect(stale.staleNote).toContain('get_changes_since');
+    expect(stale.specVersionId).toBe('v1');
   });
 
   it('bands the total into an interpretation', () => {

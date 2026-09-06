@@ -34,6 +34,13 @@ export type Action = {
   // or the spec's security requirement lists none — that distinguishes "no
   // scope requirement documented" from "documented as requiring nothing".
   scopes?: string[];
+  // The provider's own lifecycle declaration: OpenAPI `deprecated: true` and
+  // the `x-sunset` extension (RFC 3339, the convention oasdiff standardized)
+  // as an ISO timestamp. Undefined — not false — for Postman and cURL imports
+  // and for operations that declare neither; the diff engine treats undefined
+  // and false as the same state.
+  deprecated?: boolean;
+  sunsetAt?: string;
 };
 
 export type ImportSource = 'openapi' | 'swagger' | 'postman' | 'curl';

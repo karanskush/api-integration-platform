@@ -449,7 +449,8 @@ export default function Home() {
           <h2 className="display">Anyone can turn OpenAPI into MCP. We prove the tools work.</h2>
           <p className="lead">
             Transpilers echo the spec and hope. DocentAPI executes the tools, catches where the docs
-            lie, patches the tool definitions — and re-verifies so drift never reaches an agent.
+            lie, and keeps watching — so when the API moves, the change is classified and served to
+            your agents before they trip over it.
           </p>
 
           <div className="terminal">
@@ -463,7 +464,7 @@ export default function Home() {
               <div className="term-line step"><span className="n">01</span> <span className="m">create_user</span> <span className="ret">→ user_id</span></div>
               <div className="term-line step"><span className="n">02</span> <span className="m">create_account</span> <span className="x">×2</span> <span className="ret">→ account_id</span> <span className="note">· requires user_id</span></div>
               <div className="term-line step"><span className="n">03</span> <span className="m">create_transfer</span> <span className="ret">→ transfer_id</span> <span className="note">· Idempotency-Key attached</span></div>
-              <div className="term-line warn">! drift caught · status “pending_review” not in spec — tool schema patched automatically</div>
+              <div className="term-line warn">! drift caught · status “pending_review” not in spec — recorded, classified breaking, surfaced to the agent</div>
               <div className="term-line ok"><span className="who b">agent</span><span className="caret-q">›</span> <span className="okmark">✓</span> <span className="type">200 — shipped on the first pass</span><span className="caret" aria-hidden="true">▋</span></div>
             </div>
           </div>

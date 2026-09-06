@@ -37,7 +37,17 @@ export type EvidenceKind =
   | 'llm.lineage_dispute'
   // A clarification the human answered — the highest trust tier, above both
   // 'parser' and 'llm' sourced facts, since a person confirmed it directly.
-  | 'human.clarification';
+  | 'human.clarification'
+  // One re-import's diff against the previous version, summarized. The rows
+  // themselves live in api_changes (changes/ledger.ts); this fact is the
+  // durable, version-fenced receipt that a diff was computed at all — written
+  // even when the diff is empty, because "bytes changed, contract did not" is
+  // a finding.
+  | 'diff.spec_change'
+  // A Deprecation / Sunset / Link / vendor lifecycle header observed on a live
+  // response during a probe (changes/lifecycle.ts). Provider-asserted, so it
+  // sits with the probe.* kinds in trust, and it never affects the score.
+  | 'probe.lifecycle_signal';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -123,6 +133,31 @@ const humanClarificationPayload = z.object({
   answer: z.unknown(),
 });
 
+const severityEnum = z.enum(['breaking', 'risky', 'additive', 'cosmetic']);
+
+const specChangePayload = z.object({
+  fromSpecVersionId: z.string().nullable(),
+  toSpecVersionId: z.string(),
+  counts: z.object({ breaking: z.number(), risky: z.number(), additive: z.number(), cosmetic: z.number() }),
+  highest: severityEnum.nullable(),
+  truncated: z.boolean(),
+  toolsChanged: z.number(),
+});
+
+// Mirrors changes/lifecycle.ts LifecycleSignal plus the operation it was seen
+// on, keyed by tool name + action key the way the other probe.* payloads are.
+const lifecycleSignalPayload = z.object({
+  actionId: z.string(),
+  tool: z.string(),
+  method: z.string(),
+  path: z.string(),
+  kind: z.enum(['deprecated', 'sunset', 'successor', 'vendor_deprecation', 'version']),
+  header: z.string(),
+  raw: z.string(),
+  at: z.string().optional(),
+  url: z.string().optional(),
+});
+
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
 const evidenceSchemas = {
@@ -139,6 +174,8 @@ const evidenceSchemas = {
   'llm.field_semantics': fieldSemanticsPayload,
   'llm.lineage_dispute': lineageDisputePayload,
   'human.clarification': humanClarificationPayload,
+  'diff.spec_change': specChangePayload,
+  'probe.lifecycle_signal': lifecycleSignalPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

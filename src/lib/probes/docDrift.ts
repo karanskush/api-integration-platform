@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { Action, JSONSchema } from '../ir';
 import { invokeAction } from '../mcpTools';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
 
 const FULL = 25;
@@ -77,6 +78,9 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
     );
     try {
       const res = await invoke(action, action.examples[0].params, target, ctx.upstreamKey);
+      // Recorded before parsing: a body that fails to parse still carried
+      // headers worth keeping.
+      evidence.push(...lifecycleEvidence(action, res.headers));
       const body = JSON.parse(res.bodyText);
       const cmp = compareShallow(action.responseSchema!, body);
       matched = cmp.matched;

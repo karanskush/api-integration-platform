@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { detectInput, DetectError } from '../importer/detect';
 import { parseCurl, curlToOpenApi, tokenize, CurlParseError } from '../importer/curl';
+import { runImport } from '../importer';
 import { parseOpenApi } from '../importer/openapi';
 import { normalizeOpenApi, snakeCase, classifySafety } from '../normalize';
 
@@ -269,5 +270,77 @@ describe('curl parsing', () => {
   it('rejects unsupported flags loudly', () => {
     expect(() => parseCurl('curl --proxy http://x https://e.com')).toThrow(CurlParseError);
     expect(() => parseCurl('curl -d @file.json https://e.com')).toThrow(CurlParseError);
+  });
+});
+
+describe('normalizeOpenApi operation lifecycle', () => {
+  const docWith = (op: Record<string, unknown>) => ({
+    openapi: '3.0.3',
+    info: { title: 'Lifecycle API', version: '1.0.0' },
+    servers: [{ url: 'https://api.example.com' }],
+    paths: { '/thing': { get: { operationId: 'getThing', responses: { '200': { description: 'ok' } }, ...op } } },
+  });
+
+  it('reads deprecated: true', async () => {
+    const doc = await parseOpenApi(structuredClone(docWith({ deprecated: true })) as never);
+    expect(normalizeOpenApi(doc).actions[0].deprecated).toBe(true);
+  });
+
+  it('reads x-sunset as an ISO timestamp', async () => {
+    const doc = await parseOpenApi(structuredClone(docWith({ 'x-sunset': '2027-06-30T00:00:00Z' })) as never);
+    expect(normalizeOpenApi(doc).actions[0].sunsetAt).toBe('2027-06-30T00:00:00.000Z');
+  });
+
+  it('drops an unparseable x-sunset and a non-boolean deprecated', async () => {
+    const doc = await parseOpenApi(
+      structuredClone(docWith({ 'x-sunset': 'someday', deprecated: 'true' })) as never,
+    );
+    const action = normalizeOpenApi(doc).actions[0];
+    expect(action.sunsetAt).toBeUndefined();
+    expect(action.deprecated).toBeUndefined();
+  });
+
+  it('leaves both keys absent when the operation declares neither', async () => {
+    const doc = await parseOpenApi(structuredClone(docWith({})) as never);
+    const action = normalizeOpenApi(doc).actions[0];
+    expect(action).not.toHaveProperty('deprecated');
+    expect(action).not.toHaveProperty('sunsetAt');
+  });
+});
+
+describe('runImport sourceUrl for pre-fetched text', () => {
+  const relativeServerSpec = JSON.stringify({
+    openapi: '3.0.3',
+    info: { title: 'Relative API', version: '1' },
+    servers: [{ url: '/v2' }],
+    paths: { '/thing': { get: { operationId: 'getThing', responses: { '200': { description: 'ok' } } } } },
+  });
+
+  // The spec poller fetches the bytes itself (so it can act on a 304) and then
+  // imports them as text. Without carrying the URL through, the new version
+  // would lose source_url and drop out of the poll set after one poll.
+  it('records the source url on the imported record', async () => {
+    const { record } = await runImport({ text: relativeServerSpec, sourceUrl: 'https://api.example.com/openapi.json' });
+    expect(record.sourceUrl).toBe('https://api.example.com/openapi.json');
+  });
+
+  it('leaves sourceUrl undefined for a plain paste', async () => {
+    const { record } = await runImport({
+      text: JSON.stringify({
+        openapi: '3.0.3',
+        info: { title: 'Pasted API', version: '1' },
+        servers: [{ url: 'https://api.example.com' }],
+        paths: { '/thing': { get: { operationId: 'getThing', responses: { '200': { description: 'ok' } } } } },
+      }),
+    });
+    expect(record.sourceUrl).toBeUndefined();
+  });
+
+  // Base-URL resolution is asserted at the normalizer, which is pure: runImport
+  // additionally SSRF-validates every server URL, and that needs DNS.
+  it('resolves a relative server against the carried source url', async () => {
+    const doc = await parseOpenApi(JSON.parse(relativeServerSpec) as never);
+    const spec = normalizeOpenApi(doc, 'https://api.example.com/openapi.json');
+    expect(spec.rawBaseUrls).toEqual(['https://api.example.com/v2']);
   });
 });

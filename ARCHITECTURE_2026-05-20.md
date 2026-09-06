@@ -1,5 +1,9 @@
 # TrueAPI — Architecture & Build Plan
 
+> **Planning status (2026-08-04):** Historical architecture. The current target
+> architecture, migrations, execution model, and release gates are defined in
+> `MASTER_TECHNICAL_PLAN.md`.
+
 > **Date:** 2026-05-20
 > **Status:** Approved architecture — canonical reference for stack, structure, schema & design decisions
 > **Build sequencing:** see `BUILD_PLAN.md` (re-sequenced around the two MudraCore demos)

@@ -1,6 +1,6 @@
-import { revalidatePath } from 'next/cache';
 import { dbReady, getDb } from '@/lib/db';
 import { verifyCronRequest } from '@/lib/cronAuth';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { batchSize, findCandidates, reverifyOne, verifyIntervalHours } from '@/lib/reverify';
 
 // Probes make real upstream requests against several APIs per run, so this
@@ -34,8 +34,7 @@ export async function POST(req: Request) {
     results.push(outcome);
 
     if (outcome.scored || outcome.specStatus === 'updated' || outcome.specStatus === 'reverted') {
-      revalidatePath(`/${candidate.slug}`);
-      revalidatePath(`/badge/${candidate.slug}`);
+      purgeApiSurfaces(candidate.slug);
     }
   }
 
@@ -46,6 +45,9 @@ export async function POST(req: Request) {
     considered: candidates.length,
     verified: results.filter((r) => r.scored).length,
     specsUpdated: results.filter((r) => r.specStatus === 'updated').length,
+    behaviourChanges: results.reduce((sum, r) => sum + (r.canary?.changes ?? 0), 0),
+    operationsDrifted: results.reduce((sum, r) => sum + (r.canary?.drifted ?? 0), 0),
+    operationsInconclusive: results.reduce((sum, r) => sum + (r.canary?.inconclusive ?? 0), 0),
     failed: results.filter((r) => !r.scored).length,
     durationMs: Date.now() - started,
     results,

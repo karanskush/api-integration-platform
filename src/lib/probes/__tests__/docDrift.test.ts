@@ -128,3 +128,40 @@ describe('runDocDrift', () => {
     expect(result.evidence).toHaveLength(3);
   });
 });
+
+describe('runDocDrift lifecycle headers', () => {
+  const body = JSON.stringify({ id: 'abc', name: 'Widget', count: 3 });
+
+  it('records a lifecycle signal from the response without changing the subscore', async () => {
+    const plain = await runDocDrift({ record: record(), invoke: fakeInvoke(body) });
+    const withHeaders = await runDocDrift({
+      record: record(),
+      invoke: (async () => ({
+        status: 200,
+        latencyMs: 5,
+        bodyText: body,
+        headers: { sunset: 'Wed, 30 Jun 2027 23:59:59 GMT' },
+      })) as typeof invokeAction,
+    });
+
+    // The score measures documentation quality; a provider's announcement
+    // about the future must not move it.
+    expect(withHeaders.subscore).toBe(plain.subscore);
+    const signals = withHeaders.evidence.filter((e) => e.kind === 'probe.lifecycle_signal');
+    expect(signals).toHaveLength(1);
+    expect(signals[0].payload).toMatchObject({ tool: 'get_thing', kind: 'sunset', at: '2027-06-30T23:59:59.000Z' });
+  });
+
+  it('still records the header when the body cannot be parsed', async () => {
+    const result = await runDocDrift({
+      record: record(),
+      invoke: (async () => ({
+        status: 200,
+        latencyMs: 5,
+        bodyText: 'not json',
+        headers: { deprecation: '@1688169599' },
+      })) as typeof invokeAction,
+    });
+    expect(result.evidence.filter((e) => e.kind === 'probe.lifecycle_signal')).toHaveLength(1);
+  });
+});

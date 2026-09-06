@@ -4,6 +4,7 @@
 // returning empty is a supported state, not a failure.
 
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { changeSummary, listChanges } from '../changes/query';
 import { dbReady, getDb } from '../db';
 import { apis, evidenceFacts, scores } from '../db/schema';
 import { parseEvidencePayload, type EvidenceKind } from '../evidence';
@@ -19,14 +20,28 @@ const PROBE_KINDS: EvidenceKind[] = [
 // Enough to explain a score without unbounded reads on the MCP hot path.
 const MAX_FACTS = 200;
 
+// The window docentapi_get_changes_since can answer over. Bounded for the same
+// reason MAX_FACTS is: this loads once per MCP request that calls a tool.
+const MAX_CHANGES = 100;
+const CHANGE_WINDOW_DAYS = 90;
+
 export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights> {
   if (!dbReady()) return emptyInsights();
   const db = getDb();
 
-  const [api] = await db.select({ id: apis.id }).from(apis).where(eq(apis.slug, slug)).limit(1);
+  const [api] = await db
+    .select({ id: apis.id, currentSpecVersionId: apis.currentSpecVersionId })
+    .from(apis)
+    .where(eq(apis.slug, slug))
+    .limit(1);
   if (!api) return emptyInsights();
 
-  const [scoreRow] = await db.select().from(scores).where(eq(scores.apiId, api.id)).limit(1);
+  const changeSince = new Date(Date.now() - CHANGE_WINDOW_DAYS * 24 * 3600 * 1000);
+  const [[scoreRow], recentChanges, summary] = await Promise.all([
+    db.select().from(scores).where(eq(scores.apiId, api.id)).limit(1),
+    listChanges(db, api.id, { limit: MAX_CHANGES, since: changeSince }),
+    changeSummary(db, api.id),
+  ]);
   const facts = await db
     .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload })
     .from(evidenceFacts)
@@ -35,6 +50,7 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
     .limit(MAX_FACTS);
 
   const insights = emptyInsights();
+  insights.changes = { recent: recentChanges, summary };
 
   if (scoreRow) {
     insights.verified = {
@@ -45,6 +61,8 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
       idempotency: scoreRow.idempotency,
       explanation: (scoreRow.explanation as Array<{ factId: string; message: string }> | null) ?? [],
       verifiedAt: scoreRow.verifiedAt.toISOString(),
+      stale: scoreRow.specVersionId !== api.currentSpecVersionId,
+      specVersionId: scoreRow.specVersionId,
     };
   }
 

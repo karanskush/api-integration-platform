@@ -23,10 +23,13 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
+import { diffRecords, type ChangeSet } from './changes/diff';
+import { buildChangeStatements, type ChangeSource } from './changes/ledger';
 import type { Db, NeonDb } from './db';
 import { actions, apis, evidenceFacts, scorePreviews, specVersions } from './db/schema';
-import type { ImportRecord } from './ir';
+import type { AuthPlacement, AuthScheme, ImportRecord } from './ir';
 import { buildLineageEvidenceStatements } from './lineageEvidence';
+import { loadActionsForVersion } from './persistentApi';
 import { scorePreview as computeScorePreview } from './scorePreview';
 import { allocateApiSlug } from './slug';
 import { blobReady, putSpecSnapshot } from './specStore';
@@ -116,6 +119,8 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
           authIn: a.authIn ?? null,
           safety: a.safety,
           examples: a.examples,
+          deprecated: a.deprecated ?? false,
+          sunsetAt: a.sunsetAt ? new Date(a.sunsetAt) : null,
         })),
       ),
     );
@@ -190,8 +195,21 @@ async function attachSnapshot(db: Db, specVersionId: string, rawText: string): P
 //               for it are still on disk (they are keyed by spec_version_id),
 //               so pointing current back at it is the entire operation.
 //   updated   — genuinely new content: version, actions, evidence, preview.
+//
+// Both 'reverted' and 'updated' also DIFF the incoming model against the
+// version that was current, and write the classified result to api_changes
+// plus one 'diff.spec_change' evidence fact (changes/diff.ts, changes/ledger.ts).
+// This is what makes a re-import visible: before it, a changed contract
+// produced a new version row and nothing that named what changed.
 
-export type ReimportInput = { apiId: string; record: ImportRecord; rawText: string };
+export type ReimportInput = {
+  apiId: string;
+  record: ImportRecord;
+  rawText: string;
+  // Which path brought the new bytes — recorded on every change row so the
+  // changelog can say "pushed from CI" vs "found by the hourly poll".
+  source?: ChangeSource;
+};
 
 export type ReimportStatus = 'unchanged' | 'reverted' | 'updated';
 
@@ -200,14 +218,25 @@ export type ReimportStatements = {
   specVersionId: string;
   contentHash: string;
   statements: BatchItem<'pg'>[];
+  // null when there was no previous version to diff against (or 'unchanged').
+  changes: ChangeSet | null;
 };
 
 export async function buildReimportStatements(db: Db, input: ReimportInput): Promise<ReimportStatements> {
   const { apiId, record, rawText } = input;
+  const source: ChangeSource = input.source ?? 'manual';
   const contentHash = createHash('sha256').update(rawText).digest('hex');
 
+  // The apis row is read BEFORE any statement runs, so it is the previous
+  // API-level state (base URLs, dominant auth) — the only place that state
+  // lives, since it is not stored per version.
   const [api] = await db
-    .select({ currentSpecVersionId: apis.currentSpecVersionId })
+    .select({
+      currentSpecVersionId: apis.currentSpecVersionId,
+      baseUrls: apis.baseUrls,
+      dominantAuth: apis.dominantAuth,
+      authIn: apis.authIn,
+    })
     .from(apis)
     .where(eq(apis.id, apiId))
     .limit(1);
@@ -219,8 +248,24 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
     .limit(1);
 
   if (existing && api?.currentSpecVersionId === existing.id) {
-    return { status: 'unchanged', specVersionId: existing.id, contentHash, statements: [] };
+    return { status: 'unchanged', specVersionId: existing.id, contentHash, statements: [], changes: null };
   }
+
+  const previousVersionId = api?.currentSpecVersionId ?? null;
+  const previous = previousVersionId ? await loadActionsForVersion(db, apiId, previousVersionId) : null;
+  const changes: ChangeSet | null =
+    previous && api
+      ? diffRecords(
+          {
+            ...record,
+            baseUrls: (api.baseUrls as string[] | null) ?? [],
+            auth: api.dominantAuth as AuthScheme,
+            authIn: (api.authIn as AuthPlacement | null) ?? undefined,
+            actions: previous.actions,
+          },
+          record,
+        )
+      : null;
 
   // Metadata that can legitimately move between versions of the same spec.
   const apiUpdate = {
@@ -230,7 +275,40 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
     updatedAt: new Date(),
   };
 
+  // The diff receipt + rows, shared by both write paths below. Written
+  // whenever there WAS a previous version, even with zero changes.
+  const changeStatements = (toSpecVersionId: string, actionIdByKey: Map<string, string>): BatchItem<'pg'>[] => {
+    if (!changes) return [];
+    return [
+      ...buildChangeStatements(db, {
+        apiId,
+        fromSpecVersionId: previousVersionId,
+        toSpecVersionId,
+        source,
+        changes: changes.changes,
+        actionIdByKey,
+        removedActionIdByKey: previous?.idByKey,
+      }).statements,
+      db.insert(evidenceFacts).values({
+        apiId,
+        specVersionId: toSpecVersionId,
+        kind: 'diff.spec_change',
+        source,
+        environment: 'static',
+        payload: {
+          fromSpecVersionId: previousVersionId,
+          toSpecVersionId,
+          counts: changes.counts,
+          highest: changes.highest,
+          truncated: changes.truncated,
+          toolsChanged: changes.toolsChanged.length,
+        },
+      }),
+    ];
+  };
+
   if (existing) {
+    const target = await loadActionsForVersion(db, apiId, existing.id);
     return {
       status: 'reverted',
       specVersionId: existing.id,
@@ -240,13 +318,18 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
           .update(apis)
           .set({ ...apiUpdate, currentSpecVersionId: existing.id })
           .where(eq(apis.id, apiId)),
+        ...changeStatements(existing.id, target.idByKey),
       ],
+      changes,
     };
   }
 
   const specVersionId = randomUUID();
   const preview = computeScorePreview(record);
   const factIds = preview.checks.map(() => randomUUID());
+  // Client-generated so api_changes.action_id can reference rows written in
+  // this same batch (the header comment's rule: no mid-batch DB ids).
+  const actionIdByKey = new Map(record.actions.map((a) => [a.id, randomUUID()]));
 
   const statements: BatchItem<'pg'>[] = [
     db.insert(specVersions).values({
@@ -264,6 +347,7 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
     statements.push(
       db.insert(actions).values(
         record.actions.map((a) => ({
+          id: actionIdByKey.get(a.id),
           apiId,
           specVersionId,
           actionKey: a.id,
@@ -279,6 +363,8 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
           authIn: a.authIn ?? null,
           safety: a.safety,
           examples: a.examples,
+          deprecated: a.deprecated ?? false,
+          sunsetAt: a.sunsetAt ? new Date(a.sunsetAt) : null,
         })),
       ),
     );
@@ -314,19 +400,25 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
     // change between spec versions (a field renamed, a new producer added), so
     // each version gets its own recomputed set rather than patching the last.
     ...buildLineageEvidenceStatements(db, { apiId, specVersionId, record }),
+    ...changeStatements(specVersionId, actionIdByKey),
     db
       .update(apis)
       .set({ ...apiUpdate, currentSpecVersionId: specVersionId })
       .where(eq(apis.id, apiId)),
   );
 
-  return { status: 'updated', specVersionId, contentHash, statements };
+  return { status: 'updated', specVersionId, contentHash, statements, changes };
 }
 
-export type ReimportResult = { status: ReimportStatus; specVersionId: string; contentHash: string };
+export type ReimportResult = {
+  status: ReimportStatus;
+  specVersionId: string;
+  contentHash: string;
+  changes: ChangeSet | null;
+};
 
 export async function reimportApi(db: NeonDb, input: ReimportInput): Promise<ReimportResult> {
-  const { status, specVersionId, contentHash, statements } = await buildReimportStatements(db, input);
+  const { status, specVersionId, contentHash, statements, changes } = await buildReimportStatements(db, input);
   if (statements.length) {
     await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
   }
@@ -335,5 +427,5 @@ export async function reimportApi(db: NeonDb, input: ReimportInput): Promise<Rei
   if (status === 'updated') {
     await attachSnapshot(db, specVersionId, input.rawText);
   }
-  return { status, specVersionId, contentHash };
+  return { status, specVersionId, contentHash, changes };
 }

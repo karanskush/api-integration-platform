@@ -81,6 +81,7 @@ describe('isProbeBacked — probe evidence earns it', () => {
     'docentapi_describe_fields',
     'docentapi_trace_field',
     'docentapi_generate_contract_test',
+    'docentapi_check_freshness',
   ] as AdvisorToolName[])('%s can never be probe-backed', (tool) => {
     expect(isProbeBacked(tool, { verified: true, evidenceBasis: 'observed', observedDrift: {} })).toBe(false);
   });

@@ -184,3 +184,23 @@ describe('runErrorQuality', () => {
     expect(result.evidence[0].payload).toMatchObject({ hasReadableMessage: false, sampleStatus: 0 });
   });
 });
+
+describe('runErrorQuality lifecycle headers', () => {
+  it('records lifecycle signals alongside the error grading', async () => {
+    const result = await runErrorQuality({
+      record: record(),
+      invoke: (async () => ({
+        status: 400,
+        latencyMs: 3,
+        bodyText: JSON.stringify({ message: 'Missing required parameter id' }),
+        headers: { deprecation: '@1688169599', link: '<https://docs.example/d>; rel="deprecation"' },
+      })) as typeof invokeAction,
+    });
+
+    const signals = result.evidence.filter((e) => e.kind === 'probe.lifecycle_signal');
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals[0].payload).toMatchObject({ kind: 'deprecated', url: 'https://docs.example/d' });
+    // Grading is untouched: a readable message still earns full marks.
+    expect(result.subscore).toBe(25);
+  });
+});

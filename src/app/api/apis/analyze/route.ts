@@ -1,6 +1,5 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { eq, sql } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 import { dbReady, getDb } from '@/lib/db';
 import { analysisRuns, apis } from '@/lib/db/schema';
 import { discoverDocSeeds } from '@/lib/docsCrawler';
@@ -13,6 +12,7 @@ import { PostmanConvertError } from '@/lib/importer/postman';
 import { getOrCreateOrgForUser } from '@/lib/org';
 import { persistApi, reimportApi } from '@/lib/persist';
 import { limitsFor } from '@/lib/plans';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { publishJob, queueReady } from '@/lib/queue';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { SsrfError, UpstreamError } from '@/lib/ssrf';
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
     // The spec moved on (or the last attempt failed): version the API we
     // already have rather than forking a second page, and re-run the deep
     // pass over the change.
-    const revision = await reimportApi(db, { apiId: existing.apiId, record, rawText });
+    const revision = await reimportApi(db, { apiId: existing.apiId, record, rawText, source: 'manual' });
     await db
       .update(apis)
       .set({ analysisStatus: 'queued', updatedAt: new Date() })
@@ -147,7 +147,7 @@ export async function POST(req: Request) {
     });
 
     // The page is ISR — it must show "in progress" now, not in an hour.
-    revalidatePath(`/${existing.slug}`);
+    purgeApiSurfaces(existing.slug);
 
     return Response.json({
       id: existing.apiId,

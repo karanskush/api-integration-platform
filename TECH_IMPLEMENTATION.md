@@ -1,5 +1,10 @@
 # DocentAPI — Technical Implementation Plan
 
+> **Planning status (2026-08-04):** Historical/current-slice reference. The
+> authoritative forward implementation sequence is `MASTER_TECHNICAL_PLAN.md`.
+> Keep the implementation log below; resolve any architectural or sequencing
+> conflict in favor of the master plan.
+
 > **Scope.** This document specifies the **product platform** — the thing the landing page sells. The repo now contains both the static marketing site (Vite + Three.js) and a Phase 0-style Next.js app workspace under `app/` with importer, playground, MCP, SSRF guard, and ephemeral storage primitives. Treat this document as the architecture roadmap that keeps the current `app/` slice pointed at the larger product.
 >
 > **Historical docs.** `README.md`, `L2_ENGINE_SPEC.md`, `PRICING.md`, `ARCHITECTURE_2026-05-20.md`, and `BUILD_PLAN.md` describe the earlier "behavior-verified integration layer" framing. They remain as reference — the **Agent-Ready Score engine directly inherits the L2 probe/verification ideas**, repackaged as a shareable score instead of a hidden knowledge graph.

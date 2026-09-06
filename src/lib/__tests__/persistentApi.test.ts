@@ -255,11 +255,60 @@ describe('loadApiVerificationState', () => {
     const { loadApiVerificationState } = await loadModule();
     const { slug } = await seedApi({ claimStatus: 'claimed' });
     expect(await loadApiVerificationState(slug)).toEqual({
+      apiId: expect.any(String),
+      name: expect.any(String),
       orgId: expect.any(String),
       claimStatus: 'claimed',
       analysisStatus: 'complete',
+      currentSpecVersionId: expect.any(String),
       scores: null,
     });
+  });
+
+  it('marks the score fresh, dated, and fenced to its version when it matches the current version', async () => {
+    const { loadApiVerificationState } = await loadModule();
+    const { apiId, specVersionId, slug } = await seedApi({ claimStatus: 'claimed' });
+    await db.insert(schema.scores).values({
+      apiId,
+      specVersionId,
+      total: 70,
+      authClarity: 20,
+      errorQuality: 20,
+      docDrift: 10,
+      idempotency: 20,
+      explanation: [],
+      verifiedAt: new Date('2026-09-01T10:00:00.000Z'),
+    });
+
+    const state = await loadApiVerificationState(slug);
+    expect(state?.scores).toMatchObject({ stale: false, specVersionId, verifiedAt: '2026-09-01T10:00:00.000Z' });
+  });
+
+  // GAP_ANALYSIS_2026-08-04.md §0.3: a re-import must not keep serving the
+  // previous version's score as if it described the new contract.
+  it('marks the score stale once a newer spec version becomes current', async () => {
+    const { loadApiVerificationState } = await loadModule();
+    const { apiId, specVersionId, slug } = await seedApi({ claimStatus: 'claimed' });
+    await db.insert(schema.scores).values({
+      apiId,
+      specVersionId,
+      total: 70,
+      authClarity: 20,
+      errorQuality: 20,
+      docDrift: 10,
+      idempotency: 20,
+      explanation: [],
+    });
+    const [newer] = await db
+      .insert(schema.specVersions)
+      .values({ apiId, source: 'openapi', contentHash: 'stale-newer', parseStatus: 'parsed' })
+      .returning();
+    await db.update(schema.apis).set({ currentSpecVersionId: newer.id }).where(eq(schema.apis.id, apiId));
+
+    const state = await loadApiVerificationState(slug);
+    expect(state?.scores?.stale).toBe(true);
+    expect(state?.scores?.specVersionId).toBe(specVersionId);
+    expect(state?.currentSpecVersionId).toBe(newer.id);
   });
 
   it('reports a non-default analysisStatus', async () => {
@@ -317,5 +366,52 @@ describe('loadVerifiedApiIds', () => {
     const verified = await loadVerifiedApiIds([a.apiId, b.apiId]);
     expect(verified.has(a.apiId)).toBe(true);
     expect(verified.has(b.apiId)).toBe(false);
+  });
+
+  it('excludes an api whose only score is fenced to a superseded spec version', async () => {
+    const { loadVerifiedApiIds } = await loadModule();
+    const a = await seedApi();
+    await db.insert(schema.scores).values({
+      apiId: a.apiId,
+      specVersionId: a.specVersionId,
+      total: 50,
+      authClarity: 12,
+      errorQuality: null,
+      docDrift: null,
+      idempotency: 12,
+      explanation: [],
+    });
+    const [newer] = await db
+      .insert(schema.specVersions)
+      .values({ apiId: a.apiId, source: 'openapi', contentHash: 'fenced-newer', parseStatus: 'parsed' })
+      .returning();
+    await db.update(schema.apis).set({ currentSpecVersionId: newer.id }).where(eq(schema.apis.id, a.apiId));
+
+    expect((await loadVerifiedApiIds([a.apiId])).has(a.apiId)).toBe(false);
+  });
+});
+
+describe('toAction lifecycle', () => {
+  it('restores deprecated and sunsetAt when set', async () => {
+    const { loadPersistentRecord } = await loadModule();
+    const { specVersionId, apiId, slug } = await seedApi();
+    await addAction(specVersionId, apiId, { deprecated: true, sunsetAt: new Date('2027-01-31T00:00:00.000Z') });
+
+    const action = (await loadPersistentRecord(slug))?.actions[0];
+    expect(action?.deprecated).toBe(true);
+    expect(action?.sunsetAt).toBe('2027-01-31T00:00:00.000Z');
+  });
+
+  // The diff engine treats an unchanged operation as deep-equal across
+  // versions; a restored `deprecated: false` would break that against an IR
+  // that never set the key.
+  it('omits deprecated and sunsetAt entirely when unset', async () => {
+    const { loadPersistentRecord } = await loadModule();
+    const { specVersionId, apiId, slug } = await seedApi();
+    await addAction(specVersionId, apiId);
+
+    const action = (await loadPersistentRecord(slug))?.actions[0];
+    expect(action).not.toHaveProperty('deprecated');
+    expect(action).not.toHaveProperty('sunsetAt');
   });
 });

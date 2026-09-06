@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { dbReady, getDb } from './db';
+import { dbReady, getDb, type Db } from './db';
 import { actions as actionsTable, apis, scores, specVersions } from './db/schema';
 import type { Action, ImportRecord, ImportSource } from './ir';
 
@@ -10,16 +10,28 @@ export type VerifiedScore = {
   docDrift: number | null;
   idempotency: number;
   explanation: { factId: string; message: string }[];
+  // Version fencing (GAP_ANALYSIS_2026-08-04.md §0.3). A score is a claim about
+  // ONE spec version; when the API's current version moves past it, the score
+  // still exists but describes a contract that no longer serves, and every
+  // renderer must say so rather than keep showing green.
+  stale: boolean;
+  verifiedAt: string; // ISO
+  specVersionId: string;
 };
 
 export type ApiVerificationState = {
+  apiId: string;
+  name: string;
   orgId: string;
   claimStatus: string;
   analysisStatus: string;
+  currentSpecVersionId: string | null;
   scores: VerifiedScore | null;
 };
 
-function toAction(row: typeof actionsTable.$inferSelect): Action {
+// Exported for the reimport diff (persist.ts), which needs the previous
+// version's actions in IR shape without going through getDb().
+export function toAction(row: typeof actionsTable.$inferSelect): Action {
   return {
     id: row.actionKey,
     name: row.name,
@@ -34,10 +46,31 @@ function toAction(row: typeof actionsTable.$inferSelect): Action {
     responseSchema: (row.responseSchemas as Action['responseSchema']) ?? undefined,
     errorSchema: (row.errorSchemas as Action['errorSchema']) ?? undefined,
     scopes: (row.scopes as Action['scopes']) ?? undefined,
+    // Omitted (not false / null) when unset so a restored action is
+    // deep-equal to the IR the importer produced — the diff engine relies on
+    // that equivalence to report "no change" for an unchanged operation.
+    ...(row.deprecated ? { deprecated: true } : {}),
+    ...(row.sunsetAt ? { sunsetAt: row.sunsetAt.toISOString() } : {}),
   };
 }
 
 type ApiRow = typeof apis.$inferSelect;
+
+// One version's actions in IR shape, plus the action_key → row id map the
+// change ledger needs to point api_changes.action_id at a concrete row. Takes
+// the db explicitly (not getDb()) so the reimport path and the pglite tests
+// can call it against whichever connection they hold.
+export async function loadActionsForVersion(
+  db: Db,
+  apiId: string,
+  specVersionId: string,
+): Promise<{ actions: Action[]; idByKey: Map<string, string> }> {
+  const rows = await db
+    .select()
+    .from(actionsTable)
+    .where(and(eq(actionsTable.apiId, apiId), eq(actionsTable.specVersionId, specVersionId)));
+  return { actions: rows.map(toAction), idByKey: new Map(rows.map((r) => [r.actionKey, r.id])) };
+}
 
 async function assembleRecord(
   db: ReturnType<typeof getDb>,
@@ -45,12 +78,7 @@ async function assembleRecord(
   specVersionId: string,
 ): Promise<ImportRecord | null> {
   const [specVersion] = await db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1);
-  const rows = await db
-    .select()
-    .from(actionsTable)
-    .where(and(eq(actionsTable.apiId, api.id), eq(actionsTable.specVersionId, specVersionId)));
-
-  const actionsList = rows.map(toAction);
+  const { actions: actionsList } = await loadActionsForVersion(db, api.id, specVersionId);
   const counts = { total: actionsList.length, read: 0, write: 0, destructive: 0 };
   for (const a of actionsList) counts[a.safety]++;
 
@@ -110,15 +138,20 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
 
   const [row] = await db
     .select({
+      apiId: apis.id,
+      name: apis.name,
       orgId: apis.orgId,
       claimStatus: apis.claimStatus,
       analysisStatus: apis.analysisStatus,
+      currentSpecVersionId: apis.currentSpecVersionId,
       total: scores.total,
       authClarity: scores.authClarity,
       errorQuality: scores.errorQuality,
       docDrift: scores.docDrift,
       idempotency: scores.idempotency,
       explanation: scores.explanation,
+      scoreSpecVersionId: scores.specVersionId,
+      verifiedAt: scores.verifiedAt,
     })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
@@ -127,9 +160,12 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
   if (!row) return null;
 
   return {
+    apiId: row.apiId,
+    name: row.name,
     orgId: row.orgId,
     claimStatus: row.claimStatus,
     analysisStatus: row.analysisStatus,
+    currentSpecVersionId: row.currentSpecVersionId,
     scores:
       row.total == null
         ? null
@@ -140,15 +176,24 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
             docDrift: row.docDrift,
             idempotency: row.idempotency!,
             explanation: (row.explanation as { factId: string; message: string }[] | null) ?? [],
+            stale: row.scoreSpecVersionId !== row.currentSpecVersionId,
+            verifiedAt: row.verifiedAt!.toISOString(),
+            specVersionId: row.scoreSpecVersionId!,
           },
   };
 }
 
 // Batched "Verified ✓" lookup for the dashboard list — one query per org
-// view rather than one per row.
+// view rather than one per row. A score fenced to a superseded spec version
+// does not count: the dashboard chip would otherwise keep saying "verified"
+// after a re-import changed the contract.
 export async function loadVerifiedApiIds(apiIds: string[]): Promise<Set<string>> {
   if (!dbReady() || !apiIds.length) return new Set();
   const db = getDb();
-  const rows = await db.select({ apiId: scores.apiId }).from(scores).where(inArray(scores.apiId, apiIds));
+  const rows = await db
+    .select({ apiId: scores.apiId })
+    .from(scores)
+    .innerJoin(apis, eq(apis.id, scores.apiId))
+    .where(and(inArray(scores.apiId, apiIds), eq(scores.specVersionId, apis.currentSpecVersionId)));
   return new Set(rows.map((r) => r.apiId));
 }

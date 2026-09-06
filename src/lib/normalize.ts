@@ -72,12 +72,29 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
         responseSchema,
         errorSchema,
         ...(scopes ? { scopes } : {}),
+        ...extractLifecycle(op),
       });
     }
   }
 
   const { auth, authIn } = dominantAuth(actions);
   return { name: String(name), rawBaseUrls, auth, authIn, actions, truncated, ...extractExternalDocs(doc) };
+}
+
+// Operation-level lifecycle: `deprecated: true` (OpenAPI) and `x-sunset`
+// (oasdiff's RFC 3339 extension). Only a literal `true` counts as deprecated —
+// a string "true" or a truthy object is a spec error, not a declaration — and
+// an unparseable sunset is dropped rather than stored as garbage, since the
+// diff engine compares it as a date.
+function extractLifecycle(op: OASOperation): { deprecated?: true; sunsetAt?: string } {
+  const out: { deprecated?: true; sunsetAt?: string } = {};
+  if (op.deprecated === true) out.deprecated = true;
+  const raw = op['x-sunset'];
+  if (typeof raw === 'string') {
+    const at = Date.parse(raw.trim());
+    if (Number.isFinite(at)) out.sunsetAt = new Date(at).toISOString();
+  }
+  return out;
 }
 
 function extractExternalDocs(doc: Record<string, unknown>): { externalDocsUrl?: string } {

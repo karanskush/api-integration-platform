@@ -64,6 +64,20 @@
       "when": 1785398400000,
       "tag": "0008_clarification_assumptions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0009_api_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788086400000,
+      "tag": "0010_operation_observations",
+      "breakpoints": true
     }
   ]
 }
