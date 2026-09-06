@@ -2,6 +2,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/poll-specs",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/reverify",
       "schedule": "0 4 * * *"
     },
