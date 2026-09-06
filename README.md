@@ -15,10 +15,13 @@ questions:
 | `src/app/(site)/` | `/`, `/pricing` | Marketing — the cinematic landing chapters and pricing. |
 | `src/app/(product)/` | `/app`, `/analyze`, `/dashboard`, `/[slug]`, `/p/[id]`, `/apis/[slug]/complete`, sign-in/up | The console — one funnel: instant import first, deep analysis as step two from the workspace it creates. |
 | `src/app/api/`, `/mcp/[id]`, `/badge/[slug]` | machine endpoints | Called by agents, CI, and badges; no shell renders around them. |
+| `/[slug]/changes`, `/[slug]/changes/feed.xml`, `/api/apis/[slug]/changes`, `/badge/[slug]/manifest.json` | change ledger | The classified changelog for one API — page, RSS, JSON, and the badge's machine-readable manifest. |
 
 Components mirror the same split: `src/components/landing/`,
-`src/components/product/`, shared pieces at the root. Implementation detail
-lives in `TECH_IMPLEMENTATION.md`.
+`src/components/product/`, shared pieces at the root. The authoritative path
+from the current product to the complete behavioral-twin architecture lives in
+`MASTER_TECHNICAL_PLAN.md`; `TECH_IMPLEMENTATION.md` remains a record of the
+earlier product slice and implementation history.
 
 ## 1. One-liner
 
