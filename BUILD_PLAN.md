@@ -1,5 +1,9 @@
 # TrueAPI — Build Plan
 
+> **Planning status (2026-08-04):** Historical milestone plan. It is retained
+> for product context, but its implementation sequence is superseded by
+> `MASTER_TECHNICAL_PLAN.md`, which is based on the current DocentAPI codebase.
+
 > **Date:** 2026-05-22
 > **Status:** Consolidated, ready to execute
 > **Supersedes:** the build-phase sections of `ARCHITECTURE_2026-05-20.md` (re-sequenced around the two demos)
