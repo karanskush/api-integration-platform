@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { Action } from '../ir';
 import { invokeAction } from '../mcpTools';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
 
 const FULL = 25;
@@ -80,6 +81,8 @@ export async function runErrorQuality(ctx: ProbeContext): Promise<ProbeOutcome> 
       const res = await invoke(action, params, target, ctx.upstreamKey);
       sampleStatus = res.status;
       readable = hasReadableMessage(res.bodyText);
+      // Recorded, never scored — see probes/lifecycle.ts.
+      evidence.push(...lifecycleEvidence(action, res.headers));
     } catch {
       // corrupted params rejected before a response existed to grade — counts
       // as a miss for this action, not a probe-wide failure
