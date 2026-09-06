@@ -20,6 +20,8 @@ export const ADVISOR_TOOL_NAMES = [
   'docentapi_explain_error',
   'docentapi_get_score_explanation',
   'docentapi_generate_contract_test',
+  'docentapi_check_freshness',
+  'docentapi_get_changes_since',
 ] as const;
 
 export type AdvisorToolName = (typeof ADVISOR_TOOL_NAMES)[number];
@@ -69,13 +71,24 @@ export function isProbeBacked(tool: AdvisorToolName, output: unknown): boolean {
     case 'docentapi_get_score_explanation':
       return o.verified === true;
 
+    // A change row sourced from a live response (a Deprecation header seen on
+    // a probe) IS an observation; a spec diff is not — it is two documents
+    // compared. Only the former earns lime.
+    case 'docentapi_get_changes_since':
+      return arr(o.changes).some((c) => {
+        const source = str(obj(c)?.source);
+        return source === 'header' || source === 'probe';
+      });
+
     // The rest are spec-derived by construction. fields.ts states it outright:
     // "spec structure only — derived from declared schemas, not observed
     // traffic". generate_contract_test CATCHES drift; it has not observed any.
+    // check_freshness reports metadata about the model, never a measurement.
     case 'docentapi_search_endpoints':
     case 'docentapi_describe_fields':
     case 'docentapi_trace_field':
     case 'docentapi_generate_contract_test':
+    case 'docentapi_check_freshness':
       return false;
   }
 }
@@ -267,6 +280,31 @@ export function describeToolCall(
         done: `generated a ${pretty} contract test for ${target ?? 'this'}`,
         count: warning ? 'real request — sandbox first' : asserts ? `asserts ${asserts} fields` : null,
         tone: warning ? 'drift' : 'neutral',
+      };
+    }
+
+    case 'docentapi_check_freshness': {
+      const version = str(o?.specVersion);
+      const stale = obj(o?.verified)?.stale === true;
+      return {
+        ...base,
+        running: 'checking how current this model is…',
+        done: version ? `checked freshness of spec ${version}` : 'checked freshness',
+        count: stale ? 'score is stale' : (str(o?.lastCheckedAt) ? 'spec checked recently' : null),
+        // A stale score is exactly the kind of caveat the drift tone exists for.
+        tone: stale ? 'drift' : 'neutral',
+      };
+    }
+
+    case 'docentapi_get_changes_since': {
+      const count = num(o?.count);
+      const highest = str(o?.highest);
+      return {
+        ...base,
+        running: 'looking for changes since then…',
+        done: 'looked for changes',
+        count: count === 0 ? 'no changes recorded' : count !== null ? `${count} changes${highest ? `, worst ${highest}` : ''}` : null,
+        tone: highest === 'breaking' || highest === 'risky' ? 'drift' : 'neutral',
       };
     }
   }
