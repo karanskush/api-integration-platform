@@ -227,6 +227,8 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
         `Before calling any write operation, call docentapi_describe_fields to see exactly what you may send — it labels each field's origin (caller-supplied, another operation's response, an enum, or server-assigned and must not be sent).`,
         `Before calling any operation whose path OR body contains an identifier, call docentapi_get_call_sequence — it shows which operation produces that identifier — or docentapi_trace_field for the same question about one specific field, in either direction. Do not invent identifiers.`,
         `When a call fails, pass the status to docentapi_explain_error rather than retrying blindly; it reports whether a retry can help at all.`,
+        `Call docentapi_check_freshness at the start of a session: it reports which spec version these tools describe, when that spec was last checked against its source, and a fingerprint of this tool list. If the fingerprint differs from one you cached, the tool surface changed underneath you.`,
+        `If something that worked before has started failing, call docentapi_get_changes_since — it lists what changed in this API's contract, how severely it breaks existing callers, and whether the change was found in the spec or observed on a live response.`,
         record.auth !== 'none'
           ? `Auth: this API requires ${record.auth}. Supply your own key in the x-docentapi-upstream-key header — it is passed through to the API and never stored, logged, or reused.${
               vaultAuthorized ? ' A vaulted credential is available to this session and will be used when you supply no key.' : ''
