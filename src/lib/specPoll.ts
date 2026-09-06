@@ -15,6 +15,14 @@
 //
 // A spec pushed as text through CI has no source_url and is deliberately
 // skipped: CI owns that API's freshness and polling it would fetch nothing.
+//
+// DEPLOYMENT NOTE. pollIntervalHours() below is a MINIMUM staleness, not a
+// promise about frequency: nothing is polled more often than the cron fires.
+// This deployment runs on a Vercel Hobby account, which caps cron jobs at once
+// per day, so the effective cadence is daily for every plan regardless of what
+// the interval allows. On a Pro account, change the poll-specs schedule in
+// vercel.json back to `0 * * * *` and the per-plan cadence below takes effect
+// as written, with no code change.
 
 import { and, asc, eq, isNotNull, or, sql } from 'drizzle-orm';
 import type { ChangeSet, Severity } from './changes/diff';

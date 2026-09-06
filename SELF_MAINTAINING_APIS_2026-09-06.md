@@ -453,3 +453,23 @@ One defect the live run caught that the tests had not: the wiring dropped the
 conclude" collapsed into the same silent outcome — exactly the distinction the
 module documents itself as preserving. Both are now reported, on the outcome
 and on the cron response.
+
+---
+
+## Deployment note: cron cadence on Hobby
+
+The first production deploy was rejected before it changed anything:
+
+> Hobby accounts are limited to daily cron jobs. This cron expression
+> (0 * * * *) would run more than once per day.
+
+The schedule is therefore `0 1 * * *`, and the honest statement of what ships
+is: **every API's spec is checked once a day, on every plan.** The per-plan
+cadence in `pollIntervalHours()` is a minimum staleness rather than a
+frequency, so it is not wrong, but nothing is polled more often than the cron
+fires. Restoring hourly detection is a one-line change to `vercel.json` on a
+Pro account, with no code change.
+
+This is worth stating plainly because §4 of this document proposes hourly
+polling as what a paid plan buys. On the current account that differentiator
+does not exist yet.
