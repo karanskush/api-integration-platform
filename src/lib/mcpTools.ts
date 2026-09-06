@@ -4,6 +4,7 @@
 // ~80-line core.
 
 import { isAdvisorTool } from './advisor';
+import { pickCapturedHeaders } from './changes/lifecycle';
 import type { Action, AuthPlacement } from './ir';
 import { safeFetch, SsrfError, UpstreamError } from './ssrf';
 import { buildUpstreamRequest, UpstreamBuildError } from './upstream';
@@ -26,31 +27,10 @@ export function resolveNameCollisions(actions: Action[]): Action[] {
   return actions.map((a) => (isAdvisorTool(a.name) ? { ...a, name: `${a.name}_api` } : a));
 }
 
-export type ToolDescriptor = {
-  name: string;
-  description: string;
-  inputSchema: { type: 'object'; [k: string]: unknown };
-  annotations: {
-    title: string;
-    readOnlyHint: boolean;
-    destructiveHint: boolean;
-    openWorldHint: boolean;
-  };
-};
-
-export function buildToolList(actions: Action[]): ToolDescriptor[] {
-  return actions.map((a) => ({
-    name: a.name,
-    description: a.description,
-    inputSchema: a.paramsSchema as { type: 'object'; [k: string]: unknown },
-    annotations: {
-      title: `${a.method} ${a.path}`,
-      readOnlyHint: a.safety === 'read',
-      destructiveHint: false,
-      openWorldHint: true,
-    },
-  }));
-}
+// ToolDescriptor and buildToolList live in toolList.ts (a leaf module) and are
+// re-exported here so existing importers keep working.
+export { buildToolList } from './toolList';
+export type { ToolDescriptor } from './toolList';
 
 export type ToolCallOutcome = {
   content: Array<{ type: 'text'; text: string }>;
@@ -103,13 +83,24 @@ export type InvokeActionOptions = {
 // UpstreamBuildError/SsrfError/UpstreamError propagate as thrown errors —
 // callers decide how to present them (callActionTool wraps them in
 // toolText(), probes catch/inspect them directly).
+export type InvokeResult = {
+  status: number;
+  latencyMs: number;
+  bodyText: string;
+  // Allowlisted response headers (changes/lifecycle.ts) — Deprecation, Sunset,
+  // Link, and the vendor equivalents. Optional so the many test doubles that
+  // return a bare {status, latencyMs, bodyText} stay valid; probes treat an
+  // absent map as "no signals".
+  headers?: Record<string, string>;
+};
+
 export async function invokeAction(
   action: Action,
   args: Record<string, unknown>,
   target: ToolCallTarget,
   upstreamKey: string | undefined,
   opts: InvokeActionOptions = {},
-): Promise<{ status: number; latencyMs: number; bodyText: string }> {
+): Promise<InvokeResult> {
   const baseUrl = target.baseUrls[0];
   if (!baseUrl) throw new NoBaseUrlError();
 
@@ -128,7 +119,9 @@ export async function invokeAction(
     maxBytes: 1024 * 1024,
   });
   const bodyText = new TextDecoder().decode(res.body);
-  return { status: res.status, latencyMs: res.latencyMs, bodyText };
+  // Lifecycle headers ride along on every call the platform already makes —
+  // the cheapest change signal available, and until now discarded.
+  return { status: res.status, latencyMs: res.latencyMs, bodyText, headers: pickCapturedHeaders(res.headers) };
 }
 
 // Throws only on truly unexpected errors — callers should catch, log with
