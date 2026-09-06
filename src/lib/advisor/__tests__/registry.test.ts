@@ -23,6 +23,8 @@ describe('advisor registry', () => {
       'docentapi_explain_error',
       'docentapi_get_score_explanation',
       'docentapi_generate_contract_test',
+      'docentapi_check_freshness',
+      'docentapi_get_changes_since',
     ]);
   });
 
@@ -57,6 +59,8 @@ describe('advisor registry', () => {
     expect(byName.get('docentapi_trace_field')?.inputSchema.required).toEqual(['field']);
     expect(byName.get('docentapi_search_endpoints')?.inputSchema.required).toBeUndefined();
     expect(byName.get('docentapi_get_score_explanation')?.inputSchema.required).toBeUndefined();
+    expect(byName.get('docentapi_check_freshness')?.inputSchema.required).toBeUndefined();
+    expect(byName.get('docentapi_get_changes_since')?.inputSchema.required).toBeUndefined();
   });
 
   it('recognises its own tool names and nothing else', () => {
@@ -77,6 +81,8 @@ describe('callAdvisorTool', () => {
     expect(payload('docentapi_generate_contract_test', { tool: 'get_pet' }).data.source).toBeTypeOf('string');
     expect(payload('docentapi_describe_fields', { tool: 'create_pet' }).data.request).toBeDefined();
     expect(payload('docentapi_trace_field', { field: 'petId' }).data.results).toBeDefined();
+    expect(payload('docentapi_check_freshness').data.toolFingerprint).toBeTypeOf('string');
+    expect(payload('docentapi_get_changes_since').data.changes).toBeDefined();
   });
 
   it('returns machine-parseable JSON, not prose', () => {
