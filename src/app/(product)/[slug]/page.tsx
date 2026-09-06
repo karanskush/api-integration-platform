@@ -6,21 +6,23 @@ import ActionCard from '@/components/product/ActionCard';
 import AskChannel from '@/components/product/AskChannel';
 import AuthGuide from '@/components/product/AuthGuide';
 import ClaimOwnershipForm from '@/components/product/ClaimOwnershipForm';
+import FreshnessStrip from '@/components/product/FreshnessStrip';
 import McpBlock from '@/components/product/McpBlock';
 import Playground from '@/components/product/Playground';
 import RunVerificationButton from '@/components/product/RunVerificationButton';
 import ScorePreviewPanel from '@/components/product/ScorePreviewPanel';
 import VerifiedScorePanel from '@/components/product/VerifiedScorePanel';
 import { suggestedQuestions } from '@/lib/askSeeds';
-import { getDb } from '@/lib/db';
+import { changeSummary } from '@/lib/changes/query';
+import { dbReady, getDb } from '@/lib/db';
 import { orgMembers, users } from '@/lib/db/schema';
 import { loadApiVerificationState, loadPersistentRecord } from '@/lib/persistentApi';
 import { canViewApi } from '@/lib/visibility';
 import { appOrigin } from '@/lib/origin';
 
-// ISR with on-demand purging: api/ci/sync and the verification run both call
-// revalidatePath() for this path now that a re-import write path exists, so the
-// hour below is a backstop rather than the only refresh mechanism.
+// ISR with on-demand purging: every write path calls purgeApiSurfaces() for
+// this slug now that a re-import write path exists, so the hour below is a
+// backstop rather than the only refresh mechanism.
 export const revalidate = 3600;
 
 // Same xReady() gate the rest of the codebase uses for claim/auth UI (see
@@ -79,6 +81,10 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
 
   const mcpUrl = `${appOrigin()}/mcp/${record.id}`;
 
+  // What we know about this API's freshness: when the spec was last checked,
+  // when it last moved, and how much has changed lately.
+  const summary = verification && dbReady() ? await changeSummary(getDb(), verification.apiId) : null;
+
   return (
     <div className="product-page wrap" style={{ display: 'grid', gap: 20 }}>
       <header>
@@ -98,6 +104,8 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
           </p>
         )}
       </header>
+
+      {summary && <FreshnessStrip slug={slug} summary={summary} stale={verification?.scores?.stale} />}
 
       {verification && verification.analysisStatus !== 'complete' && (
         <section className="panel" style={{ padding: 20 }}>
