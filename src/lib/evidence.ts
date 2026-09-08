@@ -28,6 +28,13 @@ export type EvidenceKind =
   // the chain runner handles: it came from the provider's PUBLISHED SPEC, not
   // out of a response, so no customer owns it.
   | 'probe.value_domain'
+  // The states an entity was actually seen in (probes/stateVocabulary.ts).
+  // These values DO come from responses, which is the direction this codebase
+  // otherwise refuses to store from — admissible only because the probe keeps
+  // nothing that fails a cardinality guard: a field whose distinct values are
+  // few and repeat across many records is a vocabulary, one with roughly as
+  // many values as records is data and is dropped whole.
+  | 'probe.state_vocabulary'
   // Static, spec-derived — computed by lib/lineage.ts, same "no live traffic
   // needed" character as parser.*. Namespaced separately because it isn't a
   // scorePreview check: it's the field-to-field data-flow graph schema.ts's
@@ -79,6 +86,13 @@ const valueDomainPayload = z.object({
   value: z.string(),
   accepted: z.boolean(),
   status: z.number(),
+});
+
+const stateVocabularyPayload = z.object({
+  actionId: z.string(),
+  field: z.string(),
+  values: z.array(z.string()),
+  sampleCount: z.number(),
 });
 
 const authRejectPayload = z.object({
@@ -197,6 +211,7 @@ const evidenceSchemas = {
   'probe.doc_drift': docDriftPayload,
   'probe.idempotency_signal': idempotencySignalPayload,
   'probe.value_domain': valueDomainPayload,
+  'probe.state_vocabulary': stateVocabularyPayload,
   'graph.field_lineage': fieldLineagePayload,
   'llm.doc_grounding': docGroundingPayload,
   'llm.field_semantics': fieldSemanticsPayload,

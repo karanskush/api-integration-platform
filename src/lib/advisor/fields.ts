@@ -29,6 +29,9 @@ export type OwnerAnswer = { origin?: string; question: string };
 /** Which declared values the API actually took, when a probe checked. */
 export type ObservedValues = { accepted: string[]; rejected: string[] };
 
+/** The states an entity was actually seen in. No transition is implied. */
+export type ObservedStates = { values: string[]; sampleCount: number };
+
 function serialize(
   field: FieldNode,
   origin?: string,
@@ -36,6 +39,7 @@ function serialize(
   semantics?: FieldSemantics,
   owner?: OwnerAnswer,
   observed?: ObservedValues,
+  states?: ObservedStates,
 ) {
   return {
     path: field.path,
@@ -53,6 +57,19 @@ function serialize(
             ...(observed.accepted.length ? { accepted: observed.accepted } : {}),
             ...(observed.rejected.length ? { rejected: observed.rejected } : {}),
             note: 'Checked by sending each declared value to the live API. Anything under "rejected" is declared by the spec but was not accepted.',
+          },
+        }
+      : {}),
+    // The states this field was actually seen holding. Deliberately NOT called
+    // a state machine: these are the cases a caller's switch has to handle, and
+    // nothing here claims which transitions between them are possible — that
+    // needs write probing and a policy this product does not have yet.
+    ...(states
+      ? {
+          observedStates: {
+            values: states.values,
+            sampleCount: states.sampleCount,
+            note: 'Values seen across sampled records. A vocabulary, not a state machine — no transition between these is claimed.',
           },
         }
       : {}),
@@ -160,6 +177,14 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     if (!bucket.includes(v.value)) bucket.push(v.value);
     observedByPath.set(v.field, entry);
   }
+  // Matched on field NAME, not path: the probe reads records out of a list
+  // envelope whose shape varies (`data[]`, `items[]`, a bare array), while the
+  // response field map addresses the same field by its full path.
+  const statesByName = new Map<string, ObservedStates>();
+  for (const v of ctx.insights.stateVocabularies) {
+    if (v.actionId !== action.id) continue;
+    statesByName.set(v.field, { values: v.values, sampleCount: v.sampleCount });
+  }
   const ownerByPath = new Map<string, OwnerAnswer>();
   for (const a of ctx.insights.ownerAnswers) {
     if (a.tool !== action.name) continue;
@@ -189,7 +214,9 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
       // Owner answers are only ever raised about request fields, so they are
       // deliberately not consulted for the response and error views — a path
       // that happens to collide there is a different field.
-      if (key !== 'request') return serialize(field, undefined, undefined, semantics);
+      if (key !== 'request') {
+        return serialize(field, undefined, undefined, semantics, undefined, undefined, statesByName.get(field.name));
+      }
       const producers = producersFor(graph, action.name, field.path);
       const owner = ownerByPath.get(field.path);
       const observed = observedByPath.get(field.path);

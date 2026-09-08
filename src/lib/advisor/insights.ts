@@ -21,6 +21,7 @@ const PROBE_KINDS: EvidenceKind[] = [
   'probe.doc_drift',
   'probe.idempotency_signal',
   'probe.value_domain',
+  'probe.state_vocabulary',
 ];
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
@@ -155,6 +156,18 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
             value: p.value,
             accepted: p.accepted,
             status: p.status,
+          });
+        }
+        break;
+      }
+      case 'probe.state_vocabulary': {
+        const p = parseEvidencePayload('probe.state_vocabulary', fact.payload);
+        if (p) {
+          insights.stateVocabularies.push({
+            actionId: p.actionId,
+            field: p.field,
+            values: p.values,
+            sampleCount: p.sampleCount,
           });
         }
         break;

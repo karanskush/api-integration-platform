@@ -67,6 +67,11 @@ export type AdvisorInsights = {
   // carry verbatim, unlike anything the chain runner touches: every value here
   // came from the provider's own published spec rather than out of a response.
   valueDomains: Array<{ actionId: string; field: string; value: string; accepted: boolean; status: number }>;
+  // The states an entity was actually observed in — the read-only half of
+  // L2_ENGINE_SPEC §4's state-machine map. A vocabulary with NO transition
+  // claimed, because discovering transitions means write probing and that needs
+  // a policy that does not exist yet.
+  stateVocabularies: Array<{ actionId: string; field: string; values: string[]; sampleCount: number }>;
   // What the deep-analysis pass concluded a field MEANS, read back out of
   // llm.field_semantics. This is the most expensive knowledge the system
   // produces — a docs crawl plus an LLM pass over the provider's own
@@ -127,6 +132,7 @@ export function emptyInsights(): AdvisorInsights {
     idempotencyObservations: [],
     authObservations: [],
     valueDomains: [],
+    stateVocabularies: [],
     fieldSemantics: [],
     ownerAnswers: [],
     lineageVerdicts: [],

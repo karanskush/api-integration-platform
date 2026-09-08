@@ -6,6 +6,7 @@ import { runDocDrift } from './docDrift';
 import { runErrorQuality } from './errorQuality';
 import { runIdempotency } from './idempotency';
 import { runValueDomain } from './valueDomain';
+import { runStateVocabulary } from './stateVocabulary';
 import { dedupeLifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
@@ -81,6 +82,7 @@ export async function runScoreEngine(
   // excludes anything that did not move the score, the way lifecycle signals
   // are handled.
   const valueDomain = await runValueDomain(ctx);
+  const stateVocabulary = await runStateVocabulary(ctx);
 
   // Renormalized over only the subscores that actually ran — an API whose
   // spec never documents e.g. a responseSchema (so docDrift can't run) must
@@ -114,6 +116,7 @@ export async function runScoreEngine(
       ...docDrift.evidence,
       ...idempotency.evidence,
       ...valueDomain,
+      ...stateVocabulary,
     ]),
   };
 }
