@@ -35,6 +35,9 @@ export type CanaryRunResult = {
   // Operations whose live shape disagrees with the documented one — the
   // classic docs-drift case, and what marks an operation `drifted`.
   driftedActionKeys: string[];
+  // Operations whose live shape was checked against documented paths and
+  // matched — what clears a previous 'drifted' flag.
+  consistentActionKeys: string[];
   comparedAgainstPrevious: number;
 };
 
@@ -118,6 +121,10 @@ export async function buildCanaryStatements(db: Db, input: CanaryRunInput): Prom
 
   const changes: Change[] = [];
   const driftedActionKeys: string[] = [];
+  // Operations whose live shape was checked against a non-empty set of
+  // documented paths and matched. The inverse of driftedActionKeys, and the
+  // path back out of 'drifted'.
+  const consistentActionKeys: string[] = [];
   let comparedAgainstPrevious = 0;
 
   for (const snapshot of input.snapshots) {
@@ -137,8 +144,13 @@ export async function buildCanaryStatements(db: Db, input: CanaryRunInput): Prom
     // what its spec promises.
     const action = input.actionsByKey.get(snapshot.actionKey);
     if (action) {
-      const { state } = reconcile(snapshot.shape, snapshot.sampleCount, documentedResponsePaths(action));
+      const documented = documentedResponsePaths(action);
+      const { state } = reconcile(snapshot.shape, snapshot.sampleCount, documented);
       if (state === 'behavior_ahead') driftedActionKeys.push(snapshot.actionKey);
+      // reconcile also answers 'consistent' when the spec documents NOTHING,
+      // which is absence of evidence rather than a match — so that case must
+      // not clear a drift flag.
+      else if (documented.size > 0) consistentActionKeys.push(snapshot.actionKey);
     }
   }
 
@@ -196,7 +208,32 @@ export async function buildCanaryStatements(db: Db, input: CanaryRunInput): Prom
     );
   }
 
-  return { statements, changes, driftedActionKeys, comparedAgainstPrevious };
+  // The way back. Without this the flag was one-way within a spec version: an
+  // operation that drifted once stayed 'drifted' even after the provider fixed
+  // it, and only a re-import cleared it, because a new spec version brings new
+  // `actions` rows at the column default. A permanent label for a temporary
+  // condition is a claim that quietly stops being true.
+  //
+  // Set only from consistentActionKeys, never from "we saw no drift this run":
+  // an operation nobody could sample, or one whose spec documents no response
+  // fields, has produced no evidence that it matches — and clearing a warning
+  // on absence of evidence is the same mistake as publishing a green score
+  // with zero successful calls.
+  if (consistentActionKeys.length) {
+    statements.push(
+      db
+        .update(actions)
+        .set({ operationStability: 'documented' })
+        .where(
+          and(
+            eq(actions.specVersionId, input.specVersionId),
+            inArray(actions.actionKey, consistentActionKeys),
+          ),
+        ),
+    );
+  }
+
+  return { statements, changes, driftedActionKeys, consistentActionKeys, comparedAgainstPrevious };
 }
 
 export async function applyCanaryRun(db: NeonDb, input: CanaryRunInput): Promise<Omit<CanaryRunResult, 'statements'>> {

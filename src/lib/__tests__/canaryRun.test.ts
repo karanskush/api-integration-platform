@@ -266,3 +266,52 @@ describe('comparison is fenced to one environment', () => {
     expect(result.changes.map((c) => c.fieldPath)).toContain('response.name');
   });
 })
+
+// operation_stability was one-way. canaryRun is its only writer, and it only
+// ever set 'drifted' — so an operation that drifted once carried the label
+// even after the provider fixed it, and only a re-import cleared it, because a
+// new spec version brings fresh `actions` rows at the column default. A
+// permanent label for a temporary condition is a claim that stops being true.
+describe('operation stability can recover', () => {
+  const documented = () => seen({ id: 'x', name: 'Rex' }, 3);
+  const extra = () => seen({ id: 'x', name: 'Rex', surprise: 'y' }, 3);
+
+  const stabilityOf = async (specVersionId: string) => {
+    const rows = await db
+      .select({ key: schema.actions.actionKey, stability: schema.actions.operationStability })
+      .from(schema.actions)
+      .where(eq(schema.actions.specVersionId, specVersionId));
+    return rows[0]?.stability;
+  };
+
+  it('clears drifted once the live shape matches the spec again', async () => {
+    const seeded = await seedApi();
+
+    // An undocumented field appears: the operation drifts.
+    await run((await buildCanaryStatements(db, inputFor(seeded, [snapshot(extra())]))).statements);
+    expect(await stabilityOf(seeded.specVersionId)).toBe('drifted');
+
+    // The provider removes it again.
+    const recovered = await buildCanaryStatements(db, inputFor(seeded, [snapshot(documented())]));
+    await run(recovered.statements);
+
+    expect(recovered.consistentActionKeys).toEqual(['a1']);
+    expect(await stabilityOf(seeded.specVersionId)).toBe('documented');
+  });
+
+  // Clearing a warning because nothing was observed is the same mistake as
+  // publishing a green score off zero successful calls.
+  it('does not clear drifted for an operation it could not check', async () => {
+    const seeded = await seedApi();
+
+    await run((await buildCanaryStatements(db, inputFor(seeded, [snapshot(extra())]))).statements);
+    expect(await stabilityOf(seeded.specVersionId)).toBe('drifted');
+
+    // A run in which this operation produced no snapshot at all.
+    const empty = await buildCanaryStatements(db, inputFor(seeded, []));
+    await run(empty.statements);
+
+    expect(empty.consistentActionKeys).toEqual([]);
+    expect(await stabilityOf(seeded.specVersionId)).toBe('drifted');
+  });
+});
