@@ -83,7 +83,10 @@ const redactedExamplePayload = z.object({
 const valueDomainPayload = z.object({
   actionId: z.string(),
   field: z.string(),
-  value: z.string(),
+  // Bounded here as well as at the probe: parseEvidencePayload is what every
+  // reader goes through, so a row written before the cap existed still cannot
+  // hand an unbounded provider string to a consumer.
+  value: z.string().max(120),
   accepted: z.boolean(),
   status: z.number(),
 });

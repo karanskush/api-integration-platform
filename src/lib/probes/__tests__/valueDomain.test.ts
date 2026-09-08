@@ -194,3 +194,43 @@ describe('cost', () => {
     expect(opts.userAgent).toContain('docentapi-probe');
   });
 });
+
+// A declared enum member is third-party text from the provider's document, and
+// it reaches both a database column and an MCP tool response read by an LLM.
+describe('a hostile spec cannot park a payload in the enum', () => {
+  it('refuses an enum member too long to be a real query value', async () => {
+    const { invoke } = api();
+    const huge = withStatusEnum({
+      paramsSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['open', 'x'.repeat(5000)], 'x-docentapi-in': 'query' },
+        },
+      },
+    });
+    const result = await runValueDomain({ record: record([huge]), invoke });
+
+    // Only one usable member is left, and the probe needs at least two.
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps the sane members and drops only the oversized one', async () => {
+    const { invoke } = api();
+    const mixed = withStatusEnum({
+      paramsSchema: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['open', 'closed', 'y'.repeat(500)],
+            'x-docentapi-in': 'query',
+          },
+        },
+      },
+    });
+    const result = await runValueDomain({ record: record([mixed]), invoke });
+
+    expect(payloads(result).map((p) => p.value).sort()).toEqual(['closed', 'open']);
+    expect(JSON.stringify(result)).not.toContain('yyyy');
+  });
+});

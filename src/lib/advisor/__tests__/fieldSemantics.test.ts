@@ -188,3 +188,57 @@ describe('describe_fields separates declared values from honoured ones', () => {
     expect(statusField(c)?.allowedObserved).toBeUndefined();
   });
 });
+
+// advisor/types.ts states the rule: every third-party string this server returns
+// goes through asData(), because it is read by an LLM agent (LLM01/LLM05).
+// Observed enum values originate in the provider's spec document, so they are
+// third-party text and were briefly emitted raw.
+describe('observed values are neutralized like every other third-party string', () => {
+  it('strips control characters a spec could smuggle through an enum', () => {
+    const ESC = String.fromCharCode(27);
+    const c = ctx(
+      [
+        action({
+          name: 'list_orders',
+          method: 'GET',
+          path: '/v1/orders',
+          paramsSchema: { type: 'object', properties: { status: param('query', 'string', { enum: ['open'] }) } },
+        }),
+      ],
+      {
+        valueDomains: [
+          { actionId: 'id_list_orders', field: 'query.status', value: `open${ESC}[31m`, accepted: true, status: 200 },
+        ],
+      },
+    );
+
+    const field = (describeFields(c, { tool: 'list_orders' }).request as Payload[]).find(
+      (f) => f.path === 'query.status',
+    );
+    expect(field?.allowedObserved.accepted[0]).not.toContain(ESC);
+    expect(field?.allowedObserved.accepted[0]).toContain('open');
+  });
+
+  it('caps a runaway value rather than passing it to the agent', () => {
+    const c = ctx(
+      [
+        action({
+          name: 'list_orders',
+          method: 'GET',
+          path: '/v1/orders',
+          paramsSchema: { type: 'object', properties: { status: param('query', 'string', { enum: ['open'] }) } },
+        }),
+      ],
+      {
+        valueDomains: [
+          { actionId: 'id_list_orders', field: 'query.status', value: 'z'.repeat(5000), accepted: false, status: 400 },
+        ],
+      },
+    );
+
+    const field = (describeFields(c, { tool: 'list_orders' }).request as Payload[]).find(
+      (f) => f.path === 'query.status',
+    );
+    expect((field?.allowedObserved.rejected[0] as string).length).toBeLessThanOrEqual(120);
+  });
+});

@@ -27,6 +27,13 @@ import type { ProbeContext } from './types';
 // MASTER_TECHNICAL_PLAN §12.8's job and needs its own policy.
 const MAX_OPERATIONS = 2;
 const MAX_ENUM_VALUES = 3;
+
+// A declared enum member is third-party text from the provider's document, and
+// it ends up both in a database column and in an MCP tool response read by an
+// LLM. An enum member longer than this is not a value anyone sends as a query
+// parameter, so refusing it costs nothing and keeps a hostile spec from parking
+// a payload in either place.
+const MAX_ENUM_VALUE_CHARS = 120;
 const STEP_TIMEOUT_MS = 8_000;
 const PROBE_USER_AGENT = 'docentapi-probe/1.0 (+https://www.docentapi.xyz)';
 
@@ -58,7 +65,10 @@ function enumCandidates(action: Action): Array<{ name: string; values: string[] 
         ? ((schema.items as ParamSchema).enum as unknown[])
         : null;
     if (!declared || declared.length < 2) continue;
-    const values = declared.filter((v): v is string => typeof v === 'string').slice(0, MAX_ENUM_VALUES);
+    const values = declared
+      .filter((v): v is string => typeof v === 'string')
+      .filter((v) => v.length > 0 && v.length <= MAX_ENUM_VALUE_CHARS)
+      .slice(0, MAX_ENUM_VALUES);
     if (values.length >= 2) out.push({ name, values });
   }
   return out;

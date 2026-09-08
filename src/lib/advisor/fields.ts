@@ -86,8 +86,13 @@ function serialize(
     ...(observed && (observed.accepted.length || observed.rejected.length)
       ? {
           allowedObserved: {
-            ...(observed.accepted.length ? { accepted: observed.accepted } : {}),
-            ...(observed.rejected.length ? { rejected: observed.rejected } : {}),
+            // Through asData like every other third-party string this module
+            // returns. These values come from the provider's own spec document,
+            // so a hostile or compromised spec could otherwise put control
+            // characters or a runaway payload straight into an agent's context
+            // (LLM01/LLM05) — the exact rule this file's header states.
+            ...(observed.accepted.length ? { accepted: observed.accepted.map((v) => asData(v, 120)) } : {}),
+            ...(observed.rejected.length ? { rejected: observed.rejected.map((v) => asData(v, 120)) } : {}),
             note: 'Checked by sending each declared value to the live API. Anything under "rejected" is declared by the spec but was not accepted.',
           },
         }
