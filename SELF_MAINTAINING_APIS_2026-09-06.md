@@ -598,6 +598,36 @@ both bare-array and enveloped list responses — a real identifier read out of o
 operation's response, accepted by another, with a fabricated one rejected. That
 last clause is the whole difference between a verified link and a coincidence.
 
+### The negative control, validated on a real non-discriminating API
+
+Four confirmations demonstrate the happy path. This is the one that demonstrates
+the design, because a confirmation that cannot be wrong is not evidence of
+anything.
+
+Query-filter endpoints are the textbook soft-404 shape, and several public APIs
+behave this way — `?by_city=Zzzznotarealcity` on OpenBreweryDB,
+`?name=Zzzznotarealname` on GoREST, and `?userId=999999` on JSONPlaceholder all
+answer **HTTP 200 with `[]`**. They do not reject an unknown value; they return
+an empty result for it.
+
+Run against JSONPlaceholder:
+
+```
+list_users.response[].id -> find_posts_by_user.query.userId   (query consumer)
+  2 real user ids   -> 200      successes 2/2
+  fabricated userId -> 200      <- the endpoint does not discriminate
+OUTCOME: inconclusive   reason: control_also_succeeded
+```
+
+A runner that checked only for 2xx would have published this as a **confirmed
+link**. It is not one: the endpoint answers 200 for any value, so the two real
+identifiers proved nothing about whether the link is real. The control is the
+only thing standing between those two readings, and a live API has now
+demonstrated it doing that job — not a test double.
+
+The honest consequence is that this particular link is unverifiable by this
+method, and the tool says `inconclusive` rather than inventing confidence.
+
 ### The cardinality guard, validated on real data
 
 The state-vocabulary probe recorded `status = [Alive, Dead, unknown]` for Rick

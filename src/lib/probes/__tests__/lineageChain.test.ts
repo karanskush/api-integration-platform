@@ -259,3 +259,27 @@ describe('nothing it returns can carry a value', () => {
     expect(logged).not.toContain('SENTINEL');
   });
 });
+
+// A regression lock for the behaviour a live API demonstrated on 2026-09-08.
+//
+// Query-filter endpoints commonly answer 200 with an empty list for ANY value —
+// JSONPlaceholder's /posts?userId=, OpenBreweryDB's ?by_city=, GoREST's ?name=
+// all do. Run against JSONPlaceholder, two real user ids returned 200 and so
+// did a fabricated one, and the runner correctly reported inconclusive. A
+// version that checked only for 2xx would have published a confirmed link.
+describe('a real-world non-discriminating query filter', () => {
+  it('is inconclusive however many real values succeeded', async () => {
+    // Mirrors the observed behaviour exactly: 200 and an empty array, always.
+    const alwaysOk = (async (a: Action) =>
+      a.name === 'list_customers'
+        ? { status: 200, latencyMs: 5, bodyText: LIST_BODY }
+        : { status: 200, latencyMs: 5, bodyText: '[]' }) as unknown as typeof invokeAction;
+
+    const [obs] = (await run(alwaysOk)).observations;
+
+    expect(obs.successes).toBeGreaterThan(0);
+    expect(obs.controlStatus).toBe(200);
+    expect(obs.outcome).toBe('inconclusive');
+    expect(obs.reason).toBe('control_also_succeeded');
+  });
+});
