@@ -134,8 +134,11 @@ describe('classifyValue — entropy backstop and its exemptions', () => {
     expect(classifyValue('limit', 25)).toBeNull();
   });
 
-  it('ignores an implausibly long value rather than scoring it', () => {
-    expect(classifyValue('blob', 'A1b2C3d4'.repeat(1000))).toBeNull();
+  // The entropy scorer is skipped on an implausibly long value — but skipping
+  // the scoring must not mean keeping the value. It is reported as 'oversized'
+  // rather than 'high_entropy', and the example is still dropped.
+  it('does not score an implausibly long value, and does not keep it either', () => {
+    expect(classifyValue('blob', 'A1b2C3d4'.repeat(1000))?.reason).toBe('oversized');
   });
 
   // A UUID under a credential name is still a credential.
@@ -257,5 +260,41 @@ describe('scrubSchemaExamples', () => {
     const schema: Record<string, unknown> = { type: 'string', example: 'available' };
     expect(scrubSchemaExamples(schema, 'status')).toHaveLength(0);
     expect(schema.example).toBe('available');
+  });
+});
+
+// A deny-by-default filter must not have a size that lets a value past. Both
+// bounds in this module exist to cap work, and both used to answer "keep" —
+// which made length the one reliable bypass, since the name check that would
+// have caught `client_secret` sits below the length gate and never ran.
+describe('the bounds fail closed', () => {
+  it('drops a value too long to scan instead of keeping it', () => {
+    const finding = classifyValue('payload', 'A'.repeat(5000));
+    expect(finding?.reason).toBe('oversized');
+  });
+
+  it('drops an oversized PEM key, which exceeds the scan bound at 8192 bits', () => {
+    const key = `-----BEGIN RSA PRIVATE KEY-----\n${'M'.repeat(6000)}\n-----END RSA PRIVATE KEY-----`;
+    expect(classifyValue('key', key)).not.toBeNull();
+  });
+
+  it('still records only a hint and a length for an oversized value', () => {
+    const finding = classifyValue('client_secret', `${'x'.repeat(5000)}tail`);
+    expect(finding?.hint).toBe('••••tail');
+    expect(JSON.stringify(finding)).not.toContain('xxxx');
+  });
+
+  it('keeps an ordinary example that sits inside the bound', () => {
+    expect(classifyValue('city', 'Amsterdam')).toBeNull();
+  });
+
+  it('drops a subtree deeper than the walk limit rather than returning it intact', () => {
+    // 10 levels, past MAX_WALK_DEPTH of 8.
+    let nested: unknown = { apiKey: 'sk_live_deep_secret_value' };
+    for (let i = 0; i < 10; i += 1) nested = { level: nested };
+
+    const { value, findings } = scrubValue('body', nested);
+    expect(JSON.stringify(value)).not.toContain('sk_live');
+    expect(findings.length).toBeGreaterThan(0);
   });
 });

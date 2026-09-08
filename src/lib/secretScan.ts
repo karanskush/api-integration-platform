@@ -93,7 +93,8 @@ export type SecretReason =
   | 'private_key'
   | 'jwt'
   | 'sensitive_name'
-  | 'high_entropy';
+  | 'high_entropy'
+  | 'oversized';
 
 export type SecretFinding = {
   reason: SecretReason;
@@ -159,7 +160,7 @@ function nameLooksSensitive(name: string): boolean {
 export function classifyValue(name: string, value: unknown): SecretFinding | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const text = String(value);
-  if (!text.length || text.length > MAX_SCANNED_LENGTH) return null;
+  if (!text.length) return null;
 
   const finding = (reason: SecretReason): SecretFinding => ({
     reason,
@@ -167,6 +168,16 @@ export function classifyValue(name: string, value: unknown): SecretFinding | nul
     hint: secretHint(text),
     length: text.length,
   });
+
+  // Oversized values are dropped, not waved through. MAX_SCANNED_LENGTH exists
+  // because scoring a megabyte of pasted body is wasted work on the import hot
+  // path — and because, as the constant says, a value that long is not a
+  // plausible example in the first place. Both of those argue for discarding
+  // it. Returning null here instead would have made length the one reliable
+  // way past a deny-by-default filter: an 8192-bit PEM key exceeds this bound,
+  // and so does any long value in a field named `client_secret`, since the
+  // name check sits below this line and never got to run.
+  if (text.length > MAX_SCANNED_LENGTH) return finding('oversized');
 
   if (PEM_BLOCK.test(text)) return finding('private_key');
   if (KNOWN_PREFIXES.some((re) => re.test(text))) return finding('known_prefix');
@@ -210,7 +221,13 @@ export function scrubValue(
   findings: SecretFinding[] = [],
   depth = 0,
 ): { value: unknown; findings: SecretFinding[] } {
-  if (depth > MAX_WALK_DEPTH) return { value, findings };
+  // Past the walk limit nothing below has been examined, so the subtree is
+  // dropped rather than returned intact — the same fail-closed reasoning as the
+  // length bound in classifyValue.
+  if (depth > MAX_WALK_DEPTH) {
+    findings.push({ reason: 'oversized', at: name, hint: '••••', length: 0 });
+    return { value: undefined, findings };
+  }
 
   if (Array.isArray(value)) {
     const out = value.map((v, i) => scrubValue(`${name}[${i}]`, v, findings, depth + 1).value);
