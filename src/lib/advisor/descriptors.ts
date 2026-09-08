@@ -153,6 +153,18 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
     ['tool'],
   ),
   descriptor(
+    'get_workflows',
+    'Get workflows',
+    'The multi-step flows this API supports: for each operation that has prerequisites, the ordered set of calls that reaches it, which values a previous step supplies automatically, and which ones you still have to choose. Emitted as Arazzo 1.0.1 steps. Call this before planning a multi-call task, instead of inferring an order from endpoint names.',
+    {
+      workflow: {
+        type: 'string',
+        description: 'A workflowId from a previous call, to get its full steps. Omit to list all workflows.',
+      },
+      limit: { type: 'integer', description: 'Maximum workflows to list (1-50, default 25).' },
+    },
+  ),
+  descriptor(
     'check_freshness',
     'Check freshness',
     'How current this API model is: which spec version it describes, when the spec was last checked against its source, when it last changed, whether the verified score still applies to the current version, and a fingerprint of this tool list. Call this at the start of a session and compare toolFingerprint with what you cached — MCP tool schemas can change in place without any description changing.',

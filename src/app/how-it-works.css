@@ -716,3 +716,17 @@
   .cta .cta-form { flex-direction: column; }
   .cta .cta-form .btn { width: 100%; }
 }
+
+/* ------------------------------------------------------------------
+   PAGE HEAD
+
+   The chapters used to open under a full-height hero. Without one they need a
+   header of their own, sized to state the page's subject and then get out of
+   the way — this is a document, and chapter 01 is the thing worth reading.
+   ------------------------------------------------------------------ */
+.hiw-head {
+  padding: clamp(56px, 9vh, 104px) 0 clamp(8px, 2vh, 24px);
+}
+.hiw-head h1.display { margin-top: 20px; max-width: 15ch; }
+.hiw-head h1.display .hl { display: block; color: var(--iris-2); }
+.hiw-head .lead { margin-top: 24px; }

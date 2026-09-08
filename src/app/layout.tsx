@@ -6,7 +6,7 @@ import './globals.css';
 // The route tree is split into two shells, and this root carries only what
 // they share: fonts, tokens, metadata, and the Clerk gate.
 //
-//   (site)     — the marketing story: /, /pricing. Cinematic header, chapters.
+//   (site)     — the marketing story: /, /how-it-works, /pricing.
 //   (product)  — the console: /app, /analyze, /dashboard, generated API pages.
 //   api/, mcp/, badge/ — machine endpoints; no shell renders around them.
 
@@ -47,9 +47,9 @@ const FAVICON =
 // Absolute-URL base for OG tags and the sitemap. PUBLIC_APP_ORIGIN is the
 // runtime override origin.ts honours; the literal is the canonical domain.
 const ORIGIN = process.env.PUBLIC_APP_ORIGIN || 'https://www.docentapi.xyz';
-const TITLE = 'DocentAPI — your API, agent-ready in 60 seconds';
+const TITLE = 'DocentAPI — make your API the easiest one they ever integrated';
 const DESCRIPTION =
-  'Paste an OpenAPI spec, Postman collection, or cURL command. Get a live integration page, a BYOK playground, and a hosted MCP server.';
+  'We learn your API by running it, answer your customers\u2019 questions about it, host their MCP server, and keep docs and tools in sync every time you ship. Sign in, paste a spec and a dev key.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(ORIGIN),

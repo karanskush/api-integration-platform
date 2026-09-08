@@ -21,6 +21,7 @@ import { describeFields, traceField } from './fields';
 import { getCallSequence } from './sequence';
 import { getEndpointSchema, searchEndpoints } from './search';
 import { getScoreExplanation } from './score';
+import { getWorkflows } from './workflows';
 import type { AdvisorContext } from './types';
 
 export { ADVISOR_PREFIX, ADVISOR_TOOLS } from './descriptors';
@@ -60,6 +61,8 @@ export function callAdvisorTool(name: string, args: Args, ctx: AdvisorContext): 
       return result(getScoreExplanation(ctx));
     case `${ADVISOR_PREFIX}generate_contract_test`:
       return result(generateContractTest(ctx, args));
+    case `${ADVISOR_PREFIX}get_workflows`:
+      return result(getWorkflows(ctx, args));
     case `${ADVISOR_PREFIX}check_freshness`:
       return result(checkFreshness(ctx));
     case `${ADVISOR_PREFIX}get_changes_since`:
