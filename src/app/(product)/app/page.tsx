@@ -18,7 +18,8 @@ export default async function AppHome() {
         <p className="eyebrow">Instant generator</p>
         <h1 className="display">Turn an API definition into a working integration.</h1>
         <p className="lead">
-          Import an OpenAPI spec, Postman collection, or cURL command. DocentAPI creates an
+          Step two of two. Paste an OpenAPI spec, Postman collection, or cURL command — and a dev
+          key if you want the checks to run against your live service. DocentAPI creates an
           executable workspace for humans and a hosted MCP endpoint for agents.
         </p>
       </header>
@@ -41,12 +42,15 @@ export default async function AppHome() {
               <div><strong>Hosted MCP</strong><p>Give agents the same API as safety-filtered tools.</p></div>
             </li>
           </ol>
-          <p className="app-privacy">Anonymous workspaces expire after 24 hours. Credentials are never stored.</p>
           <p className="app-privacy">
-            This instant pass reads the spec alone. Step two — deep analysis — crawls the
+            Credentials are never stored. A dev key is used for the read-safe calls in this run and
+            discarded with the request — writes are never executed.
+          </p>
+          <p className="app-privacy">
+            Signed in, deep analysis starts automatically with your import: it crawls the
             provider&apos;s own docs, traces every field, and emails you when it&apos;s verified.
-            Signed in, it starts automatically with your import; anonymous imports can start it
-            from the workspace they create.
+            Anonymous imports get the instant spec-only pass and a workspace that expires after 24
+            hours unless claimed.
           </p>
         </aside>
       </div>
