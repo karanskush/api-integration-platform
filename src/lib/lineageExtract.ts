@@ -17,6 +17,12 @@ import { makeRef, type ValueRef } from './transient';
 // way a URL — and therefore an identifier — reaches a log.
 export type ExtractReason =
   | 'ok'
+  // The producer never returned a usable response at all. Distinct from
+  // path_absent on purpose: "the API was down" and "the field is not in the
+  // response" are different findings, and collapsing them is exactly the defect
+  // the canary's first live run exposed in itself. Set by the runner, never by
+  // selectValues — which only ever sees a body.
+  | 'producer_failed'
   | 'path_absent'
   | 'empty_collection'
   | 'non_scalar'
@@ -31,24 +37,35 @@ export type ExtractResult = {
 
 type Segment = { key: string; arrays: number };
 
-// `response.data[].id` -> root 'response', segments [ {data, arrays:1}, {id, arrays:0} ].
-// Returns null for a path with no segments to walk, which is a caller bug
-// rather than a body problem.
-function parsePath(fieldPath: string): { segments: Segment[] } | null {
+function countArraySuffixes(raw: string): { key: string; arrays: number } {
+  let key = raw;
+  let arrays = 0;
+  while (key.endsWith('[]')) {
+    key = key.slice(0, -2);
+    arrays++;
+  }
+  return { key, arrays };
+}
+
+// `response.data[].id` -> rootArrays 0, segments [ {data, arrays:1}, {id, arrays:0} ].
+// `response[].id`      -> rootArrays 1, segments [ {id, arrays:0} ].
+//
+// The ROOT can itself be an array, and missing that was a real bug the first
+// live run caught: the Swagger Petstore's find_pets_by_status returns a
+// top-level array, so its producer path is `response[].id`, and stripping `[]`
+// only from later segments meant the walk never descended into it and reported
+// path_absent on a perfectly good response.
+function parsePath(fieldPath: string): { rootArrays: number; segments: Segment[] } | null {
   const parts = fieldPath.split('.');
   if (parts.length < 2) return null; // root only — nothing to read
+  const { arrays: rootArrays } = countArraySuffixes(parts[0]);
   const segments: Segment[] = [];
   for (const raw of parts.slice(1)) {
-    let key = raw;
-    let arrays = 0;
-    while (key.endsWith('[]')) {
-      key = key.slice(0, -2);
-      arrays++;
-    }
+    const { key, arrays } = countArraySuffixes(raw);
     if (!key) return null;
     segments.push({ key, arrays });
   }
-  return { segments };
+  return { rootArrays, segments };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -69,11 +86,24 @@ export function selectValues(body: unknown, fieldPath: string, max: number): Ext
   if (!parsed) return empty('path_absent');
 
   let current: unknown[] = [body];
+
   // Distinguishing "we walked into an empty list" from "the field is not there"
   // matters: the first is inconclusive (nothing to try), the second is a
   // finding about the API — and the canary's reconcile() already owns that
   // class, so this must not quietly claim it.
   let sawEmptyCollection = false;
+  let sawEmptyCollectionRoot = false;
+
+  // Descend through any array the ROOT itself is, before walking the segments.
+  for (let i = 0; i < parsed.rootArrays; i++) {
+    const flattened: unknown[] = [];
+    for (const value of current) {
+      if (!Array.isArray(value)) continue;
+      if (value.length === 0) sawEmptyCollectionRoot = true;
+      flattened.push(...value);
+    }
+    current = flattened;
+  }
 
   for (const segment of parsed.segments) {
     const next: unknown[] = [];
@@ -96,7 +126,7 @@ export function selectValues(body: unknown, fieldPath: string, max: number): Ext
     if (!current.length) break;
   }
 
-  if (!current.length) return empty(sawEmptyCollection ? 'empty_collection' : 'path_absent');
+  if (!current.length) return empty(sawEmptyCollection || sawEmptyCollectionRoot ? 'empty_collection' : 'path_absent');
 
   const seen = new Set<string | number>();
   const refs: ValueRef[] = [];

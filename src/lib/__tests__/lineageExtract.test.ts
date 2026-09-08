@@ -112,3 +112,32 @@ describe('nothing extracted is ever a bare value', () => {
     expect(JSON.stringify(result.refs)).toBe('["[transient]","[transient]"]');
   });
 });
+
+// The root can itself be an array. Missing that was a real bug the first live
+// run caught: the Swagger Petstore's find_pets_by_status returns a top-level
+// array, so its producer path is `response[].id`, and the walk never descended
+// into it — reporting path_absent on a perfectly good response.
+describe('a top-level array response', () => {
+  const TOP_LEVEL = [{ id: 10 }, { id: 11 }, { id: 10 }];
+
+  it('reads through the root array', () => {
+    const result = selectValues(TOP_LEVEL, 'response[].id', 10);
+    expect(result.reason).toBe('ok');
+    expect(result.refs.map((r) => r.unwrap())).toEqual([10, 11]);
+  });
+
+  it('reads a nested field through the root array', () => {
+    const body = [{ meta: { ref: 'a' } }, { meta: { ref: 'b' } }];
+    expect(selectValues(body, 'response[].meta.ref', 10).refs.map((r) => r.unwrap())).toEqual(['a', 'b']);
+  });
+
+  it('reports an empty top-level array as an empty collection, not a missing path', () => {
+    expect(selectValues([], 'response[].id', 10).reason).toBe('empty_collection');
+  });
+
+  it('agrees with what inferShape recorded for the same body', () => {
+    const shape = inferShape(TOP_LEVEL);
+    expect(Object.keys(shape)).toContain('response[].id');
+    expect(selectValues(TOP_LEVEL, 'response[].id', 10).reason).toBe('ok');
+  });
+});

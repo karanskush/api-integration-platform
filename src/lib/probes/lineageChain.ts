@@ -141,7 +141,10 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
           break;
         }
         if (!res || !isSuccess(res.status)) {
-          candidates = { refs: [], reason: 'path_absent' };
+          // The producer did not answer usefully. Recording this as
+          // `path_absent` would blame the API's response shape for what was
+          // actually an outage, a rate limit, or an auth failure.
+          candidates = { refs: [], reason: 'producer_failed' };
         } else {
           try {
             const extracted = selectValues(JSON.parse(res.bodyText), chain.producerField, MAX_CANDIDATE_VALUES);

@@ -218,3 +218,77 @@ describe('caps', () => {
     expect(reasons(plan)).toContain('over_chain_cap');
   });
 });
+
+// Found by the first live runs. Both cost a real API its only executable chain,
+// and neither would have surfaced from hand-built fixtures — the canary's live
+// run taught the same lesson about itself.
+describe('a required parameter the spec declares a value for', () => {
+  it('is satisfiable from a default, without an example', () => {
+    // Swagger Petstore v3: findPetsByStatus requires `status`, carries no
+    // example, and declares default "available".
+    const producer = listCustomers({
+      paramsSchema: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', default: 'available', enum: ['available', 'sold'], 'x-docentapi-in': 'query' },
+        },
+      },
+      examples: [],
+    });
+    const plan = buildExecutionPlan(record([producer, getCustomer()]));
+
+    expect(plan.chains).toHaveLength(1);
+    expect(plan.chains[0].producerParams.status).toBe('available');
+  });
+
+  it('falls back to the first enum member when there is no default', () => {
+    const producer = listCustomers({
+      paramsSchema: {
+        type: 'object',
+        required: ['status'],
+        properties: { status: { type: 'string', enum: ['pending', 'sold'], 'x-docentapi-in': 'query' } },
+      },
+      examples: [],
+    });
+    expect(buildExecutionPlan(record([producer, getCustomer()])).chains[0].producerParams.status).toBe('pending');
+  });
+
+  // Swagger 2 specs declare array parameters constantly, and the Petstore's own
+  // findPetsByStatus is one: the values live on `items`, not on the property.
+  it('reads a declared value off an array parameter-s items', () => {
+    const producer = listCustomers({
+      paramsSchema: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {
+            type: 'array',
+            items: { type: 'string', enum: ['available', 'sold'], default: 'available' },
+            'x-docentapi-in': 'query',
+          },
+        },
+      },
+      examples: [],
+    });
+    const plan = buildExecutionPlan(record([producer, getCustomer()]));
+
+    expect(plan.chains).toHaveLength(1);
+    expect(plan.chains[0].producerParams.status).toEqual(['available']);
+  });
+
+  it('still refuses when the spec declares nothing usable', () => {
+    const producer = listCustomers({
+      paramsSchema: {
+        type: 'object',
+        required: ['tenantId'],
+        properties: { tenantId: { type: 'string', 'x-docentapi-in': 'query' } },
+      },
+      examples: [],
+    });
+    const plan = buildExecutionPlan(record([producer, getCustomer()]));
+
+    expect(plan.chains).toHaveLength(0);
+    expect(reasons(plan)).toContain('producer_params_unsatisfiable');
+  });
+});

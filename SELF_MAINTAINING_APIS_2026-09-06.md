@@ -473,3 +473,125 @@ Pro account, with no code change.
 This is worth stating plainly because §4 of this document proposes hourly
 polling as what a paid plan buys. On the current account that differentiator
 does not exist yet.
+
+---
+
+## Implementation log — Executed Lineage (2026-09-08)
+
+### Why the positioning in §2 needed correcting first
+
+Research on 2026-09-08 found the layer §2 treats as the differentiator has
+largely commoditised in the six weeks since this document was written:
+
+- **Shape-only traffic profiling is a shipped competitor feature.** ShiftGraph
+  describes itself as "built on the traffic-profiling approach, storing
+  structure only with values discarded at collection" — the canary's exact
+  design decision, arrived at independently.
+- FlareCanary polls endpoints on a schedule and classifies changes by severity.
+  PageCrawl ships an MCP server over the same idea.
+- Vercel's AI SDK 7.0.19 ships `fingerprintTools` and `detectToolDrift`, which
+  is what `changes/fingerprint.ts` does.
+- Arazzo generation is supported by Redocly, Speakeasy, Specmatic and Bruno.
+- Jentic catalogues 6,000+ APIs and 2,000+ workflows in OpenAPI/Arazzo/MCP —
+  but they are **authored**, not execution-verified.
+
+The open lane is the one thing none of them do: **publish knowledge that was
+verified by executing it.** Morest (ICSE 2022) is the academic blueprint — a
+producer–consumer property graph adapted at runtime from actual responses,
+reporting 152–232% more successfully-requested operations than spec-only
+sequence generation — and it has never been productised as published integration
+knowledge. `lineage.ts` already owns the top-down half of that model.
+
+### What shipped
+
+Read-only chain execution: take a candidate lineage edge, call the producer,
+read a real identifier out of its response, send it to the consumer, then send a
+fabricated one, and record what happened. Nine modules, each landed separately:
+`transient.ts`, `probes/budget.ts`, `lineagePlan.ts`, `lineageExtract.ts`,
+`lineageVerdict.ts`, `probes/lineageChain.ts`, `lineageRun.ts`, migration 0012,
+and the read-side change to `get_call_sequence`.
+
+### The rule that makes it worth having
+
+**A 2xx alone is correlation, not verification.** A soft-404 API answers 200 with
+`{"error":"not found"}`; a framework that ignores an unmatched path segment
+returns the collection; a handler may never read the parameter at all. Under a
+naive "we sent the id and got 200" rule, all three *confirm* every edge pointed
+at them — wrong ones included. That would manufacture false confidence at scale,
+which is strictly worse than the honest "spec structure only" string this
+replaces.
+
+So every confirmation requires a **negative control**: the same consumer, the
+same other parameters, a format-valid but fabricated value. If the control also
+succeeds, the run proves nothing. `fabricateLike` mirrors the real value's shape
+— uuid, hex, digits, or a validated prefix like `cus_` — because a provider that
+400s a malformed id *before looking anything up* would make every control
+non-2xx and every chain look discriminating, silently defeating the check.
+
+Confirming takes one run; **refuting takes agreement across runs**, since a 404
+is explained just as well by tenancy scoping, a deleted record, or a rate limit.
+
+### The value rule, and its honest limit
+
+`transient.ts` holds extracted identifiers in a genuinely private field.
+`JSON.stringify` yields `"[transient]"`, interpolation yields `[transient]`,
+spread yields only safe metadata, and a `util.inspect` hook covers logging —
+which matters because Node's inspect reaches into private fields, so a bare
+`console.error({ ref })` would otherwise put a live identifier in the platform
+log. `unwrap()` is called in exactly two audited places.
+
+The claim is **"zero retention in DocentAPI"**, not "zero retention": the value
+still reaches the provider's own access log, attributed to the owner's key.
+
+`lineage_executions` has zero json columns, which is strictly stronger than
+`operation_observations` — jsonb *could* hold a value and is kept safe by a
+careful writer; an integer cannot hold one at all. A whole-database sentinel
+scan asserts it, and a second test checks `operation_observations` *does* have a
+json column so the first cannot pass vacuously.
+
+### Runtime verification against live APIs (2026-09-08)
+
+Forced runs against both public Swagger Petstores. **Neither produced a
+confirmed edge**, and both were useful.
+
+**Petstore v3** — the chain planned correctly
+(`find_pets_by_status.response[].id -> get_pet_by_id.path.petId`, high
+confidence) and executed. The producer returned **HTTP 500**; so did
+`/store/inventory`. The demo server was broadly degraded, while `get_pet_by_id`
+answered 200. The runner made exactly **one** request, reported
+`inconclusive / producer_yielded_nothing`, and neither guessed an identifier nor
+spent the rest of its budget.
+
+**Petstore v2** — the chain planned, and the runner **declined to execute it**:
+that spec declares `oauth2` on `findPetsByStatus` and no credential was
+supplied. Correct behaviour, and not something to work around — deliberately
+sending unauthenticated requests is the auth-clarity probe's job, not a chain's.
+
+So the happy path is verified end to end in tests against a stubbed API, and
+**not yet against a live third party**. That is the honest state.
+
+### Four defects the live runs caught that the tests had not
+
+1. **A required parameter with a declared `default`/`enum` but no `example` was
+   treated as unsatisfiable.** Petstore v3's `findPetsByStatus` requires
+   `status`, which declares `default: "available"`. Refusing to run for want of
+   an *example* threw away that API's only executable chain. Using a value the
+   spec itself declares is reading the spec, not guessing.
+2. **Array parameters declare their values on `items`.** Swagger 2 does this
+   constantly — Petstore v2's own `findPetsByStatus` is `type: array` with
+   `items.enum` and `items.default` — and looking only at the top level made
+   every such producer unsatisfiable.
+3. **A top-level array response was unreadable.** `find_pets_by_status` returns a
+   bare array, so its producer path is `response[].id`, and the extractor
+   stripped `[]` only from *non-root* segments — reporting `path_absent` on a
+   perfectly good response.
+4. **A failed producer was reported as `path_absent`**, blaming the API's
+   response shape for what was actually an outage. Now `producer_failed`. This
+   is the same distinction-collapsing defect the canary's own first live run
+   exposed in itself, in a new place.
+
+### What is deliberately not wired
+
+Manual `/verify` does not run chains. A single BYOK run cannot satisfy the
+cross-run agreement rule, so it could only ever produce inconclusive verdicts.
+The scheduled path is the one that produces a cadence.
