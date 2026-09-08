@@ -583,12 +583,35 @@ state vocabulary: status = [Alive, Dead, unknown] across 20 records
 no character data in the serialized output
 ```
 
-That is the first end-to-end confirmation against a live third party: a real
-identifier read out of one operation's response, accepted by another, with a
-fabricated one rejected — which is the whole difference between a verified link
-and a coincidence. The state-vocabulary probe cleared its cardinality guard on
-the same responses (3 distinct values across 20 records) and retained nothing
-else from them.
+**Three more, deliberately different in shape.** None of these providers
+publishes an OAS either, so each spec was hand-written and minimal; every
+request went to the real service.
+
+| API | id type | chain | control | outcome |
+|---|---|---|---|---|
+| GoREST | integer | `list_users.response[].id -> get_user.path.userId` | 404 | **confirmed** (2/2, p50 535ms) |
+| JSONPlaceholder | integer | `list_posts.response[].id -> get_post.path.postId` | 404 | **confirmed** (2/2, p50 329ms) |
+| OpenBreweryDB | string/uuid | `list_breweries.response[].id -> get_brewerie.path.breweryId` | 404 | **confirmed** (2/2, p50 828ms) |
+
+So **four live third-party APIs confirmed**, across integer ids, string ids and
+both bare-array and enveloped list responses — a real identifier read out of one
+operation's response, accepted by another, with a fabricated one rejected. That
+last clause is the whole difference between a verified link and a coincidence.
+
+### The cardinality guard, validated on real data
+
+The state-vocabulary probe recorded `status = [Alive, Dead, unknown]` for Rick
+and Morty (3 distinct across 20) and `status = [active, inactive]` for GoREST
+(2 across 10). It recorded **nothing** for OpenBreweryDB — which is the result
+worth keeping.
+
+OpenBreweryDB has a field literally named `state`, and it holds **geography**:
+30 distinct values across 50 records (Arizona, Bayern, Aveiro, California…).
+The guard refused it, 30 x 2 >= 50. Without that rule this feature would have
+published "a Brewery is one of: Arizona, Aveiro, Bayern, California…" as a
+lifecycle vocabulary, which is nonsense — and it would have done so off a field
+whose NAME passed every check. The cardinality test is the only thing standing
+between the two cases, and a real API demonstrated it.
 
 ### Four defects the live runs caught that the tests had not
 
