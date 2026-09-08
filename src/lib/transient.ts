@@ -124,3 +124,59 @@ export function resolveParams(params: Record<string, unknown>): Record<string, u
   }
   return out;
 }
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HEX_SHAPE = /^[0-9a-f]+$/i;
+const DIGITS_SHAPE = /^\d+$/;
+// Stripe-style `cus_ABC123`, GitHub-style `gh-123`: the prefix is often what a
+// provider validates before it looks anything up.
+const PREFIXED_SHAPE = /^([A-Za-z]{2,10}[_-])(.+)$/;
+
+const ALPHANUM = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomFrom(charset: string, length: number): string {
+  let out = '';
+  for (let i = 0; i < length; i++) out += charset[Math.floor(Math.random() * charset.length)];
+  return out;
+}
+
+function randomUuid(): string {
+  const hex = () => randomFrom('0123456789abcdef', 4);
+  return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-a${hex().slice(1)}-${hex()}${hex()}${hex()}`;
+}
+
+/**
+ * A fabricated value shaped like the real one — the negative control.
+ *
+ * The control's job is to prove the endpoint actually reads the identifier
+ * rather than answering 2xx to anything (lineageVerdict.ts). For that it has to
+ * be FORMAT-VALID: a provider that rejects a malformed id with a 400 before
+ * looking anything up would make every control non-2xx and every chain look
+ * discriminating, which would defeat the check it exists to perform. So this
+ * mirrors the real value's shape — uuid, hex, digits, or a validated prefix —
+ * and randomises only the part that identifies a record.
+ *
+ * This is the second and last place unwrap() is called. It reads the shape and
+ * returns a NEW ref; the real value never leaves this function, and the control
+ * is itself transient so it cannot be written down either.
+ */
+export function fabricateLike(ref: ValueRef): ValueRef {
+  const real = ref.unwrap();
+
+  if (typeof real === 'number') {
+    // Same digit-length, so a numeric-range validator still accepts it, but
+    // vanishingly unlikely to name a real record.
+    const digits = Math.max(String(Math.trunc(Math.abs(real))).length, 6);
+    const lower = 10 ** (digits - 1);
+    return new ValueRef(lower + Math.floor(Math.random() * (lower * 9 - 1)));
+  }
+
+  if (UUID_SHAPE.test(real)) return new ValueRef(randomUuid());
+  if (DIGITS_SHAPE.test(real)) return new ValueRef(randomFrom('123456789', real.length));
+  if (HEX_SHAPE.test(real)) return new ValueRef(randomFrom('0123456789abcdef', real.length));
+
+  const prefixed = PREFIXED_SHAPE.exec(real);
+  if (prefixed) return new ValueRef(`${prefixed[1]}${randomFrom(ALPHANUM, prefixed[2].length)}`);
+
+  return new ValueRef(randomFrom(ALPHANUM, real.length));
+}

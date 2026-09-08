@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { inspect } from 'node:util';
-import { isValueRef, makeRef, resolveParams, TRANSIENT_PLACEHOLDER, ValueRef } from '../transient';
+import { fabricateLike, isValueRef, makeRef, resolveParams, TRANSIENT_PLACEHOLDER, ValueRef } from '../transient';
 
 const SECRET = 'cus_SENTINEL_9f3a1b7c';
 
@@ -135,5 +135,61 @@ describe('isValueRef', () => {
 
   it('rejects a lookalike carrying the same shape', () => {
     expect(isValueRef({ unwrap: () => SECRET, jsonType: 'string', length: 3 })).toBe(false);
+  });
+});
+
+// The negative control. It has to be FORMAT-VALID, not merely different: a
+// provider that 400s a malformed id before looking anything up would make every
+// control non-2xx, and every chain would look discriminating — defeating the
+// check the control exists to perform.
+describe('fabricateLike builds a same-shaped decoy', () => {
+  it('mirrors a uuid', () => {
+    const real = makeRef('550e8400-e29b-41d4-a716-446655440000')!;
+    const decoy = String(fabricateLike(real).unwrap());
+    expect(decoy).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(decoy).not.toBe(real.unwrap());
+  });
+
+  it('preserves a validated prefix', () => {
+    const decoy = String(fabricateLike(makeRef('cus_A1b2C3d4')!).unwrap());
+    expect(decoy.startsWith('cus_')).toBe(true);
+    expect(decoy).not.toBe('cus_A1b2C3d4');
+    expect(decoy).toHaveLength('cus_A1b2C3d4'.length);
+  });
+
+  it('keeps digits numeric and the same length', () => {
+    const decoy = String(fabricateLike(makeRef('40289301')!).unwrap());
+    expect(decoy).toMatch(/^\d{8}$/);
+  });
+
+  it('keeps hex hexadecimal', () => {
+    const decoy = String(fabricateLike(makeRef('a3f5c9e1b7d2408a')!).unwrap());
+    expect(decoy).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('keeps a number a number', () => {
+    const decoy = fabricateLike(makeRef(4028)!).unwrap();
+    expect(typeof decoy).toBe('number');
+  });
+
+  it('falls back to the same length for an unrecognised shape', () => {
+    const real = 'zzz.yyy!xxx';
+    expect(String(fabricateLike(makeRef(real)!).unwrap())).toHaveLength(real.length);
+  });
+
+  it('returns a ref, so the decoy cannot be written down either', () => {
+    expect(JSON.stringify({ d: fabricateLike(makeRef('cus_A1b2C3d4')!) })).toBe(`{"d":"${TRANSIENT_PLACEHOLDER}"}`);
+  });
+
+  it('does not leak the real value into the decoy', () => {
+    const decoy = String(fabricateLike(makeRef(SECRET)!).unwrap());
+
+    expect(decoy).not.toContain(SENTINEL_FRAGMENT);
+    expect(decoy).not.toBe(SECRET);
+    // Same shape, different content — which is exactly what a control needs:
+    // the provider's format validation still passes, so a non-2xx answer means
+    // "no such record" rather than "malformed input".
+    expect(decoy.startsWith('cus_')).toBe(true);
+    expect(decoy).toHaveLength(SECRET.length);
   });
 });
