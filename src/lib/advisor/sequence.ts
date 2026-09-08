@@ -129,6 +129,57 @@ export function findProducers(record: ImportRecord, target: Action, param: strin
     .slice(0, MAX_PRODUCERS_PER_PARAM);
 }
 
+// Which of this plan's producer->consumer links were actually executed. Keyed
+// the way lineageRun.ts keys them, so a receipt attaches to one specific pair
+// rather than to an operation in general.
+type Receipt = { verdict: string; successes: number; attempts: number; observedAt: string };
+
+function verificationFor(ctx: AdvisorContext) {
+  // Two indexes on purpose. The body-field path knows the producer FIELD (it
+  // comes from a lineage edge) and can match exactly. The path-param path goes
+  // through findProducers, which ranks producers by URL structure and never
+  // carries a field — so it matches on the pair of operations plus the consumer
+  // field, which is still specific enough to name one link.
+  const exact = new Map<string, Receipt>();
+  const loose = new Map<string, Receipt>();
+  for (const v of ctx.insights.lineageVerdicts) {
+    const receipt = { verdict: v.verdict, successes: v.successes, attempts: v.attempts, observedAt: v.observedAt };
+    exact.set(v.key, receipt);
+    const [producer, consumer] = v.key.split('->');
+    const producerTool = producer.split('.')[0];
+    if (producerTool && consumer) loose.set(`${producerTool}->${consumer}`, receipt);
+  }
+
+  const describe = (receipt: Receipt | undefined) => {
+    if (!receipt) return undefined;
+    if (receipt.verdict === 'observed') {
+      return {
+        verified: 'observed' as const,
+        detail: `Executed against the live API on ${receipt.observedAt.slice(0, 10)}: ${receipt.successes} of ${receipt.attempts} identifiers taken from this producer were accepted, and a fabricated one was rejected.`,
+      };
+    }
+    if (receipt.verdict === 'refuted') {
+      return {
+        verified: 'refuted' as const,
+        detail:
+          'Executed against the live API and REJECTED across more than one run: identifiers from this producer were not accepted here. Do not rely on this link.',
+      };
+    }
+    return {
+      verified: 'inconclusive' as const,
+      detail: 'Execution was attempted but proved nothing either way — treat this link as spec-derived.',
+    };
+  };
+
+  return {
+    exact: (key: string) => describe(exact.get(key)),
+    pair: (producerTool: string, consumerTool: string, consumerField: string) =>
+      describe(loose.get(`${producerTool}->${consumerTool}.${consumerField}`)),
+    any: () => exact.size > 0,
+    observedCount: () => [...exact.values()].filter((r) => r.verdict === 'observed').length,
+  };
+}
+
 export type CallSequenceArgs = { tool?: unknown };
 
 export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
@@ -138,6 +189,7 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
   const target = ctx.record.actions.find((a) => a.name === wanted);
   if (!target) return { error: `No operation named "${asData(wanted, 80)}" exists on this API.` };
 
+  const verification = verificationFor(ctx);
   const params = paramsOf(target);
   const steps: Array<Record<string, unknown>> = [];
   const unresolved: string[] = [];
@@ -190,7 +242,10 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
       ...(collectionPathFor(target.path, param.name)
         ? { collection: collectionPathFor(target.path, param.name) }
         : {}),
-      from: producers,
+      from: producers.map((producer) => {
+        const receipt = verification.pair(producer.tool, target.name, `path.${param.name}`);
+        return receipt ? { ...producer, ...receipt } : producer;
+      }),
     });
   }
 
@@ -224,12 +279,16 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
       purpose: `Obtain ${field.path}`,
       parameter: field.path,
       in: 'body',
-      from: edges.slice(0, MAX_PRODUCERS_PER_PARAM).map((e) => ({
-        tool: e.from.tool,
-        field: e.from.field,
-        confidence: e.confidence,
-        provides: `read "${e.from.field}" from its response`,
-      })),
+      from: edges.slice(0, MAX_PRODUCERS_PER_PARAM).map((e) => {
+        const receipt = verification.exact(`${e.from.tool}.${e.from.field}->${target.name}.${field.path}`);
+        return {
+          tool: e.from.tool,
+          field: e.from.field,
+          confidence: e.confidence,
+          provides: `read "${e.from.field}" from its response`,
+          ...(receipt ?? {}),
+        };
+      }),
     });
   }
 
@@ -288,6 +347,11 @@ export function getCallSequence(ctx: AdvisorContext, args: CallSequenceArgs) {
     steps,
     unresolvedParameters: unresolved,
     notes,
-    derivedFrom: 'spec structure only — no live traffic was observed to build this plan',
+    // The string this entire phase exists to be able to stop saying — but only
+    // when it is actually untrue. An API with no executed runs still gets the
+    // honest spec-only answer, because that is what it is.
+    derivedFrom: verification.any()
+      ? `spec structure, with ${verification.observedCount()} link(s) confirmed by read-only execution against the live API — see the "verified" field on each producer`
+      : 'spec structure only — no live traffic was observed to build this plan',
   };
 }

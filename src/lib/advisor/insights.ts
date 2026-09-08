@@ -12,6 +12,7 @@ import { actions as actionsTable, apis, clarifications, evidenceFacts, scores } 
 // runs on every MCP request that calls a tool.
 import { originForAnswer, type AnswerSpec } from '../clarify/archetypes';
 import { parseEvidencePayload, type EvidenceKind } from '../evidence';
+import { loadEdgeVerdicts } from '../lineageRun';
 import { emptyInsights, type AdvisorInsights } from './types';
 
 const PROBE_KINDS: EvidenceKind[] = [
@@ -153,6 +154,25 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
       }
       default:
         break;
+    }
+  }
+
+  // Executed-lineage verdicts, derived across runs (refutation needs agreement,
+  // so a latest-row view could not express it). Fenced against the current spec
+  // version inside loadEdgeVerdicts, which demotes a confirmation to
+  // inconclusive once the contract has moved.
+  if (api.currentSpecVersionId) {
+    const verdicts = await loadEdgeVerdicts(db, api.id, api.currentSpecVersionId);
+    for (const [key, v] of verdicts) {
+      if (v.verdict === 'unattempted') continue;
+      insights.lineageVerdicts.push({
+        key,
+        verdict: v.verdict,
+        attempts: v.attempts,
+        successes: v.successes,
+        stale: v.stale,
+        observedAt: v.observedAt,
+      });
     }
   }
 

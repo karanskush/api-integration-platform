@@ -92,6 +92,23 @@ export type AdvisorInsights = {
   // an answer about a format or merge semantics confirms a field without
   // changing where its value comes from. Same rule as enrichedSpec.ts.
   ownerAnswers: Array<{ tool: string; field: string; origin?: FieldOrigin; question: string }>;
+  // Edges that were actually EXECUTED against the live API (lineageRun.ts).
+  //
+  // Everything else this server says about call order is derived from schema
+  // structure — sequence.ts and fields.ts both stamp their output "spec
+  // structure only — no live traffic was observed". These are the exceptions:
+  // an edge marked `observed` had its producer called, a real identifier read
+  // from the response, that identifier accepted by the consumer, AND a
+  // fabricated one rejected. Without that last part it would be a correlation.
+  lineageVerdicts: Array<{
+    /** producerTool.producerField->consumerTool.consumerField */
+    key: string;
+    verdict: 'observed' | 'refuted' | 'inconclusive';
+    attempts: number;
+    successes: number;
+    stale: boolean;
+    observedAt: string;
+  }>;
   // Recent classified changes plus the freshness summary, so an agent can ask
   // whether what it learned still holds. `summary` is null for an ephemeral
   // import, which has no stored history to report.
@@ -107,6 +124,7 @@ export function emptyInsights(): AdvisorInsights {
     authObservations: [],
     fieldSemantics: [],
     ownerAnswers: [],
+    lineageVerdicts: [],
     changes: { recent: [], summary: null },
   };
 }

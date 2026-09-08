@@ -111,7 +111,7 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
   descriptor(
     'get_call_sequence',
     'Get call sequence',
-    'The ordered prerequisites for calling an operation: which identifiers it needs, which other operations produce them, and what has to be authenticated first. Call this before invoking any operation whose path contains an identifier, instead of guessing one.',
+    'The ordered prerequisites for calling an operation: which identifiers it needs, which other operations produce them, and what has to be authenticated first. Where a link has been confirmed by actually running it against the live API, the producer carries a receipt saying so - check derivedFrom and the verified field on each producer to tell a proven link from an inferred one. Call this before invoking any operation whose path contains an identifier, instead of guessing one.',
     { tool: TOOL_NAME_ARG },
     ['tool'],
   ),
