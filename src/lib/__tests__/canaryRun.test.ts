@@ -199,3 +199,70 @@ describe('buildCanaryStatements', () => {
     expect(second.changes.map((c) => c.tool)).toEqual(['get_pet']);
   });
 });
+
+// The write path has always stamped `environment`; the read ignored it, so a
+// sandbox observation and a production one competed for "newest" on the same
+// operation. The loser's shape became the baseline for the winner's next run,
+// and the difference between two ENVIRONMENTS was reported as behavioural
+// drift on the contract — a false breaking-change claim, which is the one
+// thing this canary is built never to produce.
+describe('comparison is fenced to one environment', () => {
+  // `name` is in the action's responseSchema, so a removal is reportable.
+  const wide = () => seen({ id: 'x', name: 'Rex' }, 3);
+  const narrow = () => seen({ id: 'x' }, 3);
+
+  it('does not compare a production run against a sandbox observation', async () => {
+    const seeded = await seedApi();
+    const at = (min: number) => new Date(Date.UTC(2026, 8, 8, 10, min));
+
+    // Production has only ever returned the narrow shape.
+    await run(
+      (
+        await buildCanaryStatements(db, {
+          ...inputFor(seeded, [snapshot(narrow())]),
+          environment: 'production',
+          observedAt: at(0),
+        })
+      ).statements,
+    );
+
+    // A sandbox run lands LATER, so unfenced it is the newest row for this
+    // operation and becomes the baseline the next production run is compared
+    // against. That ordering is the whole bug.
+    await run(
+      (
+        await buildCanaryStatements(db, {
+          ...inputFor(seeded, [snapshot(wide())]),
+          environment: 'sandbox',
+          observedAt: at(1),
+        })
+      ).statements,
+    );
+
+    const result = await buildCanaryStatements(db, {
+      ...inputFor(seeded, [snapshot(narrow())]),
+      environment: 'production',
+      observedAt: at(2),
+    });
+    await run(result.statements);
+
+    // Production never returned `name`, so nothing about it has changed. Only
+    // sandbox ever did.
+    expect(result.changes.map((c) => c.fieldPath)).not.toContain('response.name');
+    expect(result.changes).toEqual([]);
+  });
+
+  it('still compares within one environment', async () => {
+    const seeded = await seedApi();
+
+    await run(
+      (await buildCanaryStatements(db, { ...inputFor(seeded, [snapshot(wide())]), environment: 'production' })).statements,
+    );
+    const result = await buildCanaryStatements(db, {
+      ...inputFor(seeded, [snapshot(narrow())]),
+      environment: 'production',
+    });
+
+    expect(result.changes.map((c) => c.fieldPath)).toContain('response.name');
+  });
+})

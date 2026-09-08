@@ -11,7 +11,14 @@
 
 import type { Action } from '../ir';
 import { invokeAction } from '../mcpTools';
-import { inferShape, mergeShapes, percentile, type ObservedShape, type OperationSnapshot } from '../changes/observation';
+import {
+  MIN_SAMPLES,
+  inferShape,
+  mergeShapes,
+  percentile,
+  type ObservedShape,
+  type OperationSnapshot,
+} from '../changes/observation';
 import { lifecycleEvidence } from './lifecycle';
 import type { EvidenceFactInput } from '../evidence';
 import type { ProbeContext } from './types';
@@ -27,14 +34,36 @@ export type CanaryOptions = {
   maxOperations?: number;
 };
 
+/**
+ * Why an eligible operation yielded nothing comparable.
+ *
+ * `no_successful_sample` — every attempt failed, threw, or answered non-2xx.
+ * `below_min_samples`   — some samples succeeded, but fewer than diffSnapshots
+ *                         requires, so no comparison could be made either way.
+ */
+export type InconclusiveReason = 'no_successful_sample' | 'below_min_samples';
+
+/**
+ * Carries the actionKey as well as the tool name.
+ *
+ * These used to be tool names while snapshots key on `action.id`, putting two
+ * identifier spaces in one result. Nothing consumed more than `.length`, so it
+ * never misbehaved — it was a trap for the first caller to try to join the two.
+ */
+export type InconclusiveOperation = {
+  actionKey: string;
+  tool: string;
+  reason: InconclusiveReason;
+};
+
 export type CanaryResult = {
   snapshots: OperationSnapshot[];
   evidence: EvidenceFactInput[];
-  // Operations that were eligible but produced no usable 2xx sample. Reported
+  // Operations that were eligible but produced nothing comparable. Reported
   // rather than silently dropped: "we could not look" is a different statement
   // from "we looked and nothing changed", and the freshness surfaces must not
   // conflate them.
-  inconclusive: string[];
+  inconclusive: InconclusiveOperation[];
 };
 
 // Can a request for this operation actually be built? Either it demands
@@ -63,7 +92,7 @@ export async function runCanary(ctx: ProbeContext, opts: CanaryOptions = {}): Pr
 
   const snapshots: OperationSnapshot[] = [];
   const evidence: EvidenceFactInput[] = [];
-  const inconclusive: string[] = [];
+  const inconclusive: InconclusiveOperation[] = [];
 
   for (const action of eligible(ctx.record.actions, opts.maxOperations ?? MAX_OPERATIONS)) {
     const shapes: ObservedShape[] = [];
@@ -99,7 +128,27 @@ export async function runCanary(ctx: ProbeContext, opts: CanaryOptions = {}): Pr
     }
 
     if (!shapes.length) {
-      inconclusive.push(action.name);
+      inconclusive.push({ actionKey: action.id, tool: action.name, reason: 'no_successful_sample' });
+      continue;
+    }
+
+    // A snapshot below the comparison floor is reported and NOT stored.
+    //
+    // DEFAULT_SAMPLES and MIN_SAMPLES are both 3 and only 2xx responses build a
+    // shape, so a single failed sample left sampleCount at 2 — and
+    // diffSnapshots answers [] whenever either side is under the floor. The
+    // snapshot was still written, which is the part that made this durable: it
+    // became the newest row, so the NEXT run compared against an uncomparable
+    // baseline and said nothing either. One transient blip silently disabled
+    // drift detection for that operation across two runs, and nothing reported
+    // it.
+    //
+    // Declining to store it keeps the last comparable snapshot as the baseline,
+    // so the next run compares properly, and the operation is named here
+    // instead of vanishing. Raising DEFAULT_SAMPLES would have masked the same
+    // hole at 33% more outbound traffic per operation.
+    if (shapes.length < MIN_SAMPLES) {
+      inconclusive.push({ actionKey: action.id, tool: action.name, reason: 'below_min_samples' });
       continue;
     }
 
