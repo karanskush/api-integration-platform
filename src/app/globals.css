@@ -1026,3 +1026,27 @@ table.params td.desc { color: var(--fg-dim); }
   .ask-hint { display: none; }
   .ask-seed-tool { display: none; }
 }
+
+/* Import form: the optional dev key and its escape hatch. The key field is the
+   second half of the two-step onboarding the landing page sells, so its hint
+   carries the same promise the page makes — read-safe only, never stored. */
+.import-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-mute);
+}
+.import-skip {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-mute);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.import-skip:hover { color: var(--fg-dim); }

@@ -17,6 +17,11 @@ const EXAMPLES = [
 
 const STAGES = ['Fetching source', 'Parsing endpoints', 'Normalizing actions', 'Minting MCP server'];
 
+// The fifth stage is the only real one — the four above are a progress
+// animation on a sub-ten-second call, this one is an actual round trip that
+// makes live requests against the caller's API and takes as long as it takes.
+const VERIFY_STAGE = 'Running read-safe checks';
+
 function detectedMode(value: string): ImportMode | null {
   const text = value.trim();
   if (/^curl(?:\s|$)/i.test(text)) return 'curl';
@@ -37,7 +42,16 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Lives here and nowhere else. Not sessionStorage, not a URL param, and
+  // never handed to the background pipeline — routing it through QStash to
+  // reach the job chain would persist it in a queue, which is exactly what the
+  // landing page promises we do not do. See /api/apis/[slug]/verify: the key
+  // reaches runScoreEngine and is discarded with the request.
+  const [devKey, setDevKey] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [withVerify, setWithVerify] = useState(false);
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const verifyAbort = useRef<AbortController | null>(null);
 
   const clearTimers = () => {
     timers.current.forEach(clearTimeout);
@@ -56,6 +70,33 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
     clearTimers();
     setStage(0);
     timers.current = [1, 2, 3].map((next) => setTimeout(() => setStage(next), next * 1100));
+  };
+
+  // Fire-and-await, but never fatal: a score is a bonus on top of the import,
+  // and an unreachable upstream or an exhausted rate limit must not cost
+  // someone the workspace they just created. Whatever happens here, they land
+  // on their page — where RunVerificationButton is the way to try again.
+  const runVerification = async (slug: string) => {
+    const key = devKey.trim();
+    if (!key) return;
+
+    const controller = new AbortController();
+    verifyAbort.current = controller;
+    setVerifying(true);
+    try {
+      await fetch(`/api/apis/${slug}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upstreamKey: key }),
+        signal: controller.signal,
+      });
+    } catch {
+      // Aborted by "skip", or the network gave out. Either way: keep going.
+    } finally {
+      verifyAbort.current = null;
+      setVerifying(false);
+      setDevKey('');
+    }
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -79,6 +120,7 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
     }
 
     setBusy(true);
+    setWithVerify(deep && devKey.trim().length > 0);
     startProgress();
     try {
       if (deep) {
@@ -92,6 +134,8 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
         if (deepResponse.ok && typeof deepData.slug === 'string') {
           clearTimers();
           setStage(STAGES.length);
+          await runVerification(deepData.slug);
+          setStage(STAGES.length + 1);
           window.location.assign(`/${deepData.slug}`);
           return;
         }
@@ -217,6 +261,29 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
         )}
       </div>
 
+      {/* Step two of the two the landing page promises. Optional: without a key
+          the import still produces the page and the MCP server, it just cannot
+          grade the two sub-scores that need live calls. */}
+      {deep && (
+        <div className="import-field">
+          <label htmlFor="import-devkey">Dev key — optional</label>
+          <input
+            id="import-devkey"
+            type="password"
+            value={devKey}
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="sk_test_…"
+            onChange={(event) => setDevKey(event.target.value)}
+          />
+          <p className="import-hint">
+            A sandbox or test key is enough. We only run read-safe calls — writes are never
+            executed. Used for this run and discarded: never stored, never logged.
+          </p>
+        </div>
+      )}
+
       {mode === 'url' && (
         <div className="import-examples" aria-label="Example specifications">
           <span>Try an example</span>
@@ -235,7 +302,7 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
 
       {busy && (
         <div className="import-progress" role="status" aria-live="polite">
-          {STAGES.map((label, index) => (
+          {(withVerify ? [...STAGES, VERIFY_STAGE] : STAGES).map((label, index) => (
             <span key={label} data-state={index < stage ? 'done' : index === stage ? 'active' : 'waiting'}>
               {index < stage ? '✓' : index + 1} {label}
             </span>
@@ -243,10 +310,27 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
         </div>
       )}
 
+      {/* A slow or unreachable upstream must never trap someone inside
+          onboarding. Skipping abandons the score, not the import — the
+          workspace already exists, and the API page can run it later. */}
+      {verifying && (
+        <button
+          type="button"
+          className="import-skip"
+          onClick={() => verifyAbort.current?.abort()}
+        >
+          Skip and continue to my workspace
+        </button>
+      )}
+
       {error && <p className="form-error" role="alert">{error}</p>}
 
       <button className="btn primary btn-block" type="submit" disabled={busy}>
-        {busy ? STAGES[Math.min(stage, STAGES.length - 1)] : 'Generate workspace'}
+        {busy
+          ? (withVerify ? [...STAGES, VERIFY_STAGE] : STAGES)[
+              Math.min(stage, withVerify ? STAGES.length : STAGES.length - 1)
+            ]
+          : 'Generate workspace'}
         <span aria-hidden="true">→</span>
       </button>
     </form>

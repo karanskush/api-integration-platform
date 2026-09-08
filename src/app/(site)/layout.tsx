@@ -2,9 +2,10 @@ import { Show, UserButton } from '@clerk/nextjs';
 import SiteFooter from '@/components/SiteFooter';
 import '../landing.css';
 
-// The marketing shell: /, /how-it-works, /pricing. Sells the instrument; every path out of
-// here lands in the (product) console. landing.css is scoped to this group —
-// the console never pays for the chapter styles.
+// The marketing shell: /, /how-it-works, /pricing. Sells the instrument; every
+// path out of here lands in the (product) console. landing.css is scoped to
+// this group — the console never pays for the marketing styles, and
+// how-it-works.css is loaded by that route alone.
 const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
