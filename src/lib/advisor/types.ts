@@ -34,6 +34,15 @@ export type AdvisorInsights = {
     // it describes a superseded contract (version fencing).
     stale: boolean;
     specVersionId: string;
+    // The sample size behind the number, and how much of it was actually
+    // measured against the running API. A row only exists when at least one
+    // call succeeded, so `liveCallsSucceeded` is never zero on a fresh row —
+    // but rows written before this accounting existed report 0, and the tools
+    // say "not recorded" rather than implying a measurement nobody took.
+    liveCallsAttempted: number;
+    liveCallsSucceeded: number;
+    observedPoints: number;
+    staticPoints: number;
   } | null;
   // Observed probe findings, keyed by the action id used in ImportRecord.
   errorObservations: Array<{

@@ -15,6 +15,10 @@ const verified = {
   verifiedAt: '2026-07-20T10:00:00.000Z',
   stale: false,
   specVersionId: 'v1',
+  liveCallsAttempted: 6,
+  liveCallsSucceeded: 4,
+  observedPoints: 20,
+  staticPoints: 40,
 };
 
 describe('getScoreExplanation', () => {
@@ -90,5 +94,34 @@ describe('getScoreExplanation', () => {
       const res = getScoreExplanation(ctx(petstoreActions(), { verified: { ...verified, total } }));
       expect(res.interpretation).toBeTruthy();
     }
+  });
+});
+
+// GAP_ANALYSIS §0.2: the fix was to SPLIT the blend and publish the split, not
+// to rename it. These assert the published half.
+describe('getScoreExplanation reports its sample', () => {
+  it('states how many upstream calls the score rests on', () => {
+    const res = getScoreExplanation(ctx(petstoreActions(), { verified }));
+
+    expect(res.sample.recorded).toBe(true);
+    expect(res.sample.upstreamCallsAttempted).toBe(6);
+    expect(res.sample.upstreamCallsSucceeded).toBe(4);
+  });
+
+  it('separates what was observed from what was derived from the spec', () => {
+    const res = getScoreExplanation(ctx(petstoreActions(), { verified }));
+
+    expect(res.sample.observedPoints).toBe(20);
+    expect(res.sample.staticPoints).toBe(40);
+    expect(res.sample.note).toContain('cannot be measured by calling');
+  });
+
+  it('admits when a score predates the accounting rather than implying a sample', () => {
+    const legacy = { ...verified, liveCallsAttempted: 0, liveCallsSucceeded: 0, observedPoints: 0, staticPoints: 0 };
+    const res = getScoreExplanation(ctx(petstoreActions(), { verified: legacy }));
+
+    expect(res.sample.recorded).toBe(false);
+    expect(res.sample.note).toContain('sample size is unknown');
+    expect(res.sample.upstreamCallsAttempted).toBeUndefined();
   });
 });

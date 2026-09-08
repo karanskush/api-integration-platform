@@ -172,6 +172,10 @@ describe('checkFreshness', () => {
         verifiedAt: daysAgo(3),
         stale: true,
         specVersionId: 'v1',
+        liveCallsAttempted: 6,
+        liveCallsSucceeded: 4,
+        observedPoints: 20,
+        staticPoints: 40,
       },
     });
     expect(checkFreshness(context).verified).toMatchObject({ total: 82, stale: true });

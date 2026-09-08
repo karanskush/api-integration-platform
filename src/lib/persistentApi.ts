@@ -17,6 +17,12 @@ export type VerifiedScore = {
   stale: boolean;
   verifiedAt: string; // ISO
   specVersionId: string;
+  // The sample the number rests on (GAP_ANALYSIS_2026-08-04.md §0.2). A row is
+  // only written when at least one upstream call succeeded, so this is what
+  // makes "verified" mean something to a reader. 0 on rows written before the
+  // accounting existed, which the panel reports as unknown rather than as none.
+  liveCallsAttempted: number;
+  liveCallsSucceeded: number;
 };
 
 export type ApiVerificationState = {
@@ -156,6 +162,8 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
       explanation: scores.explanation,
       scoreSpecVersionId: scores.specVersionId,
       verifiedAt: scores.verifiedAt,
+      liveCallsAttempted: scores.liveCallsAttempted,
+      liveCallsSucceeded: scores.liveCallsSucceeded,
     })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
@@ -183,6 +191,8 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
             stale: row.scoreSpecVersionId !== row.currentSpecVersionId,
             verifiedAt: row.verifiedAt!.toISOString(),
             specVersionId: row.scoreSpecVersionId!,
+            liveCallsAttempted: row.liveCallsAttempted ?? 0,
+            liveCallsSucceeded: row.liveCallsSucceeded ?? 0,
           },
   };
 }

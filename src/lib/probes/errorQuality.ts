@@ -74,27 +74,41 @@ export async function runErrorQuality(ctx: ProbeContext): Promise<ProbeOutcome> 
 
   const evidence: EvidenceFactInput[] = [];
   let passCount = 0;
+  let graded = 0;
   for (const { action, params } of samples) {
-    let sampleStatus = 0;
-    let readable = false;
     try {
       const res = await invoke(action, params, target, ctx.upstreamKey);
-      sampleStatus = res.status;
-      readable = hasReadableMessage(res.bodyText);
       // Recorded, never scored — see probes/lifecycle.ts.
       evidence.push(...lifecycleEvidence(action, res.headers));
+
+      // This probe grades ERROR bodies, so it needs an error. A 2xx means the
+      // corrupted request was accepted anyway and there is nothing to grade —
+      // previously a 200 carrying a `message` field scored a point, which
+      // rewarded an API for the opposite of what is being measured.
+      if (res.status < 400) continue;
+
+      graded++;
+      const readable = hasReadableMessage(res.bodyText);
+      if (readable) passCount++;
+      evidence.push({
+        kind: 'probe.error_quality',
+        source: 'probe',
+        actionId: action.id,
+        payload: { actionId: action.id, sampleStatus: res.status, hasReadableMessage: readable },
+      });
     } catch {
-      // corrupted params rejected before a response existed to grade — counts
-      // as a miss for this action, not a probe-wide failure
+      // Rejected client-side (Ajv) or unreachable, so no response existed to
+      // grade. Excluded rather than counted as a miss — and no fact written,
+      // because the old `sampleStatus: 0` row rendered to users as "returned an
+      // unreadable error on a 0 response", describing an exchange that never
+      // happened.
+      continue;
     }
-    if (readable) passCount++;
-    evidence.push({
-      kind: 'probe.error_quality',
-      source: 'probe',
-      actionId: action.id,
-      payload: { actionId: action.id, sampleStatus, hasReadableMessage: readable },
-    });
   }
 
-  return { subscore: Math.round((passCount / samples.length) * FULL), evidence };
+  // Nothing we sent provoked an error, so this API's error quality is
+  // unmeasured — not bad. run.ts excludes the subscore from the total.
+  if (graded === 0) return { subscore: 0, evidence, insufficientData: true };
+
+  return { subscore: Math.round((passCount / graded) * FULL), evidence };
 }

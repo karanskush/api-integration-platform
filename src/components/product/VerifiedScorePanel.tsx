@@ -18,7 +18,16 @@ const SUBSCORES: { key: keyof VerifiedScore; label: string }[] = [
 // the one being served. Rendering it green would be the exact failure the
 // version fence exists to prevent.
 export default function VerifiedScorePanel({ scores }: { scores: VerifiedScore }) {
-  const { total, explanation, stale, verifiedAt } = scores;
+  const { total, explanation, stale, verifiedAt, liveCallsAttempted, liveCallsSucceeded } = scores;
+  // The claim below is "computed from live probes against the real API", which
+  // is only true because scoreWrite.ts now refuses to write a row unless a call
+  // actually succeeded. Showing the sample is what lets a reader check that
+  // claim instead of taking it. Rows written before the accounting existed
+  // report 0, and say so rather than implying nothing was called.
+  const sample =
+    liveCallsAttempted === 0
+      ? 'Sample size not recorded — this score predates per-run call accounting.'
+      : `${liveCallsSucceeded} of ${liveCallsAttempted} upstream ${liveCallsAttempted === 1 ? 'call' : 'calls'} succeeded.`;
   const accent = stale ? 'var(--fg-dim)' : 'var(--accent-green)';
 
   return (
@@ -39,6 +48,9 @@ export default function VerifiedScorePanel({ scores }: { scores: VerifiedScore }
         {stale
           ? `Computed from live probes on ${formatUtcDate(verifiedAt)} against a previous spec version. The spec has changed since; these numbers describe the old contract until the next verification run.`
           : `Computed from live probes run against the real API on ${formatUtcDate(verifiedAt)} — this is the earned Agent-Ready Score, not a static estimate.`}
+      </p>
+      <p className="mono" style={{ color: 'var(--fg-dim)', fontSize: 11.5, marginTop: -10, marginBottom: 16 }}>
+        {sample}
       </p>
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>

@@ -202,6 +202,8 @@ export async function reverifyOne(
       specVersionId,
       total: result.total,
       subscores: result.subscores,
+      liveCalls: result.liveCalls,
+      points: result.points,
       evidence: result.evidence,
     });
 

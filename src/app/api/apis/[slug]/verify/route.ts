@@ -68,6 +68,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       specVersionId: api.currentSpecVersionId!,
       total: result.total,
       subscores: result.subscores,
+      liveCalls: result.liveCalls,
+      points: result.points,
       evidence: result.evidence,
     });
 

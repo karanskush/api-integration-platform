@@ -78,6 +78,11 @@ function record(overrides: Partial<ImportRecord> = {}): ImportRecord {
 const SCORE: ScoreEngineResult = {
   total: 88,
   subscores: { authClarity: 25, errorQuality: 22, docDrift: null, idempotency: 20 },
+  // A run that reached the API: without at least one success, scoreWrite.ts
+  // refuses to write a scores row at all and these tests would be asserting
+  // against a row that no longer exists.
+  liveCalls: { attempted: 4, succeeded: 3, failed: 1 },
+  points: { observed: 22, static: 45, max: 75 },
   evidence: [{ kind: 'probe.auth_reject', source: 'probe', payload: { statusObserved: 401, expectedAuth: 'bearer' } }],
 };
 

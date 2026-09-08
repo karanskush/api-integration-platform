@@ -209,6 +209,19 @@ export const scores = pgTable('scores', {
   docDrift: integer('doc_drift'), // null = insufficient data to probe, excluded from total
   idempotency: integer('idempotency').notNull(),
   explanation: jsonb('explanation').notNull(), // [{ factId, message }] — same convention as scorePreviews.explanation
+  // The sample size behind the number. A row only exists when
+  // live_calls_succeeded > 0 (scoreWrite.ts refuses to write otherwise), so
+  // these are not "extra detail" — they are what makes the row admissible.
+  // Before they existed, authClarity computed its subscore before any I/O and
+  // idempotency made no calls at all, so an entirely unreachable API could
+  // still publish a green badge.
+  liveCallsAttempted: integer('live_calls_attempted').notNull().default(0),
+  liveCallsSucceeded: integer('live_calls_succeeded').notNull().default(0),
+  // How much of `total` was measured against the running API versus derived
+  // from the spec. Published rather than blended away: the two are different
+  // epistemic classes and a consumer is entitled to weigh them differently.
+  observedPoints: integer('observed_points').notNull().default(0),
+  staticPoints: integer('static_points').notNull().default(0),
   verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('scores_api_id_idx').on(t.apiId)]);
 

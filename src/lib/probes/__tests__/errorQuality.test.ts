@@ -174,14 +174,32 @@ describe('runErrorQuality', () => {
     expect(result.evidence).toHaveLength(2);
   });
 
-  it('treats a thrown error from invoke as a miss, without crashing', async () => {
+  // Previously counted as a miss AND recorded a fact with sampleStatus: 0,
+  // which rendered to users as "returned an unreadable error on a 0 response" —
+  // a description of an HTTP exchange that never happened.
+  it('excludes an unreachable upstream instead of counting it as a miss', async () => {
     const invoke = (async () => {
       throw new Error('upstream unreachable');
     }) as typeof invokeAction;
-    const ctx: ProbeContext = { record: record(), invoke };
-    const result = await runErrorQuality(ctx);
-    expect(result.subscore).toBe(0);
-    expect(result.evidence[0].payload).toMatchObject({ hasReadableMessage: false, sampleStatus: 0 });
+    const result = await runErrorQuality({ record: record(), invoke });
+
+    expect(result.insufficientData).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toHaveLength(0);
+  });
+
+  // This probe measures how good an API's ERRORS are. A 2xx means the corrupted
+  // request was accepted, so there is no error to grade — and scoring it as a
+  // pass rewarded the API for the opposite of what is measured.
+  it('does not award a point for a 2xx carrying a message field', async () => {
+    const invoke = (async () => ({
+      status: 200,
+      latencyMs: 5,
+      bodyText: JSON.stringify({ message: 'Everything is fine, thanks for asking.' }),
+    })) as typeof invokeAction;
+    const result = await runErrorQuality({ record: record(), invoke });
+
+    expect(result.insufficientData).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toHaveLength(0);
   });
 });
 

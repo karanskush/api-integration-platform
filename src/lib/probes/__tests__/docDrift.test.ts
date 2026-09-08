@@ -91,12 +91,39 @@ describe('runDocDrift', () => {
     expect((result.evidence[0].payload as { mismatches: string[] }).mismatches).toContain('type_mismatch:count');
   });
 
-  it('grades an unparseable response body as a full mismatch', async () => {
+  // Previously graded as a full mismatch, which attributed OUR inability to
+  // read the response to the provider's documentation quality — and wrote a
+  // doc_drift fact describing an exchange that never produced a comparison.
+  it('excludes an unparseable response body instead of grading it a full mismatch', async () => {
     const invoke = fakeInvoke('not json');
     const ctx: ProbeContext = { record: record(), invoke };
     const result = await runDocDrift(ctx);
-    expect(result.subscore).toBe(0);
-    expect(result.evidence[0].payload).toMatchObject({ matchedFields: 0, declaredFields: 3 });
+    expect(result.insufficientData).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.doc_drift')).toHaveLength(0);
+  });
+
+  // The case that mattered most: an outage is not bad documentation.
+  it('excludes a non-2xx response rather than scoring the provider down for it', async () => {
+    const invoke = (async () => ({
+      status: 503,
+      latencyMs: 5,
+      bodyText: JSON.stringify({ error: 'temporarily unavailable' }),
+    })) as typeof invokeAction;
+    const result = await runDocDrift({ record: record(), invoke });
+
+    expect(result.insufficientData).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.doc_drift')).toHaveLength(0);
+  });
+
+  it('excludes an auth failure rather than reading it as drift', async () => {
+    const invoke = (async () => ({
+      status: 401,
+      latencyMs: 5,
+      bodyText: JSON.stringify({ message: 'unauthorized' }),
+    })) as typeof invokeAction;
+    const result = await runDocDrift({ record: record(), invoke });
+
+    expect(result.insufficientData).toBe(true);
   });
 
   it('averages the ratio across up to 3 sampled actions', async () => {

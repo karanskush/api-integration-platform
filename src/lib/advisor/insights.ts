@@ -98,6 +98,10 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
       verifiedAt: scoreRow.verifiedAt.toISOString(),
       stale: scoreRow.specVersionId !== api.currentSpecVersionId,
       specVersionId: scoreRow.specVersionId,
+      liveCallsAttempted: scoreRow.liveCallsAttempted,
+      liveCallsSucceeded: scoreRow.liveCallsSucceeded,
+      observedPoints: scoreRow.observedPoints,
+      staticPoints: scoreRow.staticPoints,
     };
   }
 
