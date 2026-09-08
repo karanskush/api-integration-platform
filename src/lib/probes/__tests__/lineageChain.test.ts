@@ -283,3 +283,120 @@ describe('a real-world non-discriminating query filter', () => {
     expect(obs.reason).toBe('control_also_succeeded');
   });
 });
+
+// One list endpoint commonly feeds several consumers from DIFFERENT fields of
+// the same response. The producer memo exists so that costs one list call, but
+// what it memoizes is the EXTRACTION, which depends on the field — so it has to
+// be keyed on the field too. Keyed on the operation alone, the second chain
+// received the first chain's orderIds and sent them to get_customer, which 404s
+// on every one: two candidates, zero successes, all 4xx — the exact shape of
+// `contradicted`. Two such runs would publish `refuted` against a sound edge.
+describe('one producer feeding two consumers from different fields', () => {
+  const ORDER_ID = 'ord_SENTINEL01';
+  const CUSTOMER_ID = 'cus_SENTINEL01';
+
+  function twoFieldRecord(): ImportRecord {
+    const actions = [
+      action({
+        name: 'list_orders',
+        path: '/v1/orders',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { orderId: { type: 'string' }, customerId: { type: 'string' } },
+              },
+            },
+          },
+        },
+      }),
+      action({
+        name: 'get_order',
+        path: '/v1/orders/{orderId}',
+        paramsSchema: {
+          type: 'object',
+          required: ['orderId'],
+          properties: { orderId: { type: 'string', 'x-docentapi-in': 'path' } },
+        },
+      }),
+      action({
+        name: 'get_customer',
+        path: '/v1/customers/{customerId}',
+        paramsSchema: {
+          type: 'object',
+          required: ['customerId'],
+          properties: { customerId: { type: 'string', 'x-docentapi-in': 'path' } },
+        },
+      }),
+    ];
+    return {
+      id: 'shop',
+      name: 'Shop',
+      source: 'openapi',
+      baseUrls: ['https://api.shop.test'],
+      auth: 'bearer',
+      actions,
+      counts: { total: 3, read: 3, write: 0, destructive: 0 },
+      createdAt: 0,
+      expiresAt: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  // Each detail endpoint accepts ONLY its own id space, so feeding it the wrong
+  // field's value is indistinguishable from the edge being wrong.
+  function strictApi() {
+    const calls: Call[] = [];
+    const invoke = (async (a: Action, params: Record<string, unknown>) => {
+      calls.push({ tool: a.name, params: { ...params } });
+      if (a.name === 'list_orders') {
+        return {
+          status: 200,
+          latencyMs: 5,
+          bodyText: JSON.stringify({
+            data: [
+              { orderId: ORDER_ID, customerId: CUSTOMER_ID },
+              { orderId: 'ord_SENTINEL02', customerId: 'cus_SENTINEL02' },
+            ],
+          }),
+        };
+      }
+      const value = a.name === 'get_order' ? params.orderId : params.customerId;
+      const prefix = a.name === 'get_order' ? 'ord_' : 'cus_';
+      const ok = typeof value === 'string' && value.startsWith(prefix);
+      return {
+        status: ok ? 200 : 404,
+        latencyMs: 5,
+        bodyText: ok ? '{"ok":true}' : '{"error":"not found"}',
+      };
+    }) as unknown as typeof invokeAction;
+    return { invoke, calls };
+  }
+
+  it('does not manufacture a refutation for the second field', async () => {
+    const record = twoFieldRecord();
+    const { invoke } = strictApi();
+    const result = await runLineageChains({ record, invoke }, buildExecutionPlan(record));
+
+    // Both edges are sound, so neither may come back contradicted.
+    expect(result.observations.length).toBeGreaterThanOrEqual(2);
+    expect(result.observations.map((o) => o.outcome)).not.toContain('contradicted');
+  });
+
+  it('sends each consumer a value taken from its own field', async () => {
+    const record = twoFieldRecord();
+    const { invoke, calls } = strictApi();
+    await runLineageChains({ record, invoke }, buildExecutionPlan(record));
+
+    // The control deliberately sends a fabricated value, so only assert that no
+    // real id from the WRONG field was ever sent.
+    for (const c of calls.filter((x) => x.tool === 'get_customer')) {
+      expect(c.params.customerId).not.toBe(ORDER_ID);
+    }
+    for (const c of calls.filter((x) => x.tool === 'get_order')) {
+      expect(c.params.orderId).not.toBe(CUSTOMER_ID);
+    }
+  });
+});

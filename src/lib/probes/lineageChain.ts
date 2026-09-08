@@ -101,7 +101,20 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
   // The tradeoff is that a ref's lifetime is the RUN rather than the chain —
   // acceptable because the finally below clears it and because a ValueRef
   // cannot be written down in the meantime.
+  //
+  // Keyed on operation AND field, never operation alone. What is memoized is
+  // the EXTRACTION, and extraction reads chain.producerField — so two chains
+  // sharing a producer but reading different fields
+  // (list_orders.data[].orderId and list_orders.data[].customerId) are not the
+  // same result. Keying on the operation alone fed the first chain's orderIds
+  // to a consumer expecting a customerId, which 404s; two candidates, zero
+  // successes, all 4xx is exactly the `contradicted` shape, and two such runs
+  // publish `refuted` — "Do not rely on this link" — against a sound edge. A
+  // verification engine inventing a refutation is worse than one that says
+  // nothing, so the extra producer call per distinct field is worth it, and it
+  // is bounded by MAX_CHAINS anyway.
   const produced = new Map<string, { refs: ValueRef[]; reason: ExtractReason }>();
+  const producedKey = (chain: PlannedChain) => `${chain.producer.name}|${chain.producerField}`;
 
   const call = async (
     action: PlannedChain['producer'],
@@ -132,7 +145,7 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
       if (aborted) break;
 
       // --- 1. the producer, once per operation per run ---
-      let candidates = produced.get(chain.producer.name);
+      let candidates = produced.get(producedKey(chain));
       if (!candidates) {
         const res = await call(chain.producer, chain.producerParams);
         if (aborted) break;
@@ -153,7 +166,7 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
             candidates = { refs: [], reason: 'unparseable' };
           }
         }
-        produced.set(chain.producer.name, candidates);
+        produced.set(producedKey(chain), candidates);
       }
 
       const statuses: number[] = [];
