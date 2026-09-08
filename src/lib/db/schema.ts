@@ -274,7 +274,16 @@ export const credentialAudit = pgTable('credential_audit', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
   orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
-  apiId: uuid('api_id').references(() => apis.id, { onDelete: 'cascade' }),
+  // SET NULL, not cascade (GAP_ANALYSIS_2026-08-04.md §0.4). Deleting an API
+  // used to destroy the forensic record of every credential decrypt performed
+  // for it — the audit trail is precisely what makes a vaulted credential
+  // defensible, and it has to outlive the entity it describes. A failed decrypt
+  // is as interesting as a successful one, and both are most interesting after
+  // somebody has removed the evidence.
+  //
+  // org_id stays NOT NULL and cascades: when the ORG goes, the tenant is gone
+  // and there is nobody left with a right to the record.
+  apiId: uuid('api_id').references(() => apis.id, { onDelete: 'set null' }),
   environment: text('environment'),
   // created|rotated|deleted|used|denied|decrypt_failed
   action: text('action').notNull(),

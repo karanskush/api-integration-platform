@@ -252,6 +252,53 @@ describe('schema constraints', () => {
     expect(await db.select().from(schema.orgs).where(eq(schema.orgs.id, org.id))).toHaveLength(1);
   });
 
+  // GAP_ANALYSIS_2026-08-04.md §0.4. The audit trail is what makes a vaulted
+  // credential defensible, so it has to outlive the thing it describes —
+  // otherwise deleting an API is also a way to erase the record of every
+  // decrypt performed with its credential.
+  it('keeps the credential audit trail when its api is deleted', async () => {
+    const { org, user } = await makeOrgWithUser(db, 'audit-survives');
+    const [api] = await db
+      .insert(schema.apis)
+      .values({ orgId: org.id, slug: 'audit-survives-api', name: 'Audit' })
+      .returning();
+    const [credential] = await db
+      .insert(schema.credentials)
+      .values({
+        orgId: org.id,
+        apiId: api.id,
+        environment: 'production',
+        encryptedKey: 'x',
+        iv: 'x',
+        authTag: 'x',
+        wrappedDek: 'x',
+        kmsKeyId: 'local',
+        fingerprint: 'fp-audit-survives',
+        hint: '••••1234',
+        createdBy: user.id,
+      })
+      .returning();
+    await db.insert(schema.credentialAudit).values({
+      credentialId: credential.id,
+      orgId: org.id,
+      apiId: api.id,
+      environment: 'production',
+      action: 'used',
+      actorType: 'mcp',
+    });
+
+    await db.delete(schema.apis).where(eq(schema.apis.id, api.id));
+
+    // The secret material goes; the record that it was used does not.
+    expect(await db.select().from(schema.credentials).where(eq(schema.credentials.apiId, api.id))).toHaveLength(0);
+    const audit = await db.select().from(schema.credentialAudit).where(eq(schema.credentialAudit.orgId, org.id));
+    expect(audit).toHaveLength(1);
+    expect(audit[0].action).toBe('used');
+    // Blanked rather than dangling, so the row is still readable and still
+    // attributable to the org that owned it.
+    expect(audit[0].apiId).toBeNull();
+  });
+
   it('getOrCreateSystemOrg is idempotent and creates exactly one system org', async () => {
     const first = await getOrCreateSystemOrg(db);
     const second = await getOrCreateSystemOrg(db);
