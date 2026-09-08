@@ -14,6 +14,7 @@
 // agent as a quoted string in a `description` field rather than as prose the
 // model might read as its own directive.
 
+import type { FieldOrigin } from '../fieldMap';
 import type { ChangeSummary } from '../changes/query';
 import type { ChangeRow } from '../changes/ledger';
 import type { Action, ImportRecord } from '../ir';
@@ -53,6 +54,35 @@ export type AdvisorInsights = {
     matchedParam?: string;
   }>;
   authObservations: Array<{ statusObserved: number; expectedAuth: string }>;
+  // What the deep-analysis pass concluded a field MEANS, read back out of
+  // llm.field_semantics. This is the most expensive knowledge the system
+  // produces — a docs crawl plus an LLM pass over the provider's own
+  // documentation — and until now nothing read it back: PROBE_KINDS admitted
+  // four probe kinds and nothing else, so the enrichment reached the enriched
+  // spec artifact (which has no reader) and stopped there.
+  //
+  // Keyed by tool name and field path, which is exactly how describe_fields
+  // addresses a field, so no resolution step is needed.
+  fieldSemantics: Array<{
+    tool: string;
+    field: string;
+    meaning: string;
+    constraint?: string;
+    sourcedFrom: 'spec' | 'docs';
+  }>;
+  // Answers a PERSON who runs this API gave to questions we emailed them.
+  //
+  // The highest trust tier in the system (source 'human', confidence 1) and,
+  // until now, the one that reached no consumer at all: the answers were
+  // written to clarifications + evidence_facts and read back only by the
+  // enriched-spec artifact, which nothing reads either. So the product asked
+  // the provider's own team what a field means, was told, and then kept serving
+  // agents its own heuristic guess.
+  //
+  // `origin` is present only when the answer actually reclassified the field —
+  // an answer about a format or merge semantics confirms a field without
+  // changing where its value comes from. Same rule as enrichedSpec.ts.
+  ownerAnswers: Array<{ tool: string; field: string; origin?: FieldOrigin; question: string }>;
   // Recent classified changes plus the freshness summary, so an agent can ask
   // whether what it learned still holds. `summary` is null for an ephemeral
   // import, which has no stored history to report.
@@ -66,6 +96,8 @@ export function emptyInsights(): AdvisorInsights {
     driftObservations: [],
     idempotencyObservations: [],
     authObservations: [],
+    fieldSemantics: [],
+    ownerAnswers: [],
     changes: { recent: [], summary: null },
   };
 }

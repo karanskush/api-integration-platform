@@ -20,9 +20,19 @@ function findAction(ctx: AdvisorContext, name: string): Action | undefined {
   return ctx.record.actions.find((a) => a.name === name);
 }
 
+export type FieldSemantics = { meaning: string; constraint?: string; sourcedFrom: 'spec' | 'docs' };
+
 // Compact wire shape. The full FieldNode carries more than an agent needs per
 // row, and a 300-field response is already at the edge of useful.
-function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[]) {
+export type OwnerAnswer = { origin?: string; question: string };
+
+function serialize(
+  field: FieldNode,
+  origin?: string,
+  producers?: LineageEdge[],
+  semantics?: FieldSemantics,
+  owner?: OwnerAnswer,
+) {
   return {
     path: field.path,
     type: field.nullable ? `${field.type}|null` : field.type,
@@ -43,6 +53,18 @@ function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[])
     ...(field.container ? { container: field.container } : {}),
     ...(field.title ? { schemaType: field.title } : {}),
     ...(origin ? { origin } : {}),
+    // Whether `origin` above is a person's answer or our own inference. Without
+    // this an agent cannot tell a confirmed fact from a heuristic guess, and
+    // they are not the same thing to act on.
+    ...(origin ? { originSource: owner?.origin ? 'owner' : 'inferred' } : {}),
+    ...(owner
+      ? {
+          ownerConfirmed: true,
+          // The question the owner was actually asked, so the confirmation is
+          // auditable rather than an unexplained badge.
+          ownerAnsweredQuestion: asData(owner.question, 240),
+        }
+      : {}),
     ...(producers?.length
       ? {
           from: producers.slice(0, MAX_EDGES_REPORTED).map((e) => ({
@@ -54,6 +76,19 @@ function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[])
         }
       : {}),
     ...(field.description ? { description: asData(field.description, 200) } : {}),
+    // Derived by the enrichment pass from the provider's own documentation, so
+    // it is third-party text twice over (their docs, then a model's reading of
+    // them) and goes through asData like every other untrusted string here.
+    // `meaningSource` is not decoration: 'docs' means a sentence in the
+    // provider's documentation backed this, 'spec' means it was inferred from
+    // the schema alone, and an agent should weigh those differently.
+    ...(semantics
+      ? {
+          meaning: asData(semantics.meaning, 300),
+          meaningSource: semantics.sourcedFrom,
+          ...(semantics.constraint ? { constraint: asData(semantics.constraint, 300) } : {}),
+        }
+      : {}),
   };
 }
 
@@ -92,6 +127,18 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
 
   const map: FieldMap = fieldMapFor(action);
   const graph = lineageFor(ctx.record);
+  // Narrowed to this operation once, rather than scanning the whole API's
+  // semantics per field.
+  const semanticsByPath = new Map<string, FieldSemantics>();
+  for (const s of ctx.insights.fieldSemantics) {
+    if (s.tool !== action.name) continue;
+    semanticsByPath.set(s.field, { meaning: s.meaning, constraint: s.constraint, sourcedFrom: s.sourcedFrom });
+  }
+  const ownerByPath = new Map<string, OwnerAnswer>();
+  for (const a of ctx.insights.ownerAnswers) {
+    if (a.tool !== action.name) continue;
+    ownerByPath.set(a.field, { origin: a.origin, question: a.question });
+  }
 
   const sections: Array<{ key: 'request' | 'response' | 'error'; fields: FieldNode[] }> = [];
   if (direction === 'request' || direction === 'all') sections.push({ key: 'request', fields: map.request });
@@ -112,9 +159,20 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     totalReturned += page.length;
 
     out[key] = page.map((field) => {
-      if (key !== 'request') return serialize(field);
+      const semantics = semanticsByPath.get(field.path);
+      // Owner answers are only ever raised about request fields, so they are
+      // deliberately not consulted for the response and error views — a path
+      // that happens to collide there is a different field.
+      if (key !== 'request') return serialize(field, undefined, undefined, semantics);
       const producers = producersFor(graph, action.name, field.path);
-      return serialize(field, originOf(field, producers.length > 0), producers);
+      const owner = ownerByPath.get(field.path);
+      // A person who runs this API outranks our inference about it. Without
+      // this the owner could tell us "the server assigns this, ignore what you
+      // send" and describe_fields would still answer caller_supplied — while
+      // now also claiming it was owner-confirmed, which is worse than never
+      // having asked. Same precedence rule as enrichedSpec.ts.
+      const origin = owner?.origin ?? originOf(field, producers.length > 0);
+      return serialize(field, origin, producers, semantics, owner);
     });
   }
 

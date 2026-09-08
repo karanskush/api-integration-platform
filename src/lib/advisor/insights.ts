@@ -6,7 +6,11 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { changeSummary, listChanges } from '../changes/query';
 import { dbReady, getDb } from '../db';
-import { apis, evidenceFacts, scores } from '../db/schema';
+import { actions as actionsTable, apis, clarifications, evidenceFacts, scores } from '../db/schema';
+// Imported from clarify/archetypes rather than clarify/index: the index
+// re-exports triage and synthesize, which import the AI SDK, and this module
+// runs on every MCP request that calls a tool.
+import { originForAnswer, type AnswerSpec } from '../clarify/archetypes';
 import { parseEvidencePayload, type EvidenceKind } from '../evidence';
 import { emptyInsights, type AdvisorInsights } from './types';
 
@@ -19,6 +23,17 @@ const PROBE_KINDS: EvidenceKind[] = [
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
 const MAX_FACTS = 200;
+
+// Semantics are per-field rather than per-probe, so a large API produces far
+// more of them — read under their own cap instead of competing with the probe
+// facts for MAX_FACTS, where whichever kind happened to be written last would
+// crowd the other out.
+const MAX_SEMANTIC_FACTS = 400;
+
+// A clustered answer fans out across every site in applies_to, so the row
+// count is well below the site count. Bounded on the same principle as the
+// reads above.
+const MAX_ANSWER_ROWS = 200;
 
 // The window docentapi_get_changes_since can answer over. Bounded for the same
 // reason MAX_FACTS is: this loads once per MCP request that calls a tool.
@@ -48,6 +63,26 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
     .where(and(eq(evidenceFacts.apiId, api.id), inArray(evidenceFacts.kind, PROBE_KINDS)))
     .orderBy(desc(evidenceFacts.observedAt))
     .limit(MAX_FACTS);
+
+  // Version-fenced, unlike the probe read above: a semantic claim names a
+  // specific field, and a field described against a superseded spec version may
+  // not exist in the current one. Reporting the old meaning would be worse than
+  // reporting none, so an API with no current-version enrichment simply gets an
+  // empty list.
+  const semanticFacts = api.currentSpecVersionId
+    ? await db
+        .select({ payload: evidenceFacts.payload })
+        .from(evidenceFacts)
+        .where(
+          and(
+            eq(evidenceFacts.apiId, api.id),
+            eq(evidenceFacts.specVersionId, api.currentSpecVersionId),
+            eq(evidenceFacts.kind, 'llm.field_semantics'),
+          ),
+        )
+        .orderBy(desc(evidenceFacts.observedAt))
+        .limit(MAX_SEMANTIC_FACTS)
+    : [];
 
   const insights = emptyInsights();
   insights.changes = { recent: recentChanges, summary };
@@ -115,6 +150,94 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
       default:
         break;
     }
+  }
+
+  // Answers a person gave. Version-fenced for the same reason semantics are,
+  // and restricted to status 'answered' AND answerSource 'human' — the column
+  // exists precisely so a triage assumption is structurally unable to arrive
+  // here wearing a person's authority.
+  const answeredRows = api.currentSpecVersionId
+    ? await db
+        .select({
+          actionId: clarifications.actionId,
+          fieldPath: clarifications.fieldPath,
+          appliesTo: clarifications.appliesTo,
+          question: clarifications.question,
+          answer: clarifications.answer,
+          answerSpec: clarifications.answerSpec,
+        })
+        .from(clarifications)
+        .where(
+          and(
+            eq(clarifications.apiId, api.id),
+            eq(clarifications.specVersionId, api.currentSpecVersionId),
+            eq(clarifications.status, 'answered'),
+            eq(clarifications.answerSource, 'human'),
+          ),
+        )
+        .limit(MAX_ANSWER_ROWS)
+    : [];
+
+  if (answeredRows.length) {
+    // clarifications.action_id is the actions table's row uuid, which is NOT
+    // what a tool name is — the same lookup analyze-finalize has to do. Only
+    // needed for un-clustered rows; a clustered one carries tool names directly.
+    const actionIds = [...new Set(answeredRows.map((r) => r.actionId).filter((id): id is string => id !== null))];
+    const nameById = actionIds.length
+      ? new Map(
+          (
+            await db
+              .select({ id: actionsTable.id, name: actionsTable.name })
+              .from(actionsTable)
+              .where(inArray(actionsTable.id, actionIds))
+          ).map((a) => [a.id, a.name] as const),
+        )
+      : new Map<string, string>();
+
+    for (const row of answeredRows) {
+      const spec = row.answerSpec as AnswerSpec | null;
+      const chosen = typeof row.answer === 'string' ? row.answer : null;
+      // Resolved against the option set the question was ASKED with, never
+      // against whatever a client sent — answers.ts's rule, applied on read too.
+      const origin = spec && chosen ? originForAnswer(spec, chosen) : null;
+
+      // One answer, N sites: a clustered question about `petId` was asked once
+      // and is true for every operation that takes it.
+      const sites = row.appliesTo as Array<{ tool: string; fieldPath: string }> | null;
+      const resolved = Array.isArray(sites) && sites.length
+        ? sites.map((s) => ({ tool: s.tool, field: s.fieldPath }))
+        : row.actionId && row.fieldPath && nameById.has(row.actionId)
+          ? [{ tool: nameById.get(row.actionId)!, field: row.fieldPath }]
+          : [];
+
+      for (const site of resolved) {
+        insights.ownerAnswers.push({
+          tool: site.tool,
+          field: site.field,
+          ...(origin ? { origin } : {}),
+          question: row.question,
+        });
+      }
+    }
+  }
+
+  // Newest wins per (tool, field): a re-run of the enrichment pass appends
+  // rather than replaces, so without this an agent could be handed a meaning
+  // that a later pass already revised.
+  const seenSemantics = new Set<string>();
+  for (const fact of semanticFacts) {
+    const p = parseEvidencePayload('llm.field_semantics', fact.payload);
+    if (!p) continue;
+    const key = `${p.tool} ${p.field}`;
+    if (seenSemantics.has(key)) continue;
+    seenSemantics.add(key);
+    insights.fieldSemantics.push({
+      tool: p.tool,
+      field: p.field,
+      meaning: p.semanticMeaning,
+      ...(p.businessConstraint ? { constraint: p.businessConstraint } : {}),
+      sourcedFrom: p.sourcedFrom,
+    });
   }
 
   return insights;
