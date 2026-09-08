@@ -567,8 +567,28 @@ that spec declares `oauth2` on `findPetsByStatus` and no credential was
 supplied. Correct behaviour, and not something to work around — deliberately
 sending unauthenticated requests is the auth-clarity probe's job, not a chain's.
 
-So the happy path is verified end to end in tests against a stubbed API, and
-**not yet against a live third party**. That is the honest state.
+**Rick and Morty API** — the happy path, confirmed. That provider publishes no
+OpenAPI document, so the spec used was hand-written and minimal; it accurately
+describes the real endpoints, and every request went to the real service. What
+this verifies is the RUNNER — planning, extraction, the negative control, the
+verdict — not spec import, which has its own tests.
+
+```
+planned: list_characters.response.results[].id -> get_character.path.characterId [high]
+4 requests: 1 producer + 2 candidates + 1 control
+  2 real ids   -> 200
+  fabricated   -> 404          <- the endpoint discriminates
+OUTCOME: confirmed   p50 377ms
+state vocabulary: status = [Alive, Dead, unknown] across 20 records
+no character data in the serialized output
+```
+
+That is the first end-to-end confirmation against a live third party: a real
+identifier read out of one operation's response, accepted by another, with a
+fabricated one rejected — which is the whole difference between a verified link
+and a coincidence. The state-vocabulary probe cleared its cardinality guard on
+the same responses (3 distinct values across 20 records) and retained nothing
+else from them.
 
 ### Four defects the live runs caught that the tests had not
 
