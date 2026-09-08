@@ -114,6 +114,7 @@ export async function runImport(input: ImportInput): Promise<ImportResult> {
       actions: normalized.actions,
       ...(normalized.truncated ? { truncated: true } : {}),
       ...(normalized.externalDocsUrl ? { externalDocsUrl: normalized.externalDocsUrl } : {}),
+      ...(normalized.redactions.length ? { redactions: normalized.redactions } : {}),
       counts,
       createdAt: now,
       expiresAt: now + ttl * 1000,

@@ -2,6 +2,8 @@
 // page renderer, playground proxy, MCP handler, snippets — reads this and
 // nothing else. See TECH_IMPLEMENTATION.md §3.
 
+import type { SecretFinding } from './secretScan';
+
 export type JSONSchema = Record<string, unknown>;
 
 export type AuthScheme = 'none' | 'apiKey' | 'bearer' | 'basic' | 'oauth2';
@@ -62,6 +64,13 @@ export type ImportRecord = {
   // the way baseUrls is.
   externalDocsUrl?: string;
   counts: { total: number; read: number; write: number; destructive: number };
+  // Example values withheld at import because they looked like credentials
+  // (secretScan.ts). An IMPORT-TIME artifact: present on a freshly imported
+  // record so the persist layer can record what was dropped, and deliberately
+  // absent from a record reassembled out of Postgres (persistentApi.ts), where
+  // the durable form is an evidence fact rather than a field on the record.
+  // Carries locations and masked hints, never a value.
+  redactions?: SecretFinding[];
   createdAt: number;
   expiresAt: number;
 };

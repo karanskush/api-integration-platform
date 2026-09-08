@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety } from './ir';
 import { MAX_ACTIONS } from './ir';
+import {
+  classifyValue,
+  dedupeFindings,
+  scrubSchemaExamples,
+  scrubValue,
+  type SecretFinding,
+} from './secretScan';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options'] as const;
 
@@ -17,6 +24,11 @@ export type NormalizedSpec = {
   // deep-analysis pipeline's docs crawler (docsCrawler.ts). Not yet
   // SSRF-validated, same caveat as rawBaseUrls.
   externalDocsUrl?: string;
+  // Example values withheld because they looked like credentials (secretScan.ts).
+  // Carries the location and a masked hint, never the value — the point is that
+  // an owner can see WHAT was dropped without the drop itself becoming a second
+  // copy of the secret. `at` is prefixed with the tool name by the caller below.
+  redactions: SecretFinding[];
 };
 
 type OASOperation = Record<string, unknown>;
@@ -34,6 +46,7 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
 
   const actions: Action[] = [];
   const usedNames = new Set<string>();
+  const redactions: SecretFinding[] = [];
   let truncated = false;
 
   const paths = (doc.paths ?? {}) as Record<string, unknown>;
@@ -54,10 +67,16 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
       const opParams = Array.isArray(op.parameters) ? op.parameters : [];
       const allParams = dedupeParams([...pathParams, ...opParams]);
 
-      const { paramsSchema, examples } = buildParamsSchema(allParams, op, authIn);
+      const { paramsSchema, examples, redactions: actionRedactions } = buildParamsSchema(allParams, op, authIn);
       const { responseSchema, errorSchema } = extractResponseSchemas(op);
 
       const actionName = uniqueName(toolName(op, method, path), usedNames);
+      // Qualify each location with the tool it belongs to, so an owner-facing
+      // record reads "create_charge: body.client_secret" rather than a bare
+      // field name repeated across a dozen operations.
+      for (const finding of actionRedactions) {
+        redactions.push({ ...finding, at: `${actionName}: ${finding.at}` });
+      }
       actions.push({
         id: createHash('sha1').update(`${method} ${path}`).digest('hex').slice(0, 8),
         name: actionName,
@@ -78,7 +97,16 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
   }
 
   const { auth, authIn } = dominantAuth(actions);
-  return { name: String(name), rawBaseUrls, auth, authIn, actions, truncated, ...extractExternalDocs(doc) };
+  return {
+    name: String(name),
+    rawBaseUrls,
+    auth,
+    authIn,
+    actions,
+    truncated,
+    redactions,
+    ...extractExternalDocs(doc),
+  };
 }
 
 // Operation-level lifecycle: `deprecated: true` (OpenAPI) and `x-sunset`
@@ -303,10 +331,11 @@ function buildParamsSchema(
   params: OASParameter[],
   op: OASOperation,
   authIn?: AuthPlacement,
-): { paramsSchema: JSONSchema; examples: Example[] } {
+): { paramsSchema: JSONSchema; examples: Example[]; redactions: SecretFinding[] } {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   const exampleParams: Record<string, unknown> = {};
+  const redactions: SecretFinding[] = [];
 
   for (const p of params) {
     if (p.in !== 'path' && p.in !== 'query' && p.in !== 'header') continue;
@@ -315,13 +344,22 @@ function buildParamsSchema(
     if (p.in === 'header' && /^(authorization|cookie)$/i.test(p.name!)) continue;
 
     const schema = sanitizeSchema(p.schema ?? (p.type ? { type: p.type } : {}));
+    // The two exclusions above are name-based and auth-scheme-driven: they know
+    // about the DECLARED credential parameter and nothing else. A cURL import
+    // carries every other query param and non-standard auth header through with
+    // its live value attached as an example, so scan the value itself here.
+    scrubSchemaExamples(schema, p.name!, redactions);
     if (p.description && !schema.description) schema.description = p.description.slice(0, 300);
     schema['x-docentapi-in'] = p.in;
     properties[p.name!] = schema;
     if (p.in === 'path' || p.required) required.push(p.name!);
 
     const ex = p.example ?? (p.schema as Record<string, unknown> | undefined)?.example;
-    if (ex !== undefined) exampleParams[p.name!] = ex;
+    if (ex !== undefined) {
+      const finding = classifyValue(p.name!, ex);
+      if (finding) redactions.push(finding);
+      else exampleParams[p.name!] = ex;
+    }
   }
 
   const requestBody = op.requestBody as Record<string, unknown> | undefined;
@@ -332,6 +370,10 @@ function buildParamsSchema(
     const media = mediaType ? content[mediaType] : undefined;
     if (media && mediaType) {
       const bodySchema = sanitizeSchema((media.schema as Record<string, unknown>) ?? {});
+      // A cURL `-d '{"client_secret":"…"}'` reaches here as per-property
+      // examples (importer/curl.ts's inferSchema attaches one to every property
+      // at depth < 2), so the body schema needs the same scan as a parameter.
+      scrubSchemaExamples(bodySchema, 'body', redactions);
       bodySchema['x-docentapi-in'] = 'body';
       // Same vendor-annotation convention as x-docentapi-in above, and carried
       // on the schema rather than promoted to Action so ir.ts, the actions table
@@ -351,7 +393,13 @@ function buildParamsSchema(
           ? (Object.values(media.examples)[0] as Record<string, unknown> | undefined)?.value
           : undefined) ??
         (media.schema as Record<string, unknown> | undefined)?.example;
-      if (bodyExample !== undefined) exampleParams.body = bodyExample;
+      if (bodyExample !== undefined) {
+        // Walked rather than dropped whole: a body example is usually a mix of
+        // perfectly good fields and one credential, and discarding all of it
+        // would throw away what makes the endpoint legible.
+        const scrubbed = scrubValue('body', bodyExample, redactions);
+        if (scrubbed.value !== undefined) exampleParams.body = scrubbed.value;
+      }
     }
   }
 
@@ -362,7 +410,7 @@ function buildParamsSchema(
     additionalProperties: false,
   };
   const examples: Example[] = Object.keys(exampleParams).length ? [{ params: exampleParams }] : [];
-  return { paramsSchema, examples };
+  return { paramsSchema, examples, redactions: dedupeFindings(redactions) };
 }
 
 // Best-effort — the spec doc is already fully dereferenced upstream (see
