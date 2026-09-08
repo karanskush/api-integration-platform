@@ -13,6 +13,12 @@ export type EvidenceKind =
   | 'parser.base_url_validity'
   | 'parser.unsafe_action_ratio'
   | 'parser.tool_name_quality'
+  // An example value withheld at import because it looked like a credential
+  // (secretScan.ts). The payload is the record of WHAT was dropped — location,
+  // why, a masked hint and a length — and deliberately has no slot that could
+  // hold the value, so recording the redaction never becomes a second copy of
+  // the secret. Rows carry redaction_status: 'redacted'.
+  | 'parser.redacted_example'
   | 'probe.auth_reject'
   | 'probe.error_quality'
   | 'probe.doc_drift'
@@ -53,6 +59,13 @@ const parserCheckPayload = z.object({
   points: z.number(),
   maxPoints: z.number(),
   message: z.string(),
+});
+
+const redactedExamplePayload = z.object({
+  at: z.string(),
+  reason: z.enum(['known_prefix', 'private_key', 'jwt', 'sensitive_name', 'high_entropy']),
+  hint: z.string(),
+  length: z.number(),
 });
 
 const authRejectPayload = z.object({
@@ -165,6 +178,7 @@ const evidenceSchemas = {
   'parser.base_url_validity': parserCheckPayload,
   'parser.unsafe_action_ratio': parserCheckPayload,
   'parser.tool_name_quality': parserCheckPayload,
+  'parser.redacted_example': redactedExamplePayload,
   'probe.auth_reject': authRejectPayload,
   'probe.error_quality': errorQualityPayload,
   'probe.doc_drift': docDriftPayload,
