@@ -76,6 +76,15 @@ export type InvokeActionOptions = {
   // whether the live API actually rejects it rather than just trusting the
   // spec's documented auth scheme.
   requireAuth?: boolean;
+  // Per-call timeout override. Defaults to the 30s below so nothing existing
+  // changes. A multi-step chain needs a much tighter one: six sequential calls
+  // at 30s each would blow the 60s maxDuration on /verify and the reverify cron
+  // before the canary had even started.
+  timeoutMs?: number;
+  // What to send as User-Agent. The probe engine passes an identifiable one so
+  // a provider reading their access log can tell automated verification traffic
+  // from a person using the playground, and can find us.
+  userAgent?: string;
 };
 
 // Pure validate → auth-check → upstream-call → decode-body core, shared by
@@ -110,12 +119,14 @@ export async function invokeAction(
   const requireAuth = opts.requireAuth ?? true;
   if (requireAuth && action.auth !== 'none' && !upstreamKey) throw new AuthRequiredError(action.auth);
 
-  const upstream = buildUpstreamRequest(action, args, { token: upstreamKey }, baseUrl, target.authIn);
+  const upstream = buildUpstreamRequest(action, args, { token: upstreamKey }, baseUrl, target.authIn, {
+    ...(opts.userAgent ? { userAgent: opts.userAgent } : {}),
+  });
   const res = await safeFetch(upstream.url, {
     method: upstream.method,
     headers: upstream.headers,
     body: upstream.body,
-    timeoutMs: 30_000,
+    timeoutMs: opts.timeoutMs ?? 30_000,
     maxBytes: 1024 * 1024,
   });
   const bodyText = new TextDecoder().decode(res.body);
