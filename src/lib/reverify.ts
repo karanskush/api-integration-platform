@@ -25,9 +25,14 @@ import type { Db, NeonDb } from './db';
 import { apis, orgs, scores, scoreRuns, specVersions } from './db/schema';
 import { runImport } from './importer';
 import { loadPersistentRecord } from './persistentApi';
-import { PLAN_LIMITS, type Plan } from './plans';
+import { PLAN_LIMITS, outboundDeadlineMs, outboundRequestsPerRun, type Plan } from './plans';
 import { reimportApi } from './persist';
 import { runCanary } from './probes/canary';
+import { createBudget, withBudget } from './probes/budget';
+import { buildExecutionPlan } from './lineagePlan';
+import { runLineageChains } from './probes/lineageChain';
+import { applyLineageRun } from './lineageRun';
+import { invokeAction } from './mcpTools';
 import { runScoreEngine } from './probes/run';
 import { applyScoreRun } from './scoreWrite';
 import { resolveCredential } from './vaultStore';
@@ -118,6 +123,19 @@ export type ReverifyOutcome = {
   // nothing changed" and "we could not get a usable response" are different
   // statements, and a freshness surface that conflates them is lying quietly.
   canary?: { sampled: number; inconclusive: number; compared: number; changes: number; drifted: number };
+  // Executed Lineage. Reported with the same discipline as the canary above:
+  // `planned` vs `executed` says whether we even got to look, and `aborted`
+  // names why we stopped — a budget-exhausted run and a clean-but-empty one
+  // must not read the same. Absent when the plan does not include it.
+  chains?: {
+    planned: number;
+    executed: number;
+    confirmed: number;
+    contradicted: number;
+    inconclusive: number;
+    requests: number;
+    aborted: string | null;
+  };
   error?: string;
 };
 
@@ -127,6 +145,7 @@ export type ReverifyDeps = {
   loadRecord?: typeof loadPersistentRecord;
   scoreEngine?: typeof runScoreEngine;
   canary?: typeof runCanary;
+  chains?: typeof runLineageChains;
   now?: () => Date;
 };
 
@@ -139,6 +158,7 @@ export async function reverifyOne(
   const loadRecord = deps.loadRecord ?? loadPersistentRecord;
   const scoreEngine = deps.scoreEngine ?? runScoreEngine;
   const canary = deps.canary ?? runCanary;
+  const chains = deps.chains ?? runLineageChains;
 
   let specStatus: ReverifyOutcome['specStatus'] = 'skipped';
 
@@ -167,9 +187,13 @@ export async function reverifyOne(
     return { slug: candidate.slug, specStatus, scored: false, usedVaultedCredential: false, error: 'record_unavailable' };
   }
 
+  // Resolved once and reused: the credential gate and the chain gate are the
+  // same plan decision, and indexing PLAN_LIMITS twice invites them to drift.
+  const planLimits = PLAN_LIMITS[(candidate.plan as Plan) in PLAN_LIMITS ? (candidate.plan as Plan) : 'free'];
+
   let upstreamKey: string | undefined;
   let usedVaultedCredential = false;
-  if (PLAN_LIMITS[(candidate.plan as Plan) in PLAN_LIMITS ? (candidate.plan as Plan) : 'free'].vaultedCredentials) {
+  if (planLimits.vaultedCredentials) {
     const resolved = await resolveCredential(db, {
       orgId: candidate.orgId,
       apiId: candidate.apiId,
@@ -182,10 +206,18 @@ export async function reverifyOne(
     }
   }
 
+  // ONE ceiling for the whole run, applied at the DI seam every probe already
+  // calls through, so the score engine, the canary and the chain runner draw
+  // from a single pool instead of three per-module constants that silently add
+  // up. Nothing downstream has to remember it exists.
+  const budgetLimit = outboundRequestsPerRun();
+  const budget = createBudget({ maxRequests: budgetLimit, deadlineMs: outboundDeadlineMs() });
+  const budgetedInvoke = withBudget(invokeAction, budget);
+
   const [run] = await db.insert(scoreRuns).values({ apiId: candidate.apiId, status: 'running' }).returning();
 
   try {
-    const result = await scoreEngine(record, { upstreamKey });
+    const result = await scoreEngine(record, { upstreamKey, invoke: budgetedInvoke });
 
     // Re-read the current version: step 1 may have moved it, and writing a
     // score against the pre-import version would mis-attribute the evidence.
@@ -218,7 +250,7 @@ export async function reverifyOne(
     // not undo a good score — the score is written above and stays written.
     let canaryOutcome: ReverifyOutcome['canary'];
     try {
-      const { snapshots, inconclusive } = await canary({ record, upstreamKey });
+      const { snapshots, inconclusive } = await canary({ record, upstreamKey, invoke: budgetedInvoke });
       const applied = snapshots.length
         ? await applyCanaryRun(db, {
             apiId: candidate.apiId,
@@ -241,7 +273,50 @@ export async function reverifyOne(
       });
     }
 
-    return { slug: candidate.slug, specStatus, scored: true, total: result.total, usedVaultedCredential, ...(canaryOutcome ? { canary: canaryOutcome } : {}) };
+    // Executed Lineage rides the same run for the same reasons the canary does:
+    // the credential is resolved, the budget is already accounted for, and a
+    // verdict is only meaningful on a regular cadence. Isolated in its own
+    // try/catch so a failure here can never undo the score written above.
+    let chainOutcome: ReverifyOutcome['chains'];
+    if (planLimits.chainVerification) {
+      try {
+        const plan = buildExecutionPlan(record);
+        const chainResult = await chains({ record, upstreamKey, invoke: budgetedInvoke, budget }, plan);
+        const applied = await applyLineageRun(db, {
+          apiId: candidate.apiId,
+          specVersionId,
+          chainsPlanned: plan.chains.length,
+          budgetLimit,
+          result: chainResult,
+        });
+        chainOutcome = {
+          planned: plan.chains.length,
+          executed: chainResult.observations.length,
+          confirmed: applied.confirmed,
+          contradicted: applied.contradicted,
+          inconclusive: applied.inconclusive,
+          requests: chainResult.requestsMade,
+          aborted: chainResult.aborted,
+        };
+      } catch (err) {
+        // Name only. ssrf.ts throws `Invalid URL: <url>` and for an executed
+        // chain that URL carries the extracted identifier.
+        console.error('[reverify] chain run failed', {
+          slug: candidate.slug,
+          reason: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
+
+    return {
+      slug: candidate.slug,
+      specStatus,
+      scored: true,
+      total: result.total,
+      usedVaultedCredential,
+      ...(canaryOutcome ? { canary: canaryOutcome } : {}),
+      ...(chainOutcome ? { chains: chainOutcome } : {}),
+    };
   } catch (err) {
     await db
       .update(scoreRuns)

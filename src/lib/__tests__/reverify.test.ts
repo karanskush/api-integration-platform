@@ -447,3 +447,109 @@ describe('reverifyOne', () => {
     expect(score.specVersionId).not.toBe(seeded.specVersionId);
   });
 });
+
+// Executed Lineage riding the scheduled run. The scheduled path is its home
+// because lineageVerdict's refutation rule requires agreement ACROSS runs,
+// which only a cadence produces.
+describe('reverifyOne chain verification', () => {
+  const chainResult = {
+    observations: [
+      {
+        edgeKey: 'list.response.data[].id->get.path.id',
+        producerActionKey: 'p1',
+        producerTool: 'list_things',
+        producerField: 'response.data[].id',
+        consumerActionKey: 'c1',
+        consumerTool: 'get_thing',
+        consumerField: 'path.id',
+        inferredConfidence: 'high' as const,
+        attempts: 2,
+        successes: 2,
+        rejections: 0,
+        otherFailures: 0,
+        candidateCount: 2,
+        predominantStatus: 200,
+        controlAttempted: true,
+        controlStatus: 404,
+        latencyP50Ms: 20,
+        extract: 'ok' as const,
+        outcome: 'confirmed' as const,
+        reason: 'ok' as const,
+      },
+    ],
+    requestsMade: 4,
+    aborted: null,
+  };
+
+  it('runs and persists chains on a plan that includes them', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => SCORE,
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => chainResult,
+    });
+
+    expect(outcome.chains).toMatchObject({ planned: 0, executed: 1, confirmed: 1, requests: 4, aborted: null });
+
+    const rows = await db
+      .select()
+      .from(schema.lineageExecutions)
+      .where(eq(schema.lineageExecutions.apiId, seeded.apiId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('confirmed');
+  });
+
+  it('does not run them on a plan that does not include them', async () => {
+    const seeded = await seedApi({ plan: 'pro' });
+    let called = false;
+
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded, { plan: 'pro' }), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => SCORE,
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => {
+        called = true;
+        return chainResult;
+      },
+    });
+
+    expect(called).toBe(false);
+    expect(outcome.chains).toBeUndefined();
+    // The plan keeps today's honest spec-only answer — nothing regresses.
+    expect(outcome.scored).toBe(true);
+  });
+
+  // A failure here must never undo a score that was already written.
+  it('keeps the score when the chain run throws', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => SCORE,
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => {
+        throw new Error('chain exploded');
+      },
+    });
+
+    expect(outcome.scored).toBe(true);
+    expect(outcome.total).toBe(SCORE.total);
+    expect(outcome.chains).toBeUndefined();
+  });
+
+  it('reports why an aborted chain run stopped', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => SCORE,
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => ({ observations: [], requestsMade: 7, aborted: 'rate_limited' as const }),
+    });
+
+    expect(outcome.chains?.aborted).toBe('rate_limited');
+    expect(outcome.chains?.executed).toBe(0);
+  });
+});
