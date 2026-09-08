@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { getCallSequence as rawGetCallSequence } from '../sequence';
+import { describeFields as rawDescribeFields, traceField as rawTraceField } from '../fields';
 import type { AdvisorContext, AdvisorInsights } from '../types';
 import { action, ctx, param, type Payload } from './fixtures';
 
@@ -128,5 +129,58 @@ describe('a receipt belongs to one link, not to an operation', () => {
     const producer = (stepFor(getCallSequence(c, { tool: 'get_customer' }), 'Obtain customerId')?.from as Payload[])[0];
 
     expect(producer.verified).toBeUndefined();
+  });
+});
+
+// The same evidence must read the same way whichever tool an agent asks.
+// get_call_sequence carried receipts first; without these, describe_fields and
+// trace_field would call a link "high confidence" while another tool called the
+// very same link verified.
+describe('receipts are consistent across tools', () => {
+  const executed = () =>
+    ctx(storeActions(), {
+      lineageVerdicts: [
+        {
+          key: 'list_customers.response.data[].customerId->get_customer.path.customerId',
+          verdict: 'observed' as const,
+          attempts: 2,
+          successes: 2,
+          stale: false,
+          observedAt: '2026-09-08T10:00:00.000Z',
+        },
+      ],
+    });
+
+  it('describe_fields marks the producer that was proven', () => {
+    const result = rawDescribeFields(executed(), { tool: 'get_customer' }) as Payload;
+    const field = (result.request as Payload[]).find((f) => f.path === 'path.customerId');
+    const producer = (field?.from as Payload[])?.find((p) => p.tool === 'list_customers');
+
+    expect(producer?.verified).toBe('observed');
+    expect(producer?.verifiedDetail).toContain('2 of 2');
+  });
+
+  it('trace_field marks the same producer the same way', () => {
+    const result = rawTraceField(executed(), { field: 'customerId' }) as Payload;
+    const forConsumer = (result.results as Payload[]).find((r) => r.tool === 'get_customer');
+    const producer = (forConsumer?.producedBy as Payload[])?.find((p) => p.tool === 'list_customers');
+
+    expect(producer?.verified).toBe('observed');
+  });
+
+  it('trace_field stops claiming spec-only once something was executed', () => {
+    expect((rawTraceField(executed(), { field: 'customerId' }) as Payload).basis).not.toContain('not observed traffic');
+    expect((rawTraceField(ctx(storeActions()), { field: 'customerId' }) as Payload).basis).toContain(
+      'not observed traffic',
+    );
+  });
+
+  it('leaves an unproven link unmarked in both tools', () => {
+    const plain = ctx(storeActions());
+    const fields = rawDescribeFields(plain, { tool: 'get_customer' }) as Payload;
+    const traced = rawTraceField(plain, { field: 'customerId' }) as Payload;
+
+    expect(JSON.stringify(fields)).not.toContain('"verified"');
+    expect(JSON.stringify(traced)).not.toContain('"verified"');
   });
 });

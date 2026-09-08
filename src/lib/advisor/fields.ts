@@ -32,6 +32,35 @@ export type ObservedValues = { accepted: string[]; rejected: string[] };
 /** The states an entity was actually seen in. No transition is implied. */
 export type ObservedStates = { values: string[]; sampleCount: number };
 
+/**
+ * Execution receipts for producer->consumer links, keyed exactly as
+ * lineageRun.ts keys them.
+ *
+ * get_call_sequence already reports these; without the same lookup here,
+ * describe_fields and trace_field would show a producer as merely "high
+ * confidence" when the very same link had been confirmed by running it — the
+ * same evidence reading differently depending on which tool you asked.
+ */
+function verdictLookup(ctx: AdvisorContext) {
+  const byKey = new Map<string, { verdict: string; successes: number; attempts: number }>();
+  for (const v of ctx.insights.lineageVerdicts) {
+    byKey.set(v.key, { verdict: v.verdict, successes: v.successes, attempts: v.attempts });
+  }
+  return (producerTool: string, producerField: string, consumerTool: string, consumerField: string) => {
+    const hit = byKey.get(`${producerTool}.${producerField}->${consumerTool}.${consumerField}`);
+    if (!hit) return {};
+    return {
+      verified: hit.verdict,
+      ...(hit.verdict === 'observed'
+        ? { verifiedDetail: `${hit.successes} of ${hit.attempts} identifiers from this producer were accepted, and a fabricated one was rejected.` }
+        : {}),
+      ...(hit.verdict === 'refuted'
+        ? { verifiedDetail: 'Identifiers from this producer were rejected here across more than one run. Do not rely on this link.' }
+        : {}),
+    };
+  };
+}
+
 function serialize(
   field: FieldNode,
   origin?: string,
@@ -40,6 +69,9 @@ function serialize(
   owner?: OwnerAnswer,
   observed?: ObservedValues,
   states?: ObservedStates,
+  // Pre-bound to this consumer operation and field, so serialize needs to know
+  // nothing about how a verdict is keyed.
+  receiptFor?: (producerTool: string, producerField: string) => Record<string, unknown>,
 ) {
   return {
     path: field.path,
@@ -106,6 +138,7 @@ function serialize(
             field: e.from.field,
             confidence: e.confidence,
             why: e.why,
+            ...(receiptFor?.(e.from.tool, e.from.field) ?? {}),
           })),
         }
       : {}),
@@ -185,6 +218,7 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     if (v.actionId !== action.id) continue;
     statesByName.set(v.field, { values: v.values, sampleCount: v.sampleCount });
   }
+  const lookupVerdict = verdictLookup(ctx);
   const ownerByPath = new Map<string, OwnerAnswer>();
   for (const a of ctx.insights.ownerAnswers) {
     if (a.tool !== action.name) continue;
@@ -226,7 +260,9 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
       // now also claiming it was owner-confirmed, which is worse than never
       // having asked. Same precedence rule as enrichedSpec.ts.
       const origin = owner?.origin ?? originOf(field, producers.length > 0);
-      return serialize(field, origin, producers, semantics, owner, observed);
+      return serialize(field, origin, producers, semantics, owner, observed, undefined, (pt, pf) =>
+        lookupVerdict(pt, pf, action.name, field.path),
+      );
     });
   }
 
@@ -286,6 +322,7 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     args.direction === 'producers' || args.direction === 'consumers' ? args.direction : 'both';
   const includeLow = args.includeLowConfidence === true;
   const graph = lineageFor(ctx.record, includeLow ? { includeLow: true } : {});
+  const lookupVerdict = verdictLookup(ctx);
 
   let matches = findFieldsByName(ctx.record, wanted);
   if (toolFilter) matches = matches.filter((m) => m.tool === toolFilter);
@@ -331,6 +368,10 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
               field: e.from.field,
               confidence: e.confidence,
               why: e.why,
+              // The same receipt get_call_sequence reports. Without it this tool
+              // would call a link "high confidence" while another tool called
+              // the very same link verified.
+              ...lookupVerdict(e.from.tool, e.from.field, tool, field.path),
             })),
           }
         : {}),
@@ -364,7 +405,9 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     matched: matches.length,
     returned: results.length,
     results,
-    basis: 'spec structure only — derived from declared schemas, not observed traffic',
+    basis: ctx.insights.lineageVerdicts.length
+      ? 'spec structure, with some links confirmed by read-only execution against the live API — see the "verified" field on each producer'
+      : 'spec structure only — derived from declared schemas, not observed traffic',
     note: includeLow
       ? 'Low-confidence links are included. Treat anything below "high" as a lead to verify, not a fact.'
       : 'Only high and medium confidence links are shown. An empty "producedBy" means no operation MINTS this value — do not invent a source for it. It does NOT mean the field never appears in a response: check "alsoReturnedBy" for operations that return the same field, which is where values already in use can be read.',
