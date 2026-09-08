@@ -162,10 +162,21 @@ describe('an import that carried nothing sensitive', () => {
     expect(facts.filter((f) => f.kind === 'parser.redacted_example')).toHaveLength(0);
   });
 
-  it('leaves a non-curl source public even when the spec had a redaction', async () => {
-    // An OpenAPI spec with a leaked example is a PUBLISHED document — the
-    // credential is already out, and making the page private helps nobody while
-    // breaking the public-directory funnel. Strip the value, keep it public.
+  it('goes private on a spec import too, not only on a pasted cURL', async () => {
+    // This used to assert 'public', on the reasoning that an OpenAPI spec with
+    // a leaked example is a PUBLISHED document, so the credential is already
+    // out and a private page helps nobody.
+    //
+    // The premise does not hold. `source: 'openapi'` covers an uploaded file
+    // and a converted Postman collection just as much as a fetched public URL,
+    // and those are routinely private — a Postman export carries whatever key
+    // sat in the developer's environment. Scoping the protection to cURL was
+    // reasoning about which door is WIDEST when the thing that matters is what
+    // happens once someone comes through it.
+    //
+    // Publishing is the irreversible direction: an owner who wanted it public
+    // flips one switch, while a credential served from an ISR-cached public
+    // page and an anonymous MCP endpoint cannot be recalled.
     const org = await makeOrg();
     const rec = curlRecord(`curl 'https://api.example.com/v1/charges?api_key=${SENTINEL}'`, {
       source: 'openapi',
@@ -175,6 +186,6 @@ describe('an import that carried nothing sensitive', () => {
     await runSequentially(result.statements);
 
     const [api] = await db.select().from(schema.apis).where(eq(schema.apis.id, result.apiId));
-    expect(api.visibility).toBe('public');
+    expect(api.visibility).toBe('private');
   });
 });

@@ -104,7 +104,11 @@ function serialize(
     ...(states
       ? {
           observedStates: {
-            values: states.values,
+            // Neutralized like accepted/rejected above. These came out of a
+            // provider's live response, and this is the LLM01/LLM05 boundary
+            // for everything third-party — applying it to one sibling and not
+            // the other is how the rule quietly stops being a rule.
+            values: states.values.map((v) => asData(v, 120)),
             sampleCount: states.sampleCount,
             note: 'Values seen across sampled records. A vocabulary, not a state machine — no transition between these is claimed.',
           },

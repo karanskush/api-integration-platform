@@ -98,19 +98,25 @@ export type PersistStatements = PersistResult & { statements: BatchItem<'pg'>[] 
 // conflict today — onConflictDoNothing is defensive, ahead of that feature.
 export async function buildPersistStatements(db: Db, input: PersistInput): Promise<PersistStatements> {
   const { orgId, createdBy, record, rawText, claimStatus, analysisStatus } = input;
-  // A cURL import that carried a credential is, by definition, a working
+  // An import that carried a credential is, by definition, a working
   // authenticated request. Even with secretScan.ts stripping the values, the
   // request SHAPE is the owner's to publish deliberately rather than by
   // default, and detection is heuristic — so this is the defence-in-depth half.
   //
   // Scoped to imports that actually had something redacted rather than to all
-  // cURL imports: a clean paste keeps today's funnel, and the Team-plan
-  // privateApis feature is not wholesale undercut. Derived here rather than
-  // required from the caller so a future creation path cannot silently
-  // reintroduce the public default (no caller sets visibility today, which is
-  // exactly how every API ended up public).
-  const visibility =
-    input.visibility ?? (record.source === 'curl' && record.redactions?.length ? 'private' : undefined);
+  // imports: a clean spec keeps today's funnel, and the Team-plan privateApis
+  // feature is not wholesale undercut. Derived here rather than required from
+  // the caller so a future creation path cannot silently reintroduce the public
+  // default (no caller sets visibility today, which is exactly how every API
+  // ended up public).
+  //
+  // Not scoped to cURL. It was, on the reasoning that a pasted cURL is the
+  // widest door — which is true of LIKELIHOOD and irrelevant to CONSEQUENCE. An
+  // OpenAPI or Postman import whose parameter examples held a live key is the
+  // same exposure, and the `source === 'curl'` conjunct meant the scanner could
+  // find a credential, record the receipt, and the API would still be published
+  // publicly. The condition that matters is whether anything was found.
+  const visibility = input.visibility ?? (record.redactions?.length ? 'private' : undefined);
   const contentHash = createHash('sha256').update(rawText).digest('hex');
 
   const slug = await allocateApiSlug(record.name, async (candidate) => {

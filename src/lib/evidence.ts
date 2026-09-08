@@ -94,7 +94,12 @@ const valueDomainPayload = z.object({
 const stateVocabularyPayload = z.object({
   actionId: z.string(),
   field: z.string(),
-  values: z.array(z.string()),
+  // Bounded at the read boundary for the same reason valueDomainPayload.value
+  // is: STATE_VALUE_SHAPE constrains what the sole writer can store today, but
+  // parseEvidencePayload is what every reader goes through, and it must not
+  // depend on a writer-side regex staying correct to keep an unbounded
+  // provider string away from a consumer.
+  values: z.array(z.string().max(120)),
   sampleCount: z.number(),
 });
 

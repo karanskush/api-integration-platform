@@ -169,3 +169,78 @@ describe('a spec-supplied example is scanned too, not just a cURL', () => {
     expect(spec.redactions).toHaveLength(1);
   });
 });
+
+// The parameter-example path took a different walker from the body path: it
+// called the scalar-only classifyValue, which answered null for an array or an
+// object — and the caller reads null as "clean". So a credential inside a
+// composite example was published verbatim, on a surface reachable with no
+// authentication at all.
+//
+// `example: ["sk_live_…"]` on an array-typed parameter is valid OpenAPI, and
+// postman-to-openapi copies collection values across unchanged, so this is an
+// ordinary authoring shape rather than a contrived one.
+describe('a composite example cannot smuggle a credential past the scanner', () => {
+  const specWith = (parameter: Record<string, unknown>) => ({
+    openapi: '3.0.3',
+    info: { title: 'Charges', version: '1' },
+    servers: [{ url: 'https://api.example.com' }],
+    paths: {
+      '/v1/charges': {
+        get: {
+          operationId: 'listCharges',
+          parameters: [parameter],
+          responses: { '200': { description: 'OK' } },
+        },
+      },
+    },
+  });
+
+  it('withholds a key inside an array-valued example', () => {
+    const spec = normalizeOpenApi(
+      specWith({
+        name: 'filters',
+        in: 'query',
+        schema: { type: 'array', items: { type: 'string' } },
+        example: [STRIPE_KEY],
+      }),
+    );
+
+    expect(JSON.stringify(spec.actions[0])).not.toContain(STRIPE_KEY);
+    expect(spec.redactions.length).toBeGreaterThan(0);
+  });
+
+  it('withholds a key inside an object-valued example', () => {
+    const spec = normalizeOpenApi(
+      specWith({
+        name: 'auth',
+        in: 'query',
+        schema: { type: 'object' },
+        example: { token: GITLAB_TOKEN, locale: 'en' },
+      }),
+    );
+
+    const serialized = JSON.stringify(spec.actions[0]);
+    expect(serialized).not.toContain(GITLAB_TOKEN);
+    // The innocuous sibling survives — redacting the whole example would throw
+    // away the thing that makes the endpoint legible.
+    expect(serialized).toContain('en');
+  });
+
+  // The sharpest form: the scanner DID flag it. scrubSchemaExamples walked
+  // p.schema.example and recorded the finding, but sanitizeSchema copies
+  // `example` by reference, so it rewrote the sanitized copy while the example
+  // path re-read the untouched original. The receipt said "withheld" at the
+  // same moment the value was published.
+  it('does not report a redaction while still publishing the value', () => {
+    const spec = normalizeOpenApi(
+      specWith({
+        name: 'params',
+        in: 'query',
+        schema: { type: 'array', items: { type: 'string' }, example: [GITHUB_PAT] },
+      }),
+    );
+
+    expect(spec.redactions.length).toBeGreaterThan(0);
+    expect(JSON.stringify(spec.actions[0])).not.toContain(GITHUB_PAT);
+  });
+});

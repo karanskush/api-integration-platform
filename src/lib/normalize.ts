@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety } from './ir';
 import { MAX_ACTIONS } from './ir';
 import {
-  classifyValue,
   dedupeFindings,
   scrubSchemaExamples,
   scrubValue,
@@ -354,11 +353,25 @@ function buildParamsSchema(
     properties[p.name!] = schema;
     if (p.in === 'path' || p.required) required.push(p.name!);
 
+    // scrubValue, not classifyValue: an example is not always a scalar. An
+    // array- or object-valued parameter example
+    // (`example: ["sk_live_…"]`) made classifyValue return null on the type
+    // guard, which this caller read as "clean" and published verbatim.
+    //
+    // It was worse for the p.schema.example branch. scrubSchemaExamples above
+    // DOES walk that value and does flag the secret — but sanitizeSchema copies
+    // `example` by reference, so it rewrites the sanitized copy while the line
+    // below re-reads the untouched original. The owner-facing receipt said the
+    // value had been withheld at the same moment it was published into
+    // actions.examples, which reaches the anonymous MCP surface via
+    // advisor/search.ts and the public product page.
+    //
+    // The body path a few lines down had this right from the start; these two
+    // now walk example values the same way.
     const ex = p.example ?? (p.schema as Record<string, unknown> | undefined)?.example;
     if (ex !== undefined) {
-      const finding = classifyValue(p.name!, ex);
-      if (finding) redactions.push(finding);
-      else exampleParams[p.name!] = ex;
+      const scrubbed = scrubValue(p.name!, ex, redactions);
+      if (scrubbed.value !== undefined) exampleParams[p.name!] = scrubbed.value;
     }
   }
 

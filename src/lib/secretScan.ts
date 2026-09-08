@@ -94,7 +94,8 @@ export type SecretReason =
   | 'jwt'
   | 'sensitive_name'
   | 'high_entropy'
-  | 'oversized';
+  | 'oversized'
+  | 'unscannable';
 
 export type SecretFinding = {
   reason: SecretReason;
@@ -158,7 +159,20 @@ function nameLooksSensitive(name: string): boolean {
 // The single classification entry point. Returns null when nothing suggests a
 // credential; the caller keeps the example only in that case.
 export function classifyValue(name: string, value: unknown): SecretFinding | null {
-  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  // A boolean, null or undefined cannot carry a credential, so those are the
+  // only types that get a clean bill of health without being looked at.
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+
+  // Anything else non-scalar is REPORTED, not waved through. This guard used to
+  // return null for every non-string, non-number — and callers read null as
+  // "clean", so an array-valued example (`example: ["sk_live_…"]`) was
+  // published verbatim. scrubValue unwraps arrays and objects before it reaches
+  // this line, so a composite arriving here means the caller did not walk it,
+  // and the safe answer to "I was not able to look at this" is never "keep it".
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+    return { reason: 'unscannable', at: name, hint: '••••', length: 0 };
+  }
+
   const text = String(value);
   if (!text.length) return null;
 
@@ -268,7 +282,18 @@ export function scrubSchemaExamples(
   findings: SecretFinding[] = [],
   depth = 0,
 ): SecretFinding[] {
-  if (depth > MAX_WALK_DEPTH) return findings;
+  // Fail closed, like scrubValue and the length bound: past the walk limit
+  // nothing below has been inspected, and sanitizeSchema's own MAX_SCHEMA_DEPTH
+  // is 12, so there was a four-level window where `example` keys survived
+  // unexamined into paramsSchema — and from there into the MCP inputSchema and
+  // the generated snippets.
+  if (depth > MAX_WALK_DEPTH) {
+    if ('example' in schema) {
+      findings.push({ reason: 'oversized', at: name, hint: '••••', length: 0 });
+      delete schema.example;
+    }
+    return findings;
+  }
 
   if ('example' in schema) {
     const scrubbed = scrubValue(name, schema.example, findings, depth);
@@ -276,13 +301,31 @@ export function scrubSchemaExamples(
     else schema.example = scrubbed.value;
   }
 
+  // The dotted path is threaded through, not reset to the bare key. The name
+  // check is the strongest signal this module has, and `credentials.value`
+  // read as plain `value` loses it — the leaf looks innocuous while its parent
+  // is the thing that made it sensitive. It also makes the owner-facing `at`
+  // point at a location they can actually find.
   const properties = schema.properties;
   if (properties && typeof properties === 'object') {
     for (const [key, child] of Object.entries(properties as Record<string, unknown>)) {
       if (child && typeof child === 'object') {
-        scrubSchemaExamples(child as Record<string, unknown>, key, findings, depth + 1);
+        const path = name ? `${name}.${key}` : key;
+        scrubSchemaExamples(child as Record<string, unknown>, path, findings, depth + 1);
       }
     }
+  }
+
+  // Retained by SCHEMA_KEEP_KEYS and sanitized by sanitizeSchema, so it can
+  // carry an `example` like any other subschema — and it was the one branch
+  // this walk never descended into.
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    scrubSchemaExamples(
+      schema.additionalProperties as Record<string, unknown>,
+      name ? `${name}.*` : '*',
+      findings,
+      depth + 1,
+    );
   }
 
   if (schema.items && typeof schema.items === 'object') {
