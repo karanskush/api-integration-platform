@@ -85,16 +85,33 @@ async function persist(apiId: string, specVersionId: string, chainResult: ChainR
   return built;
 }
 
-async function dumpEntireDatabase(): Promise<string> {
-  const tables = Object.entries(schema).filter(
+function declaredTables() {
+  return Object.entries(schema).filter(
     ([, value]) => value && typeof value === 'object' && Symbol.for('drizzle:Name') in value,
   );
+}
+
+/** How many tables the sweep below actually managed to read. */
+async function scannedTableCount(): Promise<number> {
+  let scanned = 0;
+  for (const [, table] of declaredTables()) {
+    try {
+      await db.select().from(table as never);
+      scanned += 1;
+    } catch {
+      // Counted as NOT scanned, which is the point.
+    }
+  }
+  return scanned;
+}
+
+async function dumpEntireDatabase(): Promise<string> {
   const dump: Record<string, unknown> = {};
-  for (const [name, table] of tables) {
+  for (const [name, table] of declaredTables()) {
     try {
       dump[name] = await db.select().from(table as never);
     } catch {
-      // Not selectable — nothing to scan.
+      // Not selectable — nothing to scan. Coverage is asserted separately.
     }
   }
   return JSON.stringify(dump);
@@ -230,5 +247,19 @@ describe('reading verdicts back', () => {
 
     expect((await loadEdgeVerdicts(db, a.apiId, a.v1)).size).toBe(1);
     expect((await loadEdgeVerdicts(db, b.apiId, b.v1)).size).toBe(0);
+  });
+});
+
+// The sentinel sweep is only as strong as its coverage, and dumpEntireDatabase
+// swallows a failed select — so one unreadable table would silently drop out of
+// it. That is the same fail-open shape this codebase keeps finding in its own
+// guards, sitting in the test that is meant to be the backstop for all of them.
+describe('the sweep itself is honest', () => {
+  it('reaches every table schema.ts declares', async () => {
+    expect(await scannedTableCount()).toBe(declaredTables().length);
+  });
+
+  it('is checking a real number of tables, not zero', () => {
+    expect(declaredTables().length).toBeGreaterThan(15);
   });
 });
