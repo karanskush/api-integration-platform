@@ -23,6 +23,11 @@ export type EvidenceKind =
   | 'probe.error_quality'
   | 'probe.doc_drift'
   | 'probe.idempotency_signal'
+  // Whether the API actually accepts a value its own spec declares
+  // (probes/valueDomain.ts). `value` is safe to store verbatim, unlike anything
+  // the chain runner handles: it came from the provider's PUBLISHED SPEC, not
+  // out of a response, so no customer owns it.
+  | 'probe.value_domain'
   // Static, spec-derived — computed by lib/lineage.ts, same "no live traffic
   // needed" character as parser.*. Namespaced separately because it isn't a
   // scorePreview check: it's the field-to-field data-flow graph schema.ts's
@@ -66,6 +71,14 @@ const redactedExamplePayload = z.object({
   reason: z.enum(['known_prefix', 'private_key', 'jwt', 'sensitive_name', 'high_entropy']),
   hint: z.string(),
   length: z.number(),
+});
+
+const valueDomainPayload = z.object({
+  actionId: z.string(),
+  field: z.string(),
+  value: z.string(),
+  accepted: z.boolean(),
+  status: z.number(),
 });
 
 const authRejectPayload = z.object({
@@ -183,6 +196,7 @@ const evidenceSchemas = {
   'probe.error_quality': errorQualityPayload,
   'probe.doc_drift': docDriftPayload,
   'probe.idempotency_signal': idempotencySignalPayload,
+  'probe.value_domain': valueDomainPayload,
   'graph.field_lineage': fieldLineagePayload,
   'llm.doc_grounding': docGroundingPayload,
   'llm.field_semantics': fieldSemanticsPayload,

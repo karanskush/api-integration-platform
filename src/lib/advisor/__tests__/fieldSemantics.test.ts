@@ -131,3 +131,60 @@ describe('describe_fields carries semantic meaning', () => {
     expect(meaning.length).toBeLessThanOrEqual(300);
   });
 });
+
+// `allowed` has always been what the SPEC declares. This is what the API
+// actually did when each declared value was sent — the difference between a
+// document and a contract.
+describe('describe_fields separates declared values from honoured ones', () => {
+  function listWithEnum() {
+    return [
+      action({
+        name: 'list_orders',
+        method: 'GET',
+        path: '/v1/orders',
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            status: param('query', 'string', { enum: ['open', 'closed', 'archived'] }),
+          },
+        },
+      }),
+    ];
+  }
+
+  const withObserved = (accepted: string[], rejected: string[]) =>
+    ctx(listWithEnum(), {
+      valueDomains: [
+        ...accepted.map((value) => ({ actionId: 'id_list_orders', field: 'query.status', value, accepted: true, status: 200 })),
+        ...rejected.map((value) => ({ actionId: 'id_list_orders', field: 'query.status', value, accepted: false, status: 400 })),
+      ],
+    });
+
+  const statusField = (c: Parameters<typeof describeFields>[0]) =>
+    (describeFields(c, { tool: 'list_orders' }).request as Payload[]).find((f) => f.path === 'query.status');
+
+  it('still reports what the spec declares', () => {
+    expect(statusField(withObserved(['open'], []))?.allowed).toEqual(['open', 'closed', 'archived']);
+  });
+
+  it('names a declared value the API rejected', () => {
+    const field = statusField(withObserved(['open', 'closed'], ['archived']));
+
+    expect(field?.allowedObserved.accepted).toEqual(['open', 'closed']);
+    expect(field?.allowedObserved.rejected).toEqual(['archived']);
+    expect(field?.allowedObserved.note).toContain('declared by the spec but was not accepted');
+  });
+
+  it('says nothing when no probe has checked', () => {
+    const field = statusField(ctx(listWithEnum()));
+    expect(field?.allowed).toBeTruthy();
+    expect(field?.allowedObserved).toBeUndefined();
+  });
+
+  it('does not attach another operation-s observations', () => {
+    const c = ctx(listWithEnum(), {
+      valueDomains: [{ actionId: 'id_some_other', field: 'query.status', value: 'open', accepted: true, status: 200 }],
+    });
+    expect(statusField(c)?.allowedObserved).toBeUndefined();
+  });
+});

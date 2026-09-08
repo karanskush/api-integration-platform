@@ -63,6 +63,10 @@ export type AdvisorInsights = {
     matchedParam?: string;
   }>;
   authObservations: Array<{ statusObserved: number; expectedAuth: string }>;
+  // Which values the API actually accepted, from probes/valueDomain.ts. Safe to
+  // carry verbatim, unlike anything the chain runner touches: every value here
+  // came from the provider's own published spec rather than out of a response.
+  valueDomains: Array<{ actionId: string; field: string; value: string; accepted: boolean; status: number }>;
   // What the deep-analysis pass concluded a field MEANS, read back out of
   // llm.field_semantics. This is the most expensive knowledge the system
   // produces — a docs crawl plus an LLM pass over the provider's own
@@ -122,6 +126,7 @@ export function emptyInsights(): AdvisorInsights {
     driftObservations: [],
     idempotencyObservations: [],
     authObservations: [],
+    valueDomains: [],
     fieldSemantics: [],
     ownerAnswers: [],
     lineageVerdicts: [],

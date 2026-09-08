@@ -66,7 +66,7 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
   descriptor(
     'describe_fields',
     'Describe fields',
-    'Every field an operation accepts or returns, flattened to addressable paths with their types, allowed values, constraints, and — for inputs — where each value is supposed to come from. Where this API has been analysed against its own documentation, a field also carries what it MEANS and any business rule governing it, with the source of that reading. Where the API\'s owner answered a question about a field, it is marked owner-confirmed and their answer overrides our inference — check originSource before trusting an origin. Use this to answer "what data can I actually send here", especially for a nested request body.',
+    'Every field an operation accepts or returns, flattened to addressable paths with their types, allowed values, constraints, and — for inputs — where each value is supposed to come from. Where this API has been analysed against its own documentation, a field also carries what it MEANS and any business rule governing it, with the source of that reading. Where the API\'s owner answered a question about a field, it is marked owner-confirmed and their answer overrides our inference — check originSource before trusting an origin. Where a probe has sent each declared value to the live API, the field also reports which ones were actually accepted - a value under allowedObserved.rejected is declared by the spec but not honoured. Use this to answer "what data can I actually send here", especially for a nested request body.',
     {
       tool: TOOL_NAME_ARG,
       direction: {

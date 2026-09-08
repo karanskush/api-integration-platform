@@ -26,12 +26,16 @@ export type FieldSemantics = { meaning: string; constraint?: string; sourcedFrom
 // row, and a 300-field response is already at the edge of useful.
 export type OwnerAnswer = { origin?: string; question: string };
 
+/** Which declared values the API actually took, when a probe checked. */
+export type ObservedValues = { accepted: string[]; rejected: string[] };
+
 function serialize(
   field: FieldNode,
   origin?: string,
   producers?: LineageEdge[],
   semantics?: FieldSemantics,
   owner?: OwnerAnswer,
+  observed?: ObservedValues,
 ) {
   return {
     path: field.path,
@@ -39,6 +43,19 @@ function serialize(
     required: field.required,
     ...(field.format ? { format: field.format } : {}),
     ...(field.enum ? { allowed: field.enum } : {}),
+    // `allowed` above is what the SPEC declares. This is what the API actually
+    // did when each declared value was sent — the difference between a document
+    // and a contract, and the first time this tool has been able to tell them
+    // apart. A value in `rejected` is declared but not honoured.
+    ...(observed && (observed.accepted.length || observed.rejected.length)
+      ? {
+          allowedObserved: {
+            ...(observed.accepted.length ? { accepted: observed.accepted } : {}),
+            ...(observed.rejected.length ? { rejected: observed.rejected } : {}),
+            note: 'Checked by sending each declared value to the live API. Anything under "rejected" is declared by the spec but was not accepted.',
+          },
+        }
+      : {}),
     ...(field.const !== undefined ? { mustEqual: field.const } : {}),
     ...(field.pattern ? { pattern: field.pattern } : {}),
     ...(field.minimum !== undefined ? { minimum: field.minimum } : {}),
@@ -134,6 +151,15 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     if (s.tool !== action.name) continue;
     semanticsByPath.set(s.field, { meaning: s.meaning, constraint: s.constraint, sourcedFrom: s.sourcedFrom });
   }
+  // Keyed on the action's stable id, which is what probe evidence carries.
+  const observedByPath = new Map<string, ObservedValues>();
+  for (const v of ctx.insights.valueDomains) {
+    if (v.actionId !== action.id) continue;
+    const entry = observedByPath.get(v.field) ?? { accepted: [], rejected: [] };
+    const bucket = v.accepted ? entry.accepted : entry.rejected;
+    if (!bucket.includes(v.value)) bucket.push(v.value);
+    observedByPath.set(v.field, entry);
+  }
   const ownerByPath = new Map<string, OwnerAnswer>();
   for (const a of ctx.insights.ownerAnswers) {
     if (a.tool !== action.name) continue;
@@ -166,13 +192,14 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
       if (key !== 'request') return serialize(field, undefined, undefined, semantics);
       const producers = producersFor(graph, action.name, field.path);
       const owner = ownerByPath.get(field.path);
+      const observed = observedByPath.get(field.path);
       // A person who runs this API outranks our inference about it. Without
       // this the owner could tell us "the server assigns this, ignore what you
       // send" and describe_fields would still answer caller_supplied — while
       // now also claiming it was owner-confirmed, which is worse than never
       // having asked. Same precedence rule as enrichedSpec.ts.
       const origin = owner?.origin ?? originOf(field, producers.length > 0);
-      return serialize(field, origin, producers, semantics, owner);
+      return serialize(field, origin, producers, semantics, owner, observed);
     });
   }
 

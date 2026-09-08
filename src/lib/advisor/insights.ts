@@ -20,6 +20,7 @@ const PROBE_KINDS: EvidenceKind[] = [
   'probe.error_quality',
   'probe.doc_drift',
   'probe.idempotency_signal',
+  'probe.value_domain',
 ];
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
@@ -141,6 +142,19 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
             actionId: p.actionId,
             hasIdempotencySignal: p.hasIdempotencySignal,
             ...(p.matchedParam ? { matchedParam: p.matchedParam } : {}),
+          });
+        }
+        break;
+      }
+      case 'probe.value_domain': {
+        const p = parseEvidencePayload('probe.value_domain', fact.payload);
+        if (p) {
+          insights.valueDomains.push({
+            actionId: p.actionId,
+            field: p.field,
+            value: p.value,
+            accepted: p.accepted,
+            status: p.status,
           });
         }
         break;

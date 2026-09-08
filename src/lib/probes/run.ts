@@ -5,6 +5,7 @@ import { runAuthClarity } from './authClarity';
 import { runDocDrift } from './docDrift';
 import { runErrorQuality } from './errorQuality';
 import { runIdempotency } from './idempotency';
+import { runValueDomain } from './valueDomain';
 import { dedupeLifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
@@ -73,6 +74,14 @@ export async function runScoreEngine(
     runIdempotency(ctx),
   ]);
 
+  // Runs after the scored probes and contributes NO subscore: whether an API
+  // honours its own declared enum is a fact about the contract, not a quality
+  // judgement, and folding it into a number would bury it. Rides the same
+  // evidence array so it needs no new persistence path — SCORING_KINDS already
+  // excludes anything that did not move the score, the way lifecycle signals
+  // are handled.
+  const valueDomain = await runValueDomain(ctx);
+
   // Renormalized over only the subscores that actually ran — an API whose
   // spec never documents e.g. a responseSchema (so docDrift can't run) must
   // not be scored as if it silently failed that check.
@@ -104,6 +113,7 @@ export async function runScoreEngine(
       ...errorQuality.evidence,
       ...docDrift.evidence,
       ...idempotency.evidence,
+      ...valueDomain,
     ]),
   };
 }
