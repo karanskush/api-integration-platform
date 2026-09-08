@@ -49,6 +49,8 @@ What this means: the platform already *fetches* the spec, already *calls* the AP
 
 The survey below is what a buyer would find. Sources are in Appendix A.
 
+**Its conclusion has been superseded — see the correction in §2.8.**
+
 ### 2.1 Spec-to-spec diffing is a commodity
 
 - **oasdiff**: open source, 681 distinct checks over OpenAPI 3.0–3.2, the default CI gate for breaking changes.
@@ -99,6 +101,28 @@ Conclusion: for the large providers, spec repositories and feeds *are* a machine
 KushoAI's *State of Agentic API Testing 2026* (1.4 million test executions across 2,616 organizations): **41% of APIs experience undocumented schema changes within 30 days** of test creation; 34% of observed failures are authentication/authorization; schema and validation errors add 22%. Caveats: it is vendor telemetry with no published methodology, and the "63% within 90 days" number circulating alongside it does **not** appear on KushoAI's page (it originates in a FlareCanary post). Cite 41%/30 days; do not cite 63%.
 
 ### 2.8 Positioning conclusion
+
+> **Corrected 2026-09-08 — read this before acting on the section below.**
+>
+> The composite described here held for about six weeks and then stopped being
+> a differentiator. A fresh survey on 2026-09-08 found three of its four
+> ingredients shipped by competitors: FlareCanary polls endpoints on a schedule
+> and classifies by severity, ShiftGraph does shape-only traffic profiling
+> (describing itself as "structure only, values discarded at collection" — the
+> canary's exact design, arrived at independently), and Vercel's AI SDK 7.0.19
+> ships `fingerprintTools` / `detectToolDrift`. Arazzo generation is available
+> from Redocly, Speakeasy, Specmatic and Bruno. Jentic catalogues 6,000+ APIs
+> and 2,000+ workflows.
+>
+> "Nothing identified in this survey" was accurate when written and is not
+> accurate now, and the fusion argument is weaker than it reads: a composite of
+> commodities is a roadmap item for anyone who wants it, not a moat.
+>
+> What none of them do is publish knowledge that was **verified by executing
+> it**. That is the surviving claim, and the implementation log at the end of
+> this document ("Executed Lineage") records what was built against it. The
+> list below is retained as written rather than edited, because the point of a
+> dated survey is to be able to see how fast it aged.
 
 Every tool above holds one signal for one audience. Nothing identified in this survey:
 
@@ -676,3 +700,85 @@ immediately, rather than waiting for a scheduled run they may not even be on a
 plan to receive. It rides the same shared outbound budget and sits in its own
 try/catch, so a chain failure can never undo the score written above it — the
 same isolation the canary has in `reverifyOne`.
+
+### The six latent defects the plan listed, and what they turned out to be
+
+Mapping the program surfaced six defects in machinery the new work builds on.
+They were listed as "small, cheap" and mostly were, but three of them were
+producing or protecting a **false published claim**, which is the one failure
+mode this product cannot afford.
+
+1. **The canary's comparison floor silently swallowed operations.**
+   `DEFAULT_SAMPLES` and `MIN_SAMPLES` are both 3 and only 2xx responses build a
+   shape, so one failed sample left `sampleCount` at 2 and `diffSnapshots`
+   answered `[]`. The snapshot was still stored, which is what made the damage
+   outlast the blip: it became the newest row, so the *next* run compared
+   against an uncomparable baseline and also said nothing. One transient
+   failure disabled drift detection for that operation across two runs, silently.
+   Under-floor snapshots are now reported and not stored, which keeps the last
+   comparable snapshot as the baseline. The test covering this asserted the
+   defect — it checked that a two-sample snapshot *was* stored and called it
+   graceful degradation.
+
+2. **`loadPreviousSnapshots` was not fenced on environment.** The write path had
+   always stamped `environment`; the read ignored it, so a sandbox observation
+   and a production one competed for "newest". The sandbox shape became the
+   baseline for the next production run and the difference between two
+   *environments* was published as behavioural drift on the contract. Still
+   deliberately not fenced on `spec_version_id`: `actionKey` is stable across
+   versions precisely so a shape survives a re-import, and fencing there would
+   blind the canary exactly when a document changes.
+
+3. **Two identifier spaces in one result.** `inconclusive` carried tool names
+   while snapshots key on `action.id`. Nothing consumed more than `.length`, so
+   it never misbehaved — it was a trap for the first caller to join them.
+
+4. **`operation_stability` had no path back.** Only ever set to `drifted`, only
+   ever cleared by a re-import bringing fresh `actions` rows at the column
+   default — so the flag actually tracked "has this ever drifted since the last
+   import". It now clears from positive evidence only: operations `reconcile`
+   checked against a non-empty documented set and found consistent. Not from
+   "we saw no drift", because an operation nobody could sample has produced no
+   evidence that it matches. `reconcile` also answers `consistent` when the spec
+   documents nothing at all, which is absence of evidence wearing the same word,
+   so that case is excluded.
+
+5. **Orphaned `running` rows in `score_runs`.** Both writers update to a terminal
+   state in a `try/catch`, which covers a run that throws and not a process that
+   disappears. `score_runs` is the audit trail for whether an API was actually
+   probed, so a row permanently asserting `running` is the table contradicting
+   itself. Reaped from the reverify cron past a cutoff set well beyond the 300s
+   ceiling — snug against it would risk reaping a live run that then overwrites
+   its own terminal state.
+
+6. **The Ajv validator cache collided across APIs.** `validate.ts` keyed compiled
+   validators on `action.id`, which is `sha1(method + ' ' + path).slice(0, 8)` —
+   documented as stable *within* an import, never as unique across APIs. Two
+   tenants exposing `GET /v1/customers/{id}` shared one validator on a reused
+   Fluid Compute instance, so the second API's arguments were validated against
+   the first API's schema. Executed Lineage raised the stakes, because a chain
+   consults `validateParams` immediately before sending a real production
+   identifier. Now keyed on the schema, which is what a compiled validator is
+   actually a function of — correct by construction rather than by a uniqueness
+   claim that was never true. There was no test file for `validate.ts` at all.
+
+### One defect in the new code, found the same way
+
+`lineageChain.ts` memoized producer responses so five consumers taking
+`customerId` from `list_customers` cost one call rather than five — but keyed on
+the operation name, while what it memoizes is the *extraction*, which depends on
+`producerField`. `buildExecutionPlan` has no producer dedupe, so
+`list_orders.data[].orderId → get_order` and
+`list_orders.data[].customerId → get_customer` both become chains, and the
+second received the first's order IDs. Every one 404s, which is exactly the
+shape `judgeRun` calls `contradicted`; at `MIN_CONTRADICTIONS = 2` a second run
+promotes it to `refuted` and `get_call_sequence` publishes "Do not rely on this
+link" against a sound edge.
+
+Worth stating plainly because it is the mirror image of the failure the negative
+control exists to prevent. B0 says a 2xx alone is correlation and must never
+become a confirmation. This was the same error on the refutation side: a 404
+alone is not a contradiction either, and here the engine was manufacturing the
+404 itself. **An engine that invents a refutation is worse than one that says
+nothing** — the cost of the fix is one extra producer call per distinct field,
+bounded by `MAX_CHAINS`.
