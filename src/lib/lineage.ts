@@ -544,8 +544,88 @@ export function computeLineage(record: ImportRecord, options: LineageOptions = {
 // a discarded record's graph be collected with it.
 const cache = new WeakMap<ImportRecord, Map<string, LineageGraph>>();
 
+// The object-identity memo above is correct but can only ever hit WITHIN one
+// request: persistentApi.ts's assembleRecord() returns a fresh object literal on
+// every call, so a persisted API recomputed its whole graph on every MCP tool
+// call and every page render. Measured on this machine, that is ~5ms at 50
+// actions, ~32ms at 150, and ~71ms at the 300-action MAX_ACTIONS cap.
+//
+// The note above rejects a DERIVED key (id + count + createdAt) and is right to:
+// those three can agree across two different records, and a collision hands back
+// a graph built from somebody else's actions. spec_version_id is a different
+// thing entirely — actions are loaded BY it (persistentApi.ts's
+// loadActionsForVersion), so two records carrying the same one necessarily
+// describe the same operations. It cannot collide the way a heuristic triple
+// can, which is what makes a keyed cache safe here.
+//
+// Deliberately NOT the materialized graph.field_lineage rows: lineageEvidence.ts
+// caps those at MAX_PERSISTED_EDGES = 500 while a 300-action API computes ~1000
+// edges, so reading them back would serve a silently halved graph — and its own
+// header already says the live in-memory graph is "unaffected either way".
+// Those rows are the durable audit record, not a serving cache.
+// spec_version_id alone is NOT sufficient, and assuming it was would have
+// reintroduced exactly the collision the note above warns about. Two records
+// legitimately share a spec version while carrying different ACTION NAMES:
+// mcp/[id]/route.ts builds `{ ...record, actions: resolvedActions }` after
+// resolveNameCollisions() renames any operation that clashes with an advisor
+// tool. This graph is keyed by tool name throughout, so caching those two under
+// one key would serve the product page a graph built from the MCP server's
+// renamed operations, or the reverse.
+//
+// So the key also carries a fingerprint of the action set itself. Cheap enough
+// to be worth it: hashing id+name for 300 actions is microseconds against the
+// ~71ms recompute it guards.
+function actionSetFingerprint(record: ImportRecord): string {
+  // FNV-1a, 32-bit. Not cryptographic — it only has to distinguish action sets
+  // that share a spec version, and a miss costs a recompute, never a wrong
+  // answer... except that a COLLISION would be a wrong answer, which is why the
+  // action count is appended: two sets of different size can never collide.
+  let hash = 0x811c9dc5;
+  for (const action of record.actions) {
+    const token = `${action.id}:${action.name};`;
+    for (let i = 0; i < token.length; i++) {
+      hash ^= token.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+  }
+  return `${(hash >>> 0).toString(36)}:${record.actions.length}`;
+}
+
+const MAX_CACHED_GRAPHS = 16;
+const keyedCache = new Map<string, LineageGraph>();
+
 export function lineageFor(record: ImportRecord, options: LineageOptions = {}): LineageGraph {
   const variant = options.includeLow ? 'low' : 'std';
+
+  // Persisted records: keyed, so the graph survives across requests on a reused
+  // Fluid Compute instance. A new spec version yields a new key and therefore a
+  // recomputation, which is the invalidation rule for free.
+  if (record.specVersionId) {
+    const key = `${record.specVersionId}|${variant}|${actionSetFingerprint(record)}`;
+    const hit = keyedCache.get(key);
+    if (hit) {
+      // Refresh recency: delete + set moves it to the end of Map iteration
+      // order, which is what makes the eviction below least-recently-used.
+      keyedCache.delete(key);
+      keyedCache.set(key, hit);
+      return hit;
+    }
+
+    const graph = computeLineage(record, options);
+    keyedCache.set(key, graph);
+    // Bounded because a busy instance can serve many APIs and a 300-action
+    // graph is not small. Evicting the least recently used costs a recompute,
+    // never a wrong answer.
+    if (keyedCache.size > MAX_CACHED_GRAPHS) {
+      const oldest = keyedCache.keys().next();
+      if (!oldest.done) keyedCache.delete(oldest.value);
+    }
+    return graph;
+  }
+
+  // Ephemeral imports have no spec_versions row, so they keep the
+  // object-identity memo — which is all they need, since the same record object
+  // is reused for the whole request.
   let byVariant = cache.get(record);
   if (!byVariant) {
     byVariant = new Map();
@@ -558,6 +638,13 @@ export function lineageFor(record: ImportRecord, options: LineageOptions = {}): 
   const graph = computeLineage(record, options);
   byVariant.set(variant, graph);
   return graph;
+}
+
+// Test seam. The keyed cache is module state that outlives a single test, and a
+// graph cached under a spec version id from one test would otherwise be handed
+// to the next one that reuses the id.
+export function clearLineageCache(): void {
+  keyedCache.clear();
 }
 
 // Convenience reads for the advisor tools.

@@ -64,6 +64,14 @@ export type ImportRecord = {
   // the way baseUrls is.
   externalDocsUrl?: string;
   counts: { total: number; read: number; write: number; destructive: number };
+  // The spec version these actions were loaded from, when the record came out
+  // of Postgres. Absent for an ephemeral import, which has no spec_versions row.
+  //
+  // This is a stable, collision-free identity for the ACTION SET: actions are
+  // loaded by spec_version_id, so two records carrying the same one necessarily
+  // describe the same operations. lineage.ts uses it as a cross-request cache
+  // key — see the note there on why a derived key would not be safe.
+  specVersionId?: string;
   // Example values withheld at import because they looked like credentials
   // (secretScan.ts). An IMPORT-TIME artifact: present on a freshly imported
   // record so the persist layer can record what was dropped, and deliberately

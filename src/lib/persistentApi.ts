@@ -92,6 +92,10 @@ async function assembleRecord(
     authIn: (api.authIn as ImportRecord['authIn']) ?? undefined,
     actions: actionsList,
     counts,
+    // Carried so lineage.ts can cache the computed graph across requests: this
+    // function returns a FRESH object literal every call, so the object-identity
+    // memo in lineage.ts can never hit for a persisted API.
+    specVersionId,
     createdAt: api.createdAt.getTime(),
     expiresAt: Number.MAX_SAFE_INTEGER,
   };
