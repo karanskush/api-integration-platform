@@ -463,3 +463,77 @@ export const stripeEvents = pgTable('stripe_events', {
   type: text('type').notNull(),
   createdAt: createdAt(),
 });
+
+// Executed Lineage (plan §B). One row per RUN, so "we could not look" and "we
+// looked and found nothing" never collapse into the same silence — the canary's
+// own lesson, learned when its live run showed `inconclusive` being dropped.
+// Without aborted_reason a budget-exhausted run and a clean-but-empty run are
+// indistinguishable after the fact.
+//
+// Reusing score_runs was not an option: its `findings` column is
+// JSON.stringify(result) into open jsonb, which is the single widest leak
+// surface for a feature that handles live identifiers.
+export const lineageRuns = pgTable('lineage_runs', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull().default('production'),
+  status: text('status').notNull(), // succeeded|failed|aborted
+  chainsPlanned: integer('chains_planned').notNull().default(0),
+  chainsExecuted: integer('chains_executed').notNull().default(0),
+  requestsMade: integer('requests_made').notNull().default(0),
+  budgetLimit: integer('budget_limit').notNull().default(0),
+  // CLOSED vocabularies, never a message. ssrf.ts throws `Invalid URL: <url>`
+  // and for an executed chain that URL carries the extracted identifier, so the
+  // analysis_runs convention of storing err.message would compose into a leak.
+  abortedReason: text('aborted_reason'), // rate_limited|budget_exhausted|deadline_exceeded|spec_version_moved
+  errorCode: text('error_code'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [index('lineage_runs_api_id_started_at_idx').on(t.apiId, t.startedAt)]);
+
+// One row per edge per run. Append-only, newest-wins on read — the same shape
+// operation_observations uses, and what makes lineageVerdict's cross-run
+// agreement rule computable.
+//
+// ZERO jsonb columns, deliberately, and strictly stronger than
+// operation_observations: jsonb *could* hold a value and is kept safe only by a
+// disciplined writer, whereas an integer cannot hold one at all. The price is
+// losing the full status histogram; predominant_status is enough to debug with.
+export const lineageExecutions = pgTable('lineage_executions', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  // NOT NULL on purpose: a claim about a contract that does not name the
+  // version it describes is worthless, and the Living Twin work established
+  // version fencing everywhere else.
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  runId: uuid('run_id').notNull().references(() => lineageRuns.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull().default('production'),
+
+  producerActionKey: text('producer_action_key').notNull(),
+  producerTool: text('producer_tool').notNull(),
+  producerField: text('producer_field').notNull(), // 'response.data[].id'
+  consumerActionKey: text('consumer_action_key').notNull(),
+  consumerTool: text('consumer_tool').notNull(),
+  consumerField: text('consumer_field').notNull(), // 'path.customerId'
+
+  inferredConfidence: text('inferred_confidence').notNull(), // high|medium|low at run time
+  outcome: text('outcome').notNull(), // confirmed|contradicted|inconclusive
+  reason: text('reason').notNull(), // lineageVerdict.ts ChainReason
+
+  attempts: integer('attempts').notNull().default(0),
+  successes: integer('successes').notNull().default(0),
+  candidateCount: integer('candidate_count').notNull().default(0),
+  predominantStatus: integer('predominant_status'),
+  // The negative control. Without it a confirmation is only a correlation, so
+  // these two columns are what make an `observed` verdict admissible.
+  controlAttempted: boolean('control_attempted').notNull().default(false),
+  controlStatus: integer('control_status'),
+  latencyP50Ms: integer('latency_p50_ms'),
+
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+}, (t) => [
+  index('lineage_executions_edge_idx').on(t.apiId, t.specVersionId, t.consumerTool, t.consumerField, t.observedAt),
+  index('lineage_executions_run_id_idx').on(t.runId),
+]);
