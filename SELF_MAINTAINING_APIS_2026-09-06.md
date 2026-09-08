@@ -633,8 +633,16 @@ between the two cases, and a real API demonstrated it.
    is the same distinction-collapsing defect the canary's own first live run
    exposed in itself, in a new place.
 
-### What is deliberately not wired
+### A correction: manual /verify does run chains
 
-Manual `/verify` does not run chains. A single BYOK run cannot satisfy the
-cross-run agreement rule, so it could only ever produce inconclusive verdicts.
-The scheduled path is the one that produces a cadence.
+This log first said manual `/verify` was deliberately left unwired, because "a
+single BYOK run cannot satisfy the cross-run agreement rule". That reasoning was
+wrong, and `lineageVerdict.ts` says so plainly: only REFUTATION requires two
+runs to agree, because a 404 has too many innocent explanations. A CONFIRMATION
+needs one.
+
+So an owner who clicks verify with their own key gets a proven link back
+immediately, rather than waiting for a scheduled run they may not even be on a
+plan to receive. It rides the same shared outbound budget and sits in its own
+try/catch, so a chain failure can never undo the score written above it — the
+same isolation the canary has in `reverifyOne`.

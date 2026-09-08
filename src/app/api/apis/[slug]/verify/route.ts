@@ -1,8 +1,14 @@
 import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import { dbReady, getDb } from '@/lib/db';
-import { apis, orgMembers, scoreRuns, users } from '@/lib/db/schema';
+import { apis, orgMembers, orgs, scoreRuns, users } from '@/lib/db/schema';
+import { buildExecutionPlan } from '@/lib/lineagePlan';
+import { applyLineageRun } from '@/lib/lineageRun';
 import { loadPersistentRecord } from '@/lib/persistentApi';
+import { PLAN_LIMITS, outboundDeadlineMs, outboundRequestsPerRun, type Plan } from '@/lib/plans';
+import { createBudget, withBudget } from '@/lib/probes/budget';
+import { runLineageChains } from '@/lib/probes/lineageChain';
+import { invokeAction } from '@/lib/mcpTools';
 import { runScoreEngine } from '@/lib/probes/run';
 import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
@@ -37,6 +43,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     .limit(1);
   if (!membership.length) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
+  // Needed for the chain-verification gate below; the score run itself is
+  // available on every plan and stays that way.
+  const [org] = await db.select({ plan: orgs.plan }).from(orgs).where(eq(orgs.id, api.orgId)).limit(1);
+  const orgPlan = org?.plan ?? 'free';
+
   if (api.claimStatus !== 'claimed') {
     return Response.json(
       { error: 'This API has not been claimed yet — there is no owner authorized to run a verification.' },
@@ -58,10 +69,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const record = await loadPersistentRecord(slug);
   if (!record) return Response.json({ error: 'Unknown API' }, { status: 404 });
 
+  // One ceiling for the whole run, applied at the seam every probe already
+  // calls through — the same wiring reverifyOne uses.
+  const budgetLimit = outboundRequestsPerRun();
+  const budget = createBudget({ maxRequests: budgetLimit, deadlineMs: outboundDeadlineMs() });
+  const budgetedInvoke = withBudget(invokeAction, budget);
+
   const [run] = await db.insert(scoreRuns).values({ apiId: api.id, status: 'running' }).returning();
 
   try {
-    const result = await runScoreEngine(record, { upstreamKey });
+    const result = await runScoreEngine(record, { upstreamKey, invoke: budgetedInvoke });
 
     await applyScoreRun(db, {
       apiId: api.id,
@@ -78,11 +95,53 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       .set({ status: 'succeeded', findings: result, completedAt: new Date() })
       .where(eq(scoreRuns.id, run.id));
 
+    // Executed Lineage on the manual path too.
+    //
+    // This was deferred on the reasoning that "a single BYOK run cannot satisfy
+    // the cross-run rule". That was wrong, and lineageVerdict.ts says so: only
+    // REFUTATION needs two runs to agree. A confirmation needs one — so an
+    // owner who clicks verify with their own key can get a proven link back
+    // immediately, rather than waiting for a scheduled run they may not be on a
+    // plan to receive.
+    //
+    // Isolated the same way the canary is in reverifyOne: a failure here must
+    // never undo the score written above.
+    let chains: { planned: number; executed: number; confirmed: number } | undefined;
+    const plan = PLAN_LIMITS[(orgPlan as Plan) in PLAN_LIMITS ? (orgPlan as Plan) : 'free'];
+    if (plan.chainVerification) {
+      try {
+        const executionPlan = buildExecutionPlan(record);
+        const chainResult = await runLineageChains(
+          { record, upstreamKey, invoke: budgetedInvoke, budget },
+          executionPlan,
+        );
+        const applied = await applyLineageRun(db, {
+          apiId: api.id,
+          specVersionId: api.currentSpecVersionId!,
+          chainsPlanned: executionPlan.chains.length,
+          budgetLimit,
+          result: chainResult,
+        });
+        chains = {
+          planned: executionPlan.chains.length,
+          executed: chainResult.observations.length,
+          confirmed: applied.confirmed,
+        };
+      } catch (err) {
+        // Name only: ssrf.ts throws `Invalid URL: <url>`, and for an executed
+        // chain that URL carries the extracted identifier.
+        console.error('[verify] chain run failed', {
+          slug,
+          reason: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
+
     // A new verified score changes the page's score panel, the badge colour,
     // and the badge manifest, so none may serve its cached pre-run version.
     purgeApiSurfaces(slug);
 
-    return Response.json(result);
+    return Response.json({ ...result, ...(chains ? { chains } : {}) });
   } catch {
     console.error('[verify]', { slug, apiId: api.id });
     await db
