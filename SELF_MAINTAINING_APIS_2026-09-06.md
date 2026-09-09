@@ -782,3 +782,89 @@ alone is not a contradiction either, and here the engine was manufacturing the
 404 itself. **An engine that invents a refutation is worse than one that says
 nothing** — the cost of the fix is one extra producer call per distinct field,
 bounded by `MAX_CHAINS`.
+
+---
+
+## Implementation log — closing the audit (2026-09-09)
+
+A review of everything built against the original ask — *know what the
+provider's own developers know: the variables, the values, the combinations* —
+plus the dependency surface and the one hot path every agent touches.
+
+### Three knowledge products that were captured and dropped
+
+Each of these had its raw material already in the system, reaching nobody.
+
+- **Rate limits.** `pickCapturedHeaders` had allowlisted `ratelimit-*` and
+  `x-ratelimit-*` on every probe response since the lifecycle work; no evidence
+  kind existed to persist them; nothing served them. `changes/rateLimit.ts` reads
+  both header families — the IETF structured form states quota *and* window, the
+  legacy X- form states only the quota, and that is reported as
+  `windowSeconds: null` rather than guessed. Only the *policy* is carried:
+  `remaining` and `reset` describe one response's position in the window and
+  are noise a minute later, and a test asserts they cannot leak. Served on
+  `get_endpoint_schema` with its basis and date; summarised on `check_freshness`.
+- **Observed field presence.** The canary had recorded, per documented response
+  field, how many of N sampled responses carried it — read back only by its own
+  diff. "The spec says required; it was in one response of three" is exactly
+  what a provider's team knows and a document cannot say. `describe_fields` now
+  attaches `observed: { presentIn, sampleCount, always }` per response field and
+  says in words when a documented-required field was missing. Fenced to the
+  current version and to production, newest observation per operation.
+- **Webhooks.** Neither OpenAPI 3.1 `webhooks` nor 3.0 `callbacks` was parsed —
+  the one part of a contract describing traffic in the other direction. Both
+  spellings now become one `Webhook` shape (a callback names the operation that
+  registers it), the payload schema goes through the same secret filter as any
+  other because an example payload is where a signing secret ends up pasted,
+  and `docentapi_get_webhooks` serves them with the basis *declared in the spec —
+  no delivery was observed*. Migration 0014, hand-written like 0007 onward.
+
+Checked and already covered: pagination, scopes, idempotency, deprecation and
+sunset (observed signals reach `get_changes_since` through the ledger with
+`source: 'header'`).
+
+### The hot path, measured
+
+Every `docentapi_*` call from every agent goes through `loadPersistentRecord`
+and `loadAdvisorInsights` against Neon over HTTP, where a round trip is a
+network hop. Parallel queries in one stage cost about one hop; sequential
+stages cost one each. Nobody had counted stages. A new ordinal tracer
+(`db/__tests__/tracedDb.ts`: a query opens a new stage iff every earlier query
+had completed when it was issued — no clock, so no jitter) measured **10
+sequential hops per advisor call**: 3 + 1 + 6. Every read after the first
+depended only on ids already in hand. Now **4**, same queries, and
+`hotPathRoundTrips.test.ts` pins the count so an `await` in the wrong place
+shows up as a red test rather than as latency nobody attributed. The presence
+read above joined the parallel stage rather than adding a hop.
+
+### The dependency surface
+
+Every in-range update taken (Next 16.3.4, ai 7.0.94, Clerk 7.9, and the rest).
+Then, each verified separately with typecheck, the full suite and a production
+build: the **2026-07-28 MCP protocol** — `@modelcontextprotocol/server` +
+`/core` 2.0, mcp-handler 2.1, zod 4 (one `z.record` call was the whole
+migration; the route registers at the low level, which survived intact) — with
+a seam test that drives the route's exact registration pattern through the
+real library; **TypeScript 7** (the native compiler, usable because Next 16.3
+drives `tsc` as a CLI and nothing here needs the JS compiler API); **vitest 5**
+(stricter defaults, suite passes under them unchanged); and
+`@readme/openapi-parser` 9, `@scalar/postman-to-openapi` 0.7, `undici` 8, each
+with a single unchanged call site. `@types/node` stays on 24 because that is the
+runtime. Remaining `npm audit` entries are all the old esbuild under
+drizzle-kit's dev-only loader — a dev-server advisory that does not reach a
+build.
+
+One thing worth recording honestly: the first attempt at the toolchain majors
+"failed" on every package, and every failure was the same one line — a type
+error in a test I had written in a parallel step and swept into the previous
+commit unchecked. The runtime was green throughout. Verify-or-revert gates are
+only as good as the state they start from.
+
+### Models
+
+Enrichment, triage and synthesis now default to `anthropic/claude-fable-5.1`
+on the Gateway; `ask` stays on `claude-sonnet-5`. The split is deliberate:
+enrichment reads a provider's published docs, ask carries a person's typed
+question, and Fable 5.1 has no zero-data-retention option. An explicitly
+configured ask provider (Azure, direct OpenAI) is followed by enrichment so no
+existing deployment changes behaviour.
