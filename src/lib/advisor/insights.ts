@@ -6,12 +6,13 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { changeSummary, listChanges } from '../changes/query';
 import { dbReady, getDb, type Db } from '../db';
-import { actions as actionsTable, apis, clarifications, evidenceFacts, scores } from '../db/schema';
+import { actions as actionsTable, apis, clarifications, evidenceFacts, scores, operationObservations } from '../db/schema';
 // Imported from clarify/archetypes rather than clarify/index: the index
 // re-exports triage and synthesize, which import the AI SDK, and this module
 // runs on every MCP request that calls a tool.
 import { originForAnswer, type AnswerSpec } from '../clarify/archetypes';
 import { parseEvidencePayload, type EvidenceKind } from '../evidence';
+import type { ObservedShape } from '../changes/observation';
 import { loadEdgeVerdicts } from '../lineageRun';
 import { emptyInsights, type AdvisorInsights } from './types';
 
@@ -27,6 +28,13 @@ const PROBE_KINDS: EvidenceKind[] = [
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
 const MAX_FACTS = 200;
+
+// Observation rows are one per operation per canary run; the newest per
+// operation is the only one that is knowledge. Read enough rows to cover a
+// large API's most recent run and dedupe in memory, the way
+// canaryRun.loadPreviousSnapshots does.
+const MAX_OBSERVATION_ROWS = 300;
+const MAX_OBSERVED_OPERATIONS = 100;
 
 // Semantics are per-field rather than per-probe, so a large API produces far
 // more of them — read under their own cap instead of competing with the probe
@@ -66,7 +74,7 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
   // six sequential stages, each a network hop against Neon over HTTP, under
   // every advisor tool call from every agent. hotPathRoundTrips.test.ts pins
   // the count so it cannot quietly creep back.
-  const [[scoreRow], recentChanges, summary, facts, semanticFacts, verdicts, answeredRows] = await Promise.all([
+  const [[scoreRow], recentChanges, summary, facts, semanticFacts, verdicts, answeredRows, observationRows] = await Promise.all([
     db.select().from(scores).where(eq(scores.apiId, api.id)).limit(1),
     listChanges(db, api.id, { limit: MAX_CHANGES, since: changeSince }),
     changeSummary(db, api.id),
@@ -124,6 +132,29 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
             ),
           )
           .limit(MAX_ANSWER_ROWS)
+      : Promise.resolve([]),
+    // The canary's newest production observation per operation. Fenced to the
+    // current version (a shape observed against a superseded contract says
+    // nothing about this one) and to production (a sandbox shape is a
+    // different API for this purpose — canaryRun.ts learned that the hard way).
+    versionId
+      ? db
+          .select({
+            actionKey: operationObservations.actionKey,
+            shape: operationObservations.shape,
+            sampleCount: operationObservations.sampleCount,
+            observedAt: operationObservations.observedAt,
+          })
+          .from(operationObservations)
+          .where(
+            and(
+              eq(operationObservations.apiId, api.id),
+              eq(operationObservations.specVersionId, versionId),
+              eq(operationObservations.environment, 'production'),
+            ),
+          )
+          .orderBy(desc(operationObservations.observedAt))
+          .limit(MAX_OBSERVATION_ROWS)
       : Promise.resolve([]),
   ]);
 
@@ -239,6 +270,22 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
       default:
         break;
     }
+  }
+
+  // Newest observation per operation; rows arrive newest first. Under-floor
+  // snapshots are never stored (canary.ts), so every row here was comparable.
+  const seenObserved = new Set<string>();
+  for (const row of observationRows) {
+    if (seenObserved.has(row.actionKey)) continue;
+    if (seenObserved.size >= MAX_OBSERVED_OPERATIONS) break;
+    seenObserved.add(row.actionKey);
+    const shape = (row.shape as ObservedShape | null) ?? {};
+    insights.observedShapes.push({
+      actionId: row.actionKey,
+      sampleCount: row.sampleCount,
+      observedAt: row.observedAt.toISOString(),
+      fields: Object.entries(shape).map(([path, o]) => ({ path, presentIn: o.presentIn, types: o.types })),
+    });
   }
 
   // (Fetched in the parallel stage above.)

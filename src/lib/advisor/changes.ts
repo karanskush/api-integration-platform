@@ -132,6 +132,24 @@ export function checkFreshness(ctx: AdvisorContext) {
       : null,
     toolFingerprint: combined,
     toolCount: tools.length,
+    // What has been OBSERVED, as opposed to documented, at the API level —
+    // the per-operation detail is on get_endpoint_schema and describe_fields.
+    observed: {
+      operationsSampled: ctx.insights.observedShapes.length,
+      operationsWithRateLimitPolicy: new Set(ctx.insights.rateLimits.map((r) => r.actionId)).size,
+      ...(ctx.insights.rateLimits.length
+        ? {
+            tightestRateLimit: (() => {
+              const t = ctx.insights.rateLimits.reduce((best, r) =>
+                r.windowSeconds !== null && (best.windowSeconds === null || r.limit / r.windowSeconds < best.limit / best.windowSeconds)
+                  ? r
+                  : best,
+              );
+              return { limit: t.limit, windowSeconds: t.windowSeconds };
+            })(),
+          }
+        : {}),
+    },
     basis: summary ? 'stored change history for this API' : 'ephemeral import — no stored history',
     note: summary
       ? 'toolFingerprint is a SHA-256 over every tool name, description, input schema, and annotation this server serves. If it differs from the value you cached, the tool surface changed — call docentapi_get_changes_since before reusing anything you learned earlier.'

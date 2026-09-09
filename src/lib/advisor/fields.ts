@@ -32,6 +32,9 @@ export type ObservedValues = { accepted: string[]; rejected: string[] };
 /** The states an entity was actually seen in. No transition is implied. */
 export type ObservedStates = { values: string[]; sampleCount: number };
 
+/** How many of the canary's sampled responses carried this field. */
+export type ObservedPresence = { presentIn: number; sampleCount: number; observedAt: string };
+
 /**
  * Execution receipts for producer->consumer links, keyed exactly as
  * lineageRun.ts keys them.
@@ -72,6 +75,7 @@ function serialize(
   // Pre-bound to this consumer operation and field, so serialize needs to know
   // nothing about how a verdict is keyed.
   receiptFor?: (producerTool: string, producerField: string) => Record<string, unknown>,
+  presence?: ObservedPresence,
 ) {
   return {
     path: field.path,
@@ -111,6 +115,24 @@ function serialize(
             values: states.values.map((v) => asData(v, 120)),
             sampleCount: states.sampleCount,
             note: 'Values seen across sampled records. A vocabulary, not a state machine — no transition between these is claimed.',
+          },
+        }
+      : {}),
+    // Whether the field actually shows up. A spec says "required"; the canary
+    // says "present in 1 of 3 responses", and when those disagree the second
+    // is the one an integrator's null check has to be written against.
+    ...(presence
+      ? {
+          observed: {
+            presentIn: presence.presentIn,
+            sampleCount: presence.sampleCount,
+            always: presence.presentIn >= presence.sampleCount,
+            ...(field.required && presence.presentIn < presence.sampleCount
+              ? {
+                  note: `Documented as required but absent from ${presence.sampleCount - presence.presentIn} of ${presence.sampleCount} sampled responses — treat as optional.`,
+                }
+              : {}),
+            observedAt: presence.observedAt,
           },
         }
       : {}),
@@ -227,6 +249,15 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     if (v.actionId !== action.id) continue;
     statesByName.set(v.field, { values: v.values, sampleCount: v.sampleCount });
   }
+  // Matched on PATH: the canary addresses response fields exactly as the field
+  // map does (canaryRun.documentedResponsePaths compares the two directly).
+  const presenceByPath = new Map<string, ObservedPresence>();
+  const observedShape = ctx.insights.observedShapes.find((o) => o.actionId === action.id);
+  if (observedShape) {
+    for (const f of observedShape.fields) {
+      presenceByPath.set(f.path, { presentIn: f.presentIn, sampleCount: observedShape.sampleCount, observedAt: observedShape.observedAt });
+    }
+  }
   const lookupVerdict = verdictLookup(ctx);
   const ownerByPath = new Map<string, OwnerAnswer>();
   for (const a of ctx.insights.ownerAnswers) {
@@ -258,7 +289,17 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
       // deliberately not consulted for the response and error views — a path
       // that happens to collide there is a different field.
       if (key !== 'request') {
-        return serialize(field, undefined, undefined, semantics, undefined, undefined, statesByName.get(field.name));
+        return serialize(
+          field,
+          undefined,
+          undefined,
+          semantics,
+          undefined,
+          undefined,
+          statesByName.get(field.name),
+          undefined,
+          key === 'response' ? presenceByPath.get(field.path) : undefined,
+        );
       }
       const producers = producersFor(graph, action.name, field.path);
       const owner = ownerByPath.get(field.path);

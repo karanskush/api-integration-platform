@@ -72,6 +72,18 @@ export type AdvisorInsights = {
   // claimed, because discovering transitions means write probing and that needs
   // a policy that does not exist yet.
   stateVocabularies: Array<{ actionId: string; field: string; values: string[]; sampleCount: number }>;
+  // What the canary actually saw in an operation's responses: for each
+  // documented response field, how many of the sampled responses carried it.
+  // The canary has stored this per path since the change ledger shipped
+  // (operation_observations.shape[path].presentIn), read back only by its own
+  // diff. A field documented as required and present in one sample of three
+  // is exactly what a provider's own developers know and a spec cannot say.
+  observedShapes: Array<{
+    actionId: string;
+    sampleCount: number;
+    observedAt: string;
+    fields: Array<{ path: string; presentIn: number; types: string[] }>;
+  }>;
   // The rate-limit policy a live response declared for an operation — how many
   // requests per what window — newest observation per operation. One of the
   // first things a provider's own developers know, and the first wall an
@@ -146,6 +158,7 @@ export function emptyInsights(): AdvisorInsights {
     authObservations: [],
     valueDomains: [],
     stateVocabularies: [],
+    observedShapes: [],
     rateLimits: [],
     fieldSemantics: [],
     ownerAnswers: [],
