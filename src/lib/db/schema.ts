@@ -103,6 +103,10 @@ export const specVersions = pgTable('spec_versions', {
   parseStatus: text('parse_status').notNull(), // pending|parsed|failed
   parseError: text('parse_error'),
   actionCount: integer('action_count').notNull().default(0),
+  // The events this version of the spec declares the API emits (ir.ts
+  // Webhook[]). Null when it declares none. Stored on the version rather than
+  // as rows because a webhook is read back only as part of the whole record.
+  webhooks: jsonb('webhooks'),
   // Populated by the deep-analysis pipeline's finalize stage (and regenerated
   // whenever a clarification answer changes the picture) — Blob pointers to
   // the portable Arazzo workflow file and the x-docentapi-* enriched OpenAPI.

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety } from './ir';
+import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety, Webhook } from './ir';
 import { MAX_ACTIONS } from './ir';
 import {
   dedupeFindings,
@@ -28,6 +28,8 @@ export type NormalizedSpec = {
   // an owner can see WHAT was dropped without the drop itself becoming a second
   // copy of the secret. `at` is prefixed with the tool name by the caller below.
   redactions: SecretFinding[];
+  // Events the API emits: OpenAPI 3.1 `webhooks` and 3.0 operation `callbacks`.
+  webhooks: Webhook[];
 };
 
 type OASOperation = Record<string, unknown>;
@@ -104,8 +106,109 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
     actions,
     truncated,
     redactions,
+    webhooks: extractWebhooks(doc, actions, redactions),
     ...extractExternalDocs(doc),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks and callbacks: the events the API emits.
+//
+// Neither was parsed before. A provider's own developers know which events
+// arrive and what they carry; an integrator learned it from prose, and an
+// agent could not learn it at all. Both spellings are read: the OpenAPI 3.1
+// top-level `webhooks` map (name -> path item), and the 3.0 operation-level
+// `callbacks` map (name -> runtime expression -> path item), which a client
+// registers per subscription.
+
+const MAX_WEBHOOKS = 50;
+const MAX_WEBHOOK_DESCRIPTION = 300;
+
+function webhookDescription(op: OASOperation, fallback: string): string {
+  const raw =
+    typeof op.summary === 'string' && op.summary.trim()
+      ? op.summary
+      : typeof op.description === 'string' && op.description.trim()
+        ? op.description
+        : fallback;
+  return raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_WEBHOOK_DESCRIPTION);
+}
+
+// The delivered payload is the webhook's request body. Sanitized and scrubbed
+// like any other schema: a provider's example payload is exactly where a
+// live signing secret or token ends up pasted.
+function webhookPayloadSchema(op: OASOperation, at: string, redactions: SecretFinding[]): JSONSchema | undefined {
+  const body = op.requestBody as Record<string, unknown> | undefined;
+  const content = body?.content as Record<string, { schema?: unknown } | undefined> | undefined;
+  if (!content || typeof content !== 'object') return undefined;
+  const first = Object.values(content).find((c) => c && typeof c === 'object' && c.schema !== undefined);
+  if (!first?.schema) return undefined;
+  const schema = sanitizeSchema(first.schema);
+  scrubSchemaExamples(schema, at, redactions);
+  return schema;
+}
+
+function webhooksFromPathItem(
+  name: string,
+  rawItem: unknown,
+  source: Webhook['source'],
+  callbackOf: string | undefined,
+  redactions: SecretFinding[],
+): Webhook[] {
+  if (typeof rawItem !== 'object' || rawItem === null) return [];
+  const item = rawItem as Record<string, unknown>;
+  const out: Webhook[] = [];
+  for (const method of HTTP_METHODS) {
+    const op = item[method] as OASOperation | undefined;
+    if (!op || typeof op !== 'object') continue;
+    const upper = method.toUpperCase();
+    const payloadSchema = webhookPayloadSchema(op, `webhook ${name}: body`, redactions);
+    out.push({
+      name,
+      method: upper,
+      description: webhookDescription(op, `${upper} ${name}`),
+      ...(payloadSchema ? { payloadSchema } : {}),
+      source,
+      ...(callbackOf ? { callbackOf } : {}),
+    });
+  }
+  return out;
+}
+
+function extractWebhooks(doc: Record<string, unknown>, actions: Action[], redactions: SecretFinding[]): Webhook[] {
+  const out: Webhook[] = [];
+  const push = (w: Webhook) => {
+    if (out.length < MAX_WEBHOOKS) out.push(w);
+  };
+
+  const top = doc.webhooks as Record<string, unknown> | undefined;
+  if (top && typeof top === 'object') {
+    for (const [name, item] of Object.entries(top)) {
+      for (const w of webhooksFromPathItem(name, item, 'webhooks', undefined, redactions)) push(w);
+    }
+  }
+
+  const paths = (doc.paths ?? {}) as Record<string, unknown>;
+  for (const [path, rawItem] of Object.entries(paths)) {
+    if (typeof rawItem !== 'object' || rawItem === null) continue;
+    const pathItem = rawItem as Record<string, unknown>;
+    for (const method of HTTP_METHODS) {
+      const op = pathItem[method] as OASOperation | undefined;
+      const callbacks = op?.callbacks as Record<string, unknown> | undefined;
+      if (!callbacks || typeof callbacks !== 'object') continue;
+      // Actions carry the operation's own method and path, so the registering
+      // tool is a direct lookup — after collision resolution, which is why the
+      // name is read back off the action rather than recomputed.
+      const owner = actions.find((a) => a.method === method.toUpperCase() && a.path === path)?.name;
+      for (const [cbName, expressions] of Object.entries(callbacks)) {
+        if (typeof expressions !== 'object' || expressions === null) continue;
+        for (const item of Object.values(expressions as Record<string, unknown>)) {
+          for (const w of webhooksFromPathItem(cbName, item, 'callback', owner, redactions)) push(w);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 // Operation-level lifecycle: `deprecated: true` (OpenAPI) and `x-sunset`

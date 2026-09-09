@@ -153,6 +153,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
         contentHash,
         parseStatus: 'parsed',
         actionCount: record.actions.length,
+        webhooks: record.webhooks?.length ? record.webhooks : null,
       })
       .onConflictDoNothing({ target: [specVersions.apiId, specVersions.contentHash] }),
   ];
@@ -398,6 +399,7 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
       contentHash,
       parseStatus: 'parsed',
       actionCount: record.actions.length,
+      webhooks: record.webhooks?.length ? record.webhooks : null,
     }),
   ];
 

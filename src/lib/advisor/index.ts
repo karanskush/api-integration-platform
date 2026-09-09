@@ -18,6 +18,7 @@ import { generateContractTest } from './contractTest';
 import { ADVISOR_PREFIX, ADVISOR_TOOLS } from './descriptors';
 import { explainError } from './errors';
 import { describeFields, traceField } from './fields';
+import { getWebhooks } from './webhooks';
 import { getCallSequence } from './sequence';
 import { getEndpointSchema, searchEndpoints } from './search';
 import { getScoreExplanation } from './score';
@@ -63,6 +64,8 @@ export function callAdvisorTool(name: string, args: Args, ctx: AdvisorContext): 
       return result(generateContractTest(ctx, args));
     case `${ADVISOR_PREFIX}get_workflows`:
       return result(getWorkflows(ctx, args));
+    case `${ADVISOR_PREFIX}get_webhooks`:
+      return result(getWebhooks(ctx, args));
     case `${ADVISOR_PREFIX}check_freshness`:
       return result(checkFreshness(ctx));
     case `${ADVISOR_PREFIX}get_changes_since`:

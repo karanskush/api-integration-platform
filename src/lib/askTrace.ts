@@ -21,6 +21,7 @@ export const ADVISOR_TOOL_NAMES = [
   'docentapi_get_score_explanation',
   'docentapi_generate_contract_test',
   'docentapi_get_workflows',
+  'docentapi_get_webhooks',
   'docentapi_check_freshness',
   'docentapi_get_changes_since',
 ] as const;
@@ -93,6 +94,9 @@ export function isProbeBacked(tool: AdvisorToolName, output: unknown): boolean {
     // get_workflows derives its step order from the lineage graph, which is
     // spec structure. A workflow here is a plan, never a receipt.
     case 'docentapi_get_workflows':
+    // get_webhooks reads the spec's own webhooks/callbacks declarations; no
+    // delivery has been observed, and its payload says so.
+    case 'docentapi_get_webhooks':
       return false;
   }
 }
@@ -297,6 +301,20 @@ export function describeToolCall(
         count: stale ? 'score is stale' : (str(o?.lastCheckedAt) ? 'spec checked recently' : null),
         // A stale score is exactly the kind of caveat the drift tone exists for.
         tone: stale ? 'drift' : 'neutral',
+      };
+    }
+
+    case 'docentapi_get_webhooks': {
+      const name = quoted(i.name);
+      const count = num(o?.count);
+      if (name) {
+        return { ...base, running: `reading webhook ${name}…`, done: `read webhook ${name}` };
+      }
+      return {
+        ...base,
+        running: 'listing webhooks…',
+        done: 'listed webhooks',
+        count: count === 0 ? 'none declared' : count !== null ? `${count} declared` : null,
       };
     }
 

@@ -165,6 +165,12 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
     },
   ),
   descriptor(
+    'get_webhooks',
+    'Get webhooks',
+    'The events this API EMITS, as the spec declares them: OpenAPI 3.1 webhooks and 3.0 callbacks, with delivery method, description and the top-level payload fields. Call this before building anything that waits for the API to tell you something happened, instead of polling. Pass a name for the full payload schema. Declared, not observed — no delivery has been received.',
+    { name: { type: 'string', description: 'A webhook or callback name from the list, for its full payload schema. Omit to list all.' } },
+  ),
+  descriptor(
     'check_freshness',
     'Check freshness',
     'How current this API model is: which spec version it describes, when the spec was last checked against its source, when it last changed, whether the verified score still applies to the current version, and a fingerprint of this tool list. Call this at the start of a session and compare toolFingerprint with what you cached — MCP tool schemas can change in place without any description changing.',

@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { dbReady, getDb, type Db } from './db';
 import { actions as actionsTable, apis, scores, specVersions } from './db/schema';
-import type { Action, ImportRecord, ImportSource } from './ir';
+import type { Action, ImportRecord, ImportSource, Webhook } from './ir';
 
 export type VerifiedScore = {
   total: number;
@@ -98,6 +98,9 @@ async function assembleRecord(
     name: api.name,
     source: (specVersion?.source as ImportSource) ?? 'openapi',
     sourceUrl: specVersion?.sourceUrl ?? undefined,
+    ...(Array.isArray(specVersion?.webhooks) && (specVersion.webhooks as Webhook[]).length
+      ? { webhooks: specVersion.webhooks as Webhook[] }
+      : {}),
     baseUrls: (api.baseUrls as string[] | null) ?? [],
     auth: api.dominantAuth as ImportRecord['auth'],
     authIn: (api.authIn as ImportRecord['authIn']) ?? undefined,
