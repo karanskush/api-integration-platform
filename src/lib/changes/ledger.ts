@@ -59,7 +59,7 @@ const changeRowSchema = z.object({
   fieldPath: z.string().nullable(),
   location: z.string().nullable(),
   summary: z.string(),
-  detail: z.record(z.unknown()),
+  detail: z.record(z.string(), z.unknown()),
   fromSpecVersionId: z.string().nullable(),
   toSpecVersionId: z.string().nullable(),
   toContentHash: z.string().nullable().optional(),
