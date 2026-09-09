@@ -65,7 +65,12 @@ export type EvidenceKind =
   // A Deprecation / Sunset / Link / vendor lifecycle header observed on a live
   // response during a probe (changes/lifecycle.ts). Provider-asserted, so it
   // sits with the probe.* kinds in trust, and it never affects the score.
-  | 'probe.lifecycle_signal';
+  | 'probe.lifecycle_signal'
+  // A rate-limit POLICY read off a live response (changes/rateLimit.ts): how
+  // many requests per what window. Provider-asserted, never scored. Only the
+  // policy is durable — remaining/reset describe one response's position in
+  // the window and are noise a minute later, so they are never carried.
+  | 'probe.rate_limit';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -206,6 +211,20 @@ const lifecycleSignalPayload = z.object({
   url: z.string().optional(),
 });
 
+const rateLimitPayload = z.object({
+  actionId: z.string(),
+  tool: z.string(),
+  method: z.string(),
+  path: z.string(),
+  name: z.string().max(64).optional(),
+  limit: z.number(),
+  windowSeconds: z.number().nullable(),
+  header: z.string(),
+  // Bounded at the read boundary as well as at the parser, like every other
+  // provider string that reaches an agent.
+  raw: z.string().max(120),
+});
+
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
 const evidenceSchemas = {
@@ -227,6 +246,7 @@ const evidenceSchemas = {
   'human.clarification': humanClarificationPayload,
   'diff.spec_change': specChangePayload,
   'probe.lifecycle_signal': lifecycleSignalPayload,
+  'probe.rate_limit': rateLimitPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

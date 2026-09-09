@@ -72,6 +72,19 @@ export type AdvisorInsights = {
   // claimed, because discovering transitions means write probing and that needs
   // a policy that does not exist yet.
   stateVocabularies: Array<{ actionId: string; field: string; values: string[]; sampleCount: number }>;
+  // The rate-limit policy a live response declared for an operation — how many
+  // requests per what window — newest observation per operation. One of the
+  // first things a provider's own developers know, and the first wall an
+  // integrator hits. `windowSeconds` is null for the legacy X-RateLimit family,
+  // which states a quota without a window; that is reported, not guessed.
+  rateLimits: Array<{
+    actionId: string;
+    name?: string;
+    limit: number;
+    windowSeconds: number | null;
+    header: string;
+    observedAt: string;
+  }>;
   // What the deep-analysis pass concluded a field MEANS, read back out of
   // llm.field_semantics. This is the most expensive knowledge the system
   // produces — a docs crawl plus an LLM pass over the provider's own
@@ -133,6 +146,7 @@ export function emptyInsights(): AdvisorInsights {
     authObservations: [],
     valueDomains: [],
     stateVocabularies: [],
+    rateLimits: [],
     fieldSemantics: [],
     ownerAnswers: [],
     lineageVerdicts: [],

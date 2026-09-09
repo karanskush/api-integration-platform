@@ -22,6 +22,7 @@ const PROBE_KINDS: EvidenceKind[] = [
   'probe.idempotency_signal',
   'probe.value_domain',
   'probe.state_vocabulary',
+  'probe.rate_limit',
 ];
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
@@ -70,7 +71,7 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
     listChanges(db, api.id, { limit: MAX_CHANGES, since: changeSince }),
     changeSummary(db, api.id),
     db
-      .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload })
+      .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload, observedAt: evidenceFacts.observedAt })
       .from(evidenceFacts)
       .where(and(eq(evidenceFacts.apiId, api.id), inArray(evidenceFacts.kind, PROBE_KINDS)))
       .orderBy(desc(evidenceFacts.observedAt))
@@ -215,6 +216,23 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
         const p = parseEvidencePayload('probe.auth_reject', fact.payload);
         if (p) {
           insights.authObservations.push({ statusObserved: p.statusObserved, expectedAuth: p.expectedAuth });
+        }
+        break;
+      }
+      case 'probe.rate_limit': {
+        const p = parseEvidencePayload('probe.rate_limit', fact.payload);
+        // Facts arrive newest first, and only the current policy is knowledge:
+        // an operation whose quota was raised last week should not also report
+        // the old one.
+        if (p && !insights.rateLimits.some((r) => r.actionId === p.actionId && (r.name ?? '') === (p.name ?? ''))) {
+          insights.rateLimits.push({
+            actionId: p.actionId,
+            ...(p.name ? { name: p.name } : {}),
+            limit: p.limit,
+            windowSeconds: p.windowSeconds,
+            header: p.header,
+            observedAt: fact.observedAt.toISOString(),
+          });
         }
         break;
       }
