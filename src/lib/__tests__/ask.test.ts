@@ -4,12 +4,12 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MockLanguageModelV4 } from 'ai/test';
-import { AskInputError, aiReady, askAboutApi, askConfigProblem, askLanguageModel, askModel } from '../ask';
+import { AskInputError, aiReady, askAboutApi, askConfigProblem, askLanguageModel, askModel, enrichLanguageModel, enrichModel } from '../ask';
 import type { AdvisorContext } from '../advisor';
 import { emptyInsights } from '../advisor';
 import type { Action, ImportRecord } from '../ir';
 
-const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'DOCENTAPI_ASK_MODEL', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_RESOURCE_NAME', 'AZURE_OPENAI_API_VERSION'] as const;
+const ENV_KEYS = ['AI_GATEWAY_API_KEY', 'VERCEL', 'VERCEL_OIDC_TOKEN', 'DOCENTAPI_ASK_MODEL', 'DOCENTAPI_ENRICH_MODEL', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_RESOURCE_NAME', 'AZURE_OPENAI_API_VERSION'] as const;
 const originals = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -415,5 +415,48 @@ describe('askAboutApi — grounding and injection resistance', () => {
 
     const result = await askAboutApi(ctx(), 'keep going forever', { model });
     expect(result.steps).toBeLessThanOrEqual(6);
+  });
+});
+
+// The offline passes take the flagship; `ask` does not. And an operator who
+// configured a provider for ask must not find enrichment silently routed
+// elsewhere.
+describe('enrichModel', () => {
+  it('defaults to the current flagship on the Gateway', () => {
+    expect(enrichModel()).toBe('anthropic/claude-fable-5.1');
+  });
+
+  it('follows an explicitly configured ask model, so an Azure or direct-OpenAI deployment is unchanged', () => {
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/my-deployment';
+    expect(enrichModel()).toBe('azure/my-deployment');
+  });
+
+  it('is overridden by DOCENTAPI_ENRICH_MODEL above everything', () => {
+    process.env.DOCENTAPI_ASK_MODEL = 'azure/my-deployment';
+    process.env.DOCENTAPI_ENRICH_MODEL = 'anthropic/claude-opus-5';
+    expect(enrichModel()).toBe('anthropic/claude-opus-5');
+  });
+
+  it('leaves the ask default where it was', () => {
+    expect(askModel()).toBe('anthropic/claude-sonnet-5');
+  });
+});
+
+describe('enrichLanguageModel', () => {
+  it('returns the Gateway slug when the Gateway is the credential', () => {
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
+    expect(enrichLanguageModel()).toBe('anthropic/claude-fable-5.1');
+  });
+
+  it('goes direct to OpenAI for an OpenAI enrich model with a key', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.DOCENTAPI_ENRICH_MODEL = 'openai/gpt-5';
+    expect((enrichLanguageModel() as { modelId: string }).modelId).toBe('gpt-5');
+  });
+
+  it('does not let an OpenAI key rewrite a non-OpenAI enrich model', () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.VERCEL_OIDC_TOKEN = 'eyJhbGciOi.stub.signature';
+    expect(enrichLanguageModel()).toBe('anthropic/claude-fable-5.1');
   });
 });
