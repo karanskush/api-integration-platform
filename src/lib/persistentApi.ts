@@ -79,12 +79,17 @@ export async function loadActionsForVersion(
 }
 
 async function assembleRecord(
-  db: ReturnType<typeof getDb>,
+  db: Db,
   api: ApiRow,
   specVersionId: string,
 ): Promise<ImportRecord | null> {
-  const [specVersion] = await db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1);
-  const { actions: actionsList } = await loadActionsForVersion(db, api.id, specVersionId);
+  // One round trip, not two: both reads depend only on ids already in hand.
+  // Against Neon over HTTP every sequential await is a network hop, and this
+  // function sits under every MCP tool call and every product page render.
+  const [[specVersion], { actions: actionsList }] = await Promise.all([
+    db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1),
+    loadActionsForVersion(db, api.id, specVersionId),
+  ]);
   const counts = { total: actionsList.length, read: 0, write: 0, destructive: 0 };
   for (const a of actionsList) counts[a.safety]++;
 
@@ -113,14 +118,16 @@ async function assembleRecord(
 // playground proxy, and the MCP handler work unchanged against either
 // storage. `expiresAt` is set to Number.MAX_SAFE_INTEGER — persistent
 // records never expire.
-export async function loadPersistentRecord(slug: string): Promise<ImportRecord | null> {
-  if (!dbReady()) return null;
-  const db = getDb();
+// `db` is optional so the pglite tests can hand in their own connection; the
+// production callers keep getting the shared Neon handle.
+export async function loadPersistentRecord(slug: string, db?: Db): Promise<ImportRecord | null> {
+  const conn = db ?? (dbReady() ? getDb() : null);
+  if (!conn) return null;
 
-  const [api] = await db.select().from(apis).where(eq(apis.slug, slug)).limit(1);
+  const [api] = await conn.select().from(apis).where(eq(apis.slug, slug)).limit(1);
   if (!api || !api.currentSpecVersionId) return null;
 
-  return assembleRecord(db, api, api.currentSpecVersionId);
+  return assembleRecord(conn, api, api.currentSpecVersionId);
 }
 
 // Same shape as loadPersistentRecord, but by (apiId, specVersionId) rather

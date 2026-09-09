@@ -64,11 +64,18 @@ async function handler(req: Request, ctx: { params: Promise<{ id: string }> }) {
   // to be 10 plain alnum chars — an id-shaped Redis miss still falls back
   // to Postgres.
   const ephemeralRecord = isValidId(id) ? await kv().getImport(id) : null;
-  const record = ephemeralRecord ?? (await loadPersistentRecord(id));
+  // The persisted record and the org plan are both keyed on the slug alone, so
+  // they are fetched together rather than one after the other: a sequential
+  // await here is a whole extra network hop on every tool call for every agent.
+  // (On the 404 path the plan lookup is wasted; one parallel query is a fair
+  // price for one fewer hop on every hit.)
+  const [persisted, orgPlan] = ephemeralRecord
+    ? [null, null]
+    : await Promise.all([loadPersistentRecord(id), dbReady() ? getOrgPlanForSlug(getDb(), id) : null]);
+  const record = ephemeralRecord ?? persisted;
   if (!record || record.expiresAt <= Date.now()) {
     return jsonRpcError(404, 'Unknown or expired DocentAPI id — re-import the spec to mint a new server');
   }
-  const orgPlan = !ephemeralRecord && dbReady() ? await getOrgPlanForSlug(getDb(), id) : null;
 
   // A private API's MCP server requires the org access token. Same 404 as an
   // unknown id, so an unauthorized caller cannot tell a private server from a

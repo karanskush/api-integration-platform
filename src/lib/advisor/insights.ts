@@ -5,7 +5,7 @@
 
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { changeSummary, listChanges } from '../changes/query';
-import { dbReady, getDb } from '../db';
+import { dbReady, getDb, type Db } from '../db';
 import { actions as actionsTable, apis, clarifications, evidenceFacts, scores } from '../db/schema';
 // Imported from clarify/archetypes rather than clarify/index: the index
 // re-exports triage and synthesize, which import the AI SDK, and this module
@@ -43,9 +43,11 @@ const MAX_ANSWER_ROWS = 200;
 const MAX_CHANGES = 100;
 const CHANGE_WINDOW_DAYS = 90;
 
-export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights> {
-  if (!dbReady()) return emptyInsights();
-  const db = getDb();
+// `db` is optional so the pglite tests can hand in their own connection; the
+// MCP route and the ask route keep getting the shared Neon handle.
+export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<AdvisorInsights> {
+  const db = injected ?? (dbReady() ? getDb() : null);
+  if (!db) return emptyInsights();
 
   const [api] = await db
     .select({ id: apis.id, currentSpecVersionId: apis.currentSpecVersionId })
@@ -55,37 +57,74 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
   if (!api) return emptyInsights();
 
   const changeSince = new Date(Date.now() - CHANGE_WINDOW_DAYS * 24 * 3600 * 1000);
-  const [[scoreRow], recentChanges, summary] = await Promise.all([
+  const versionId = api.currentSpecVersionId;
+
+  // ONE round trip for everything below. Every read here depends only on
+  // api.id and the current version id, both already in hand — so nothing
+  // justified issuing them one after another, and that is what was happening:
+  // six sequential stages, each a network hop against Neon over HTTP, under
+  // every advisor tool call from every agent. hotPathRoundTrips.test.ts pins
+  // the count so it cannot quietly creep back.
+  const [[scoreRow], recentChanges, summary, facts, semanticFacts, verdicts, answeredRows] = await Promise.all([
     db.select().from(scores).where(eq(scores.apiId, api.id)).limit(1),
     listChanges(db, api.id, { limit: MAX_CHANGES, since: changeSince }),
     changeSummary(db, api.id),
+    db
+      .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload })
+      .from(evidenceFacts)
+      .where(and(eq(evidenceFacts.apiId, api.id), inArray(evidenceFacts.kind, PROBE_KINDS)))
+      .orderBy(desc(evidenceFacts.observedAt))
+      .limit(MAX_FACTS),
+    // Version-fenced, unlike the probe read above: a semantic claim names a
+    // specific field, and a field described against a superseded spec version
+    // may not exist in the current one. Reporting the old meaning would be
+    // worse than reporting none, so an API with no current-version enrichment
+    // simply gets an empty list.
+    versionId
+      ? db
+          .select({ payload: evidenceFacts.payload })
+          .from(evidenceFacts)
+          .where(
+            and(
+              eq(evidenceFacts.apiId, api.id),
+              eq(evidenceFacts.specVersionId, versionId),
+              eq(evidenceFacts.kind, 'llm.field_semantics'),
+            ),
+          )
+          .orderBy(desc(evidenceFacts.observedAt))
+          .limit(MAX_SEMANTIC_FACTS)
+      : Promise.resolve([]),
+    // Executed-lineage verdicts, derived across runs (refutation needs
+    // agreement, so a latest-row view could not express it). Fenced against
+    // the current spec version inside loadEdgeVerdicts, which demotes a
+    // confirmation to inconclusive once the contract has moved.
+    versionId ? loadEdgeVerdicts(db, api.id, versionId) : Promise.resolve(new Map<string, never>()),
+    // Answers a person gave. Version-fenced for the same reason semantics are,
+    // and restricted to status 'answered' AND answerSource 'human' — the column
+    // exists precisely so a triage assumption is structurally unable to arrive
+    // here wearing a person's authority.
+    versionId
+      ? db
+          .select({
+            actionId: clarifications.actionId,
+            fieldPath: clarifications.fieldPath,
+            appliesTo: clarifications.appliesTo,
+            question: clarifications.question,
+            answer: clarifications.answer,
+            answerSpec: clarifications.answerSpec,
+          })
+          .from(clarifications)
+          .where(
+            and(
+              eq(clarifications.apiId, api.id),
+              eq(clarifications.specVersionId, versionId),
+              eq(clarifications.status, 'answered'),
+              eq(clarifications.answerSource, 'human'),
+            ),
+          )
+          .limit(MAX_ANSWER_ROWS)
+      : Promise.resolve([]),
   ]);
-  const facts = await db
-    .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload })
-    .from(evidenceFacts)
-    .where(and(eq(evidenceFacts.apiId, api.id), inArray(evidenceFacts.kind, PROBE_KINDS)))
-    .orderBy(desc(evidenceFacts.observedAt))
-    .limit(MAX_FACTS);
-
-  // Version-fenced, unlike the probe read above: a semantic claim names a
-  // specific field, and a field described against a superseded spec version may
-  // not exist in the current one. Reporting the old meaning would be worse than
-  // reporting none, so an API with no current-version enrichment simply gets an
-  // empty list.
-  const semanticFacts = api.currentSpecVersionId
-    ? await db
-        .select({ payload: evidenceFacts.payload })
-        .from(evidenceFacts)
-        .where(
-          and(
-            eq(evidenceFacts.apiId, api.id),
-            eq(evidenceFacts.specVersionId, api.currentSpecVersionId),
-            eq(evidenceFacts.kind, 'llm.field_semantics'),
-          ),
-        )
-        .orderBy(desc(evidenceFacts.observedAt))
-        .limit(MAX_SEMANTIC_FACTS)
-    : [];
 
   const insights = emptyInsights();
   insights.changes = { recent: recentChanges, summary };
@@ -184,12 +223,8 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
     }
   }
 
-  // Executed-lineage verdicts, derived across runs (refutation needs agreement,
-  // so a latest-row view could not express it). Fenced against the current spec
-  // version inside loadEdgeVerdicts, which demotes a confirmation to
-  // inconclusive once the contract has moved.
-  if (api.currentSpecVersionId) {
-    const verdicts = await loadEdgeVerdicts(db, api.id, api.currentSpecVersionId);
+  // (Fetched in the parallel stage above.)
+  {
     for (const [key, v] of verdicts) {
       if (v.verdict === 'unattempted') continue;
       insights.lineageVerdicts.push({
@@ -203,32 +238,9 @@ export async function loadAdvisorInsights(slug: string): Promise<AdvisorInsights
     }
   }
 
-  // Answers a person gave. Version-fenced for the same reason semantics are,
-  // and restricted to status 'answered' AND answerSource 'human' — the column
-  // exists precisely so a triage assumption is structurally unable to arrive
-  // here wearing a person's authority.
-  const answeredRows = api.currentSpecVersionId
-    ? await db
-        .select({
-          actionId: clarifications.actionId,
-          fieldPath: clarifications.fieldPath,
-          appliesTo: clarifications.appliesTo,
-          question: clarifications.question,
-          answer: clarifications.answer,
-          answerSpec: clarifications.answerSpec,
-        })
-        .from(clarifications)
-        .where(
-          and(
-            eq(clarifications.apiId, api.id),
-            eq(clarifications.specVersionId, api.currentSpecVersionId),
-            eq(clarifications.status, 'answered'),
-            eq(clarifications.answerSource, 'human'),
-          ),
-        )
-        .limit(MAX_ANSWER_ROWS)
-    : [];
-
+  // (Fetched in the parallel stage above.) The name lookup below is the one
+  // read that genuinely depends on a prior result, and it only runs when there
+  // is an un-clustered answer to resolve.
   if (answeredRows.length) {
     // clarifications.action_id is the actions table's row uuid, which is NOT
     // what a tool name is — the same lookup analyze-finalize has to do. Only
