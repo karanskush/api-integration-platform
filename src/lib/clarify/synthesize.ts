@@ -20,7 +20,7 @@
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { asData } from '../advisor/types';
-import { askLanguageModel } from '../ask';
+import { enrichLanguageModel } from '../ask';
 import { logModelFailure } from '../askLog';
 import type { AnswerOption } from './archetypes';
 import { isRelevant, verifyQuote, type EvidenceEnvelope } from './evidence';
@@ -116,7 +116,7 @@ export async function synthesizeMappings(input: SynthesisInput): Promise<Synthes
   let mappings: z.infer<typeof SynthesisOutputSchema>['mappings'];
   try {
     const { object } = await generateObject({
-      model: input.model ?? askLanguageModel(),
+      model: input.model ?? enrichLanguageModel(),
       schema: SynthesisOutputSchema,
       system: systemInstructions(),
       prompt: buildPrompt(batch),
