@@ -57,7 +57,7 @@ const MAX_MAPPINGS_PER_QUESTION = 6;
 // audit, which is slower than the blank widget they replaced.
 const MAX_GUESSES_PER_QUESTION = 2;
 
-const MappingSchema = z.object({
+export const MappingSchema = z.object({
   questionId: z.string(),
   value: z.string(),
   meaning: z.string(),
@@ -65,11 +65,13 @@ const MappingSchema = z.object({
   // labelled as one. The model cannot claim 'heuristic' — that provenance is
   // minted only by the archetype table, from structural facts.
   basis: z.enum(['documented', 'convention']),
-  evidenceSource: z.string().optional(),
-  evidenceQuote: z.string().optional(),
+  // .nullable(), not .optional(): strict json_schema needs every key in
+  // `required` — see deepEnrich.ts's ChunkOutputSchema.
+  evidenceSource: z.string().nullable(),
+  evidenceQuote: z.string().nullable(),
 });
 
-const SynthesisOutputSchema = z.object({ mappings: z.array(MappingSchema) });
+export const SynthesisOutputSchema = z.object({ mappings: z.array(MappingSchema) });
 
 function systemInstructions(): string {
   return [
@@ -158,7 +160,7 @@ export async function synthesizeMappings(input: SynthesisInput): Promise<Synthes
     // guess — it is demoted to one and labelled accordingly.
     let entry: SuggestedMapping = { value, meaning, provenance: 'model_guess' };
     if (m.basis === 'documented') {
-      const quote = verifyQuote(m.evidenceQuote, m.evidenceSource, candidate.envelopes);
+      const quote = verifyQuote(m.evidenceQuote ?? undefined, m.evidenceSource ?? undefined, candidate.envelopes);
       const relevant =
         quote.ok && isRelevant(quote.envelope, candidate.fieldPath, candidate.tool, candidate.actionPath);
       if (quote.ok && relevant) {

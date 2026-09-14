@@ -89,29 +89,33 @@ const MAX_DOC_EXCERPTS = 3;
 const MAX_DOC_EXCERPT_CHARS = 1500;
 const MAX_FIELDS_PER_CHUNK = 40; // guards one pathologically large resource group
 
-const ChunkOutputSchema = z.object({
+export const ChunkOutputSchema = z.object({
   fields: z.array(
     z.object({
       action: z.string(),
       field: z.string(),
       semanticMeaning: z.string(),
-      businessConstraint: z.string().optional(),
-      confidenceOverride: z.enum(['high', 'medium', 'low']).optional(),
+      businessConstraint: z.string().nullable(),
+      confidenceOverride: z.enum(['high', 'medium', 'low']).nullable(),
     }),
   ),
   openQuestions: z.array(
     z.object({
       action: z.string(),
-      fieldPath: z.string().optional(),
+      fieldPath: z.string().nullable(),
       kind: z.enum(['ambiguous_origin', 'ambiguous_enum', 'unclear_scope', 'conflicting_signal']),
       question: z.string(),
-      options: z.array(z.string()).optional(),
+      options: z.array(z.string()).nullable(),
     }),
   ),
-  // .optional() is load-bearing, not stylistic: the tests mock doGenerate with
-  // objects carrying only `fields` and `openQuestions`, and a required key makes
-  // generateObject throw into the per-chunk catch below, silently emptying the
-  // whole pass.
+  // .nullable(), never .optional(): this schema is sent to OpenAI-compatible
+  // providers as strict json_schema, and strict mode requires EVERY property to
+  // be listed in `required`. zod emits an .optional() field outside `required`,
+  // so the provider rejects the whole request with a 400 before the model runs —
+  // which is how every chunk of every run failed on Azure gpt-5-mini for six
+  // weeks while ask (plain generateText) worked. A nullable field stays required
+  // and the model writes null when it has nothing to say. Enforced by
+  // __tests__/strictStructuredOutputs.test.ts.
   lineageDisputes: z
     .array(
       z.object({
@@ -121,7 +125,7 @@ const ChunkOutputSchema = z.object({
         reason: z.string(),
       }),
     )
-    .optional(),
+    .nullable(),
 });
 
 function groupByResource(actions: Action[]): Array<{ resource: string; actions: Action[] }> {
