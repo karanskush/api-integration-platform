@@ -172,6 +172,7 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
       verifiedAt: scoreRow.verifiedAt.toISOString(),
       stale: scoreRow.specVersionId !== api.currentSpecVersionId,
       specVersionId: scoreRow.specVersionId,
+      environment: scoreRow.environment === 'sandbox' ? 'sandbox' : 'production',
       liveCallsAttempted: scoreRow.liveCallsAttempted,
       liveCallsSucceeded: scoreRow.liveCallsSucceeded,
       observedPoints: scoreRow.observedPoints,

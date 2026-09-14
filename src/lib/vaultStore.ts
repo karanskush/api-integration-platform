@@ -9,9 +9,33 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './db';
 import { credentialAudit, credentials } from './db/schema';
+import { can } from './plans';
 import { kekId, openCredential, sealCredential, credentialFingerprint, credentialHint, VaultError, type CredentialContext, type SealedCredential } from './vault';
 
-export type AuditAction = 'created' | 'rotated' | 'deleted' | 'used' | 'denied' | 'decrypt_failed';
+export type CredentialEnvironment = 'production' | 'sandbox';
+export const CREDENTIAL_ENVIRONMENTS: readonly CredentialEnvironment[] = ['production', 'sandbox'];
+
+// Which plan flag governs storing a credential for an environment. A sandbox
+// key is on every plan (`sandboxProbing`); a production key stays Team+
+// (`vaultedCredentials`). Pure, so the route stays thin and this is testable.
+export function credentialGate(plan: string, environment: CredentialEnvironment): { ok: true } | { ok: false; error: string; status: 403 } {
+  if (environment === 'sandbox') {
+    return can(plan, 'sandboxProbing')
+      ? { ok: true }
+      : { ok: false, status: 403, error: 'Sandbox credentials are not available on this plan.' };
+  }
+  return can(plan, 'vaultedCredentials')
+    ? { ok: true }
+    : {
+        ok: false,
+        status: 403,
+        error: 'Storing a production credential is a Team plan feature — store a sandbox key instead, or keep passing your key per request (BYOK).',
+      };
+}
+
+export type EnvironmentInferenceRecord = { environment: 'sandbox' | 'production' | 'unknown'; basis: 'known_prefix' | 'declared_prefix' | 'host' | 'none' };
+
+export type AuditAction = 'created' | 'rotated' | 'deleted' | 'used' | 'denied' | 'decrypt_failed' | 'consent_changed';
 export type ActorType = 'user' | 'mcp' | 'probe' | 'cron';
 
 export type Actor = { type: ActorType; hash?: string };
@@ -57,6 +81,13 @@ export type StoreCredentialInput = {
   secret: string;
   createdBy?: string;
   actor: Actor;
+  label?: string | null;
+  // Consents are honoured only for a sandbox row; the database CHECK refuses
+  // them on production, and storeCredential drops them rather than trip it.
+  writeConsent?: boolean;
+  burstConsent?: boolean;
+  consentedBy?: string | null;
+  inferred?: EnvironmentInferenceRecord | null;
 };
 
 export type StoredCredentialMeta = {
@@ -68,13 +99,42 @@ export type StoredCredentialMeta = {
   createdAt: Date;
   rotatedAt: Date | null;
   lastUsedAt: Date | null;
+  label: string | null;
+  writeConsentAt: Date | null;
+  burstConsentAt: Date | null;
+  inferredEnvironment: string | null;
+  inferenceBasis: string | null;
+  lastProbeRunAt: Date | null;
 };
+
+const META_COLUMNS = {
+  id: credentials.id,
+  environment: credentials.environment,
+  fingerprint: credentials.fingerprint,
+  hint: credentials.hint,
+  keyVersion: credentials.keyVersion,
+  createdAt: credentials.createdAt,
+  rotatedAt: credentials.rotatedAt,
+  lastUsedAt: credentials.lastUsedAt,
+  label: credentials.label,
+  writeConsentAt: credentials.writeConsentAt,
+  burstConsentAt: credentials.burstConsentAt,
+  inferredEnvironment: credentials.inferredEnvironment,
+  inferenceBasis: credentials.inferenceBasis,
+  lastProbeRunAt: credentials.lastProbeRunAt,
+};
+
+function consentDetail(row: { writeConsentAt: Date | null; burstConsentAt: Date | null }): string {
+  return `write_consent=${row.writeConsentAt ? 1 : 0} burst_consent=${row.burstConsentAt ? 1 : 0}`;
+}
 
 // Upsert on (apiId, environment) — the unique index makes "store" idempotent
 // per environment rather than accumulating shadow rows. Replacing an existing
 // credential is a rotation, and is audited as one.
 export async function storeCredential(db: Db, input: StoreCredentialInput): Promise<StoredCredentialMeta> {
   const { orgId, apiId, environment, secret, createdBy, actor } = input;
+  const sandbox = environment === 'sandbox';
+  const now = new Date();
 
   const [existing] = await db
     .select({ id: credentials.id, keyVersion: credentials.keyVersion })
@@ -99,23 +159,21 @@ export async function storeCredential(db: Db, input: StoreCredentialInput): Prom
     fingerprint: credentialFingerprint(secret, ctx),
     hint: credentialHint(secret),
     createdBy: createdBy ?? null,
-    ...(existing ? { rotatedAt: new Date() } : {}),
+    ...(existing ? { rotatedAt: now } : {}),
+    label: input.label ?? null,
+    writeConsentAt: sandbox && input.writeConsent ? now : null,
+    writeConsentedBy: sandbox && input.writeConsent ? (input.consentedBy ?? null) : null,
+    burstConsentAt: sandbox && input.burstConsent ? now : null,
+    burstConsentedBy: sandbox && input.burstConsent ? (input.consentedBy ?? null) : null,
+    inferredEnvironment: input.inferred?.environment ?? null,
+    inferenceBasis: input.inferred?.basis ?? null,
   };
 
   const [row] = await db
     .insert(credentials)
     .values(values)
     .onConflictDoUpdate({ target: [credentials.apiId, credentials.environment], set: values })
-    .returning({
-      id: credentials.id,
-      environment: credentials.environment,
-      fingerprint: credentials.fingerprint,
-      hint: credentials.hint,
-      keyVersion: credentials.keyVersion,
-      createdAt: credentials.createdAt,
-      rotatedAt: credentials.rotatedAt,
-      lastUsedAt: credentials.lastUsedAt,
-    });
+    .returning(META_COLUMNS);
 
   await writeAudit(db, {
     orgId,
@@ -124,26 +182,70 @@ export async function storeCredential(db: Db, input: StoreCredentialInput): Prom
     environment,
     action: existing ? 'rotated' : 'created',
     actor,
-    detail: `key_version=${sealed.keyVersion}`,
+    detail: `key_version=${sealed.keyVersion} ${consentDetail(row)}`,
   });
 
   return row;
 }
 
 export async function listCredentialMeta(db: Db, apiId: string): Promise<StoredCredentialMeta[]> {
-  return db
-    .select({
-      id: credentials.id,
-      environment: credentials.environment,
-      fingerprint: credentials.fingerprint,
-      hint: credentials.hint,
-      keyVersion: credentials.keyVersion,
-      createdAt: credentials.createdAt,
-      rotatedAt: credentials.rotatedAt,
-      lastUsedAt: credentials.lastUsedAt,
-    })
-    .from(credentials)
-    .where(eq(credentials.apiId, apiId));
+  return db.select(META_COLUMNS).from(credentials).where(eq(credentials.apiId, apiId));
+}
+
+export type ConsentUpdateInput = {
+  orgId: string;
+  apiId: string;
+  label?: string | null;
+  writeConsent?: boolean;
+  burstConsent?: boolean;
+  consentedBy?: string | null;
+  actor: Actor;
+};
+
+/**
+ * Changes what the owner allows the probes to do with the SANDBOX key: the
+ * label, write consent, burst consent. Production rows have no consents to
+ * change (the CHECK would refuse), so this always addresses the sandbox row.
+ * Returns null when there is no sandbox credential to update.
+ */
+export async function updateCredentialConsents(db: Db, input: ConsentUpdateInput): Promise<StoredCredentialMeta | null> {
+  const now = new Date();
+  const set: Partial<typeof credentials.$inferInsert> = {};
+  if (input.label !== undefined) set.label = input.label;
+  if (input.writeConsent !== undefined) {
+    set.writeConsentAt = input.writeConsent ? now : null;
+    set.writeConsentedBy = input.writeConsent ? (input.consentedBy ?? null) : null;
+  }
+  if (input.burstConsent !== undefined) {
+    set.burstConsentAt = input.burstConsent ? now : null;
+    set.burstConsentedBy = input.burstConsent ? (input.consentedBy ?? null) : null;
+  }
+  if (Object.keys(set).length === 0) {
+    const [current] = await db
+      .select(META_COLUMNS)
+      .from(credentials)
+      .where(and(eq(credentials.apiId, input.apiId), eq(credentials.environment, 'sandbox')))
+      .limit(1);
+    return current ?? null;
+  }
+
+  const [row] = await db
+    .update(credentials)
+    .set(set)
+    .where(and(eq(credentials.apiId, input.apiId), eq(credentials.environment, 'sandbox')))
+    .returning(META_COLUMNS);
+  if (!row) return null;
+
+  await writeAudit(db, {
+    orgId: input.orgId,
+    apiId: input.apiId,
+    credentialId: row.id,
+    environment: 'sandbox',
+    action: 'consent_changed',
+    actor: input.actor,
+    detail: consentDetail(row),
+  });
+  return row;
 }
 
 export async function deleteCredential(
@@ -174,6 +276,80 @@ export async function deleteCredential(
 export type ResolveResult =
   | { ok: true; secret: string; credentialId: string }
   | { ok: false; reason: 'not_found' | 'decrypt_failed' };
+
+export type ProbeResolveResult =
+  | {
+      ok: true;
+      secret: string;
+      credentialId: string;
+      environment: CredentialEnvironment;
+      label: string | null;
+      writeConsentAt: Date | null;
+      burstConsentAt: Date | null;
+    }
+  | { ok: false; reason: 'not_found' | 'decrypt_failed' | 'no_write_consent' };
+
+/**
+ * THE function a probe runner calls for a key. Wraps resolveCredential with the
+ * consent check a write runner needs, records the probe use on the row, and
+ * audits a refusal — so "the runner wanted to write and was not allowed" is a
+ * row in the trail, not a silent skip. Callers pass actor type 'probe' so
+ * probe traffic is distinguishable from cron reads and MCP calls in the audit.
+ */
+export async function resolveProbeCredential(
+  db: Db,
+  input: {
+    orgId: string;
+    apiId: string;
+    environment: CredentialEnvironment;
+    actor: Actor;
+    requireWriteConsent?: boolean;
+  },
+): Promise<ProbeResolveResult> {
+  const [row] = await db
+    .select({
+      id: credentials.id,
+      label: credentials.label,
+      writeConsentAt: credentials.writeConsentAt,
+      burstConsentAt: credentials.burstConsentAt,
+    })
+    .from(credentials)
+    .where(and(eq(credentials.apiId, input.apiId), eq(credentials.environment, input.environment)))
+    .limit(1);
+  if (!row) return { ok: false, reason: 'not_found' };
+
+  if (input.requireWriteConsent && !row.writeConsentAt) {
+    await writeAudit(db, {
+      orgId: input.orgId,
+      apiId: input.apiId,
+      credentialId: row.id,
+      environment: input.environment,
+      action: 'denied',
+      actor: input.actor,
+      detail: 'reason=no_write_consent',
+    });
+    return { ok: false, reason: 'no_write_consent' };
+  }
+
+  const resolved = await resolveCredential(db, {
+    orgId: input.orgId,
+    apiId: input.apiId,
+    environment: input.environment,
+    actor: input.actor,
+  });
+  if (!resolved.ok) return resolved;
+
+  await db.update(credentials).set({ lastProbeRunAt: new Date() }).where(eq(credentials.id, row.id));
+  return {
+    ok: true,
+    secret: resolved.secret,
+    credentialId: resolved.credentialId,
+    environment: input.environment,
+    label: row.label,
+    writeConsentAt: row.writeConsentAt,
+    burstConsentAt: row.burstConsentAt,
+  };
+}
 
 // THE ONLY PLACE a vaulted credential is decrypted. Callers must already have
 // established that the requester is authorized (see mcpAccess.ts) and that the
@@ -259,6 +435,23 @@ export async function recentAudit(db: Db, orgId: string, limit = 100) {
     .where(eq(credentialAudit.orgId, orgId))
     .orderBy(desc(credentialAudit.id))
     .limit(Math.max(1, Math.min(500, limit)));
+}
+
+/** The trail for one API — what the owner sees beside the credential panel. */
+export async function recentAuditForApi(db: Db, orgId: string, apiId: string, limit = 20) {
+  return db
+    .select({
+      id: credentialAudit.id,
+      action: credentialAudit.action,
+      actorType: credentialAudit.actorType,
+      environment: credentialAudit.environment,
+      detail: credentialAudit.detail,
+      createdAt: credentialAudit.createdAt,
+    })
+    .from(credentialAudit)
+    .where(and(eq(credentialAudit.orgId, orgId), eq(credentialAudit.apiId, apiId)))
+    .orderBy(desc(credentialAudit.id))
+    .limit(Math.max(1, Math.min(100, limit)));
 }
 
 export async function countCredentials(db: Db, orgId: string): Promise<number> {

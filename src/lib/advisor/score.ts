@@ -7,6 +7,7 @@
 // Callers get an explicit `verified` boolean plus the basis, so an agent can
 // tell "measured" from "inferred" without parsing prose.
 
+import { basisFor } from './provenance';
 import { scorePreview } from '../scorePreview';
 import { asData, type AdvisorContext } from './types';
 
@@ -55,9 +56,16 @@ export function getScoreExplanation(ctx: AdvisorContext) {
       // contract that has since changed. Say both, and never let `verified`
       // alone imply the number describes what the API serves today.
       stale: verified.stale,
-      basis: verified.stale
-        ? 'live probes against the running API, verified against a PREVIOUS spec version'
-        : 'live probes against the running API',
+      environment: verified.environment,
+      basis: `${basisFor({ environment: verified.environment, observedAt: verified.verifiedAt })}${
+        verified.stale ? ', verified against a PREVIOUS spec version' : ''
+      }`,
+      ...(verified.environment === 'sandbox'
+        ? {
+            environmentNote:
+              "This score was earned against the owner's sandbox with a test key. It is a real measurement of the sandbox; production may enforce different limits, error bodies or shapes.",
+          }
+        : {}),
       verifiedAt: verified.verifiedAt,
       specVersionId: verified.specVersionId,
       ...(verified.stale

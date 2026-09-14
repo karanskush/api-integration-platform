@@ -8,6 +8,7 @@
 
 import { sql } from 'drizzle-orm';
 import {
+  check,
   bigserial,
   boolean,
   index,
@@ -226,6 +227,11 @@ export const scores = pgTable('scores', {
   // epistemic classes and a consumer is entitled to weigh them differently.
   observedPoints: integer('observed_points').notNull().default(0),
   staticPoints: integer('static_points').notNull().default(0),
+  // Which environment the run that earned this row used. A sandbox-earned
+  // score is a real measurement of the sandbox and is labelled as such; it
+  // never overwrites a production-earned row (scoreWrite.ts).
+  environment: text('environment').notNull().default('production'),
+  credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
   verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('scores_api_id_idx').on(t.apiId)]);
 
@@ -233,6 +239,11 @@ export const scoreRuns = pgTable('score_runs', {
   id: id(),
   apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
   status: text('status').notNull(), // queued|running|succeeded|failed
+  environment: text('environment').notNull().default('production'),
+  credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
+  trigger: text('trigger'), // manual|cron|job
+  // Where the run's base URL came from: declared_sandbox|sandbox_host|default_first_server.
+  baseUrlBasis: text('base_url_basis'),
   probesRun: jsonb('probes_run'),
   findings: jsonb('findings'),
   error: text('error'),
@@ -263,11 +274,28 @@ export const credentials = pgTable('credentials', {
   createdAt: createdAt(),
   rotatedAt: timestamp('rotated_at', { withTimezone: true }),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  // Owner-facing name ("Dub test workspace"). Never the key.
+  label: text('label'),
+  // Explicit consent for the write runner to create, update and delete its own
+  // namespaced fixtures with this key, and for the rate-limit discovery burst.
+  // Both live on the credential row so revoking the key revokes them, and a
+  // CHECK below keeps a production row from ever carrying either.
+  writeConsentAt: timestamp('write_consent_at', { withTimezone: true }),
+  writeConsentedBy: uuid('write_consented_by').references(() => users.id, { onDelete: 'set null' }),
+  burstConsentAt: timestamp('burst_consent_at', { withTimezone: true }),
+  burstConsentedBy: uuid('burst_consented_by').references(() => users.id, { onDelete: 'set null' }),
+  // What the key LOOKED like at paste time (sandbox|production|unknown) and
+  // why (known_prefix|declared_prefix|host|none) — never a fragment of the key.
+  inferredEnvironment: text('inferred_environment'),
+  inferenceBasis: text('inference_basis'),
+  lastProbeRunAt: timestamp('last_probe_run_at', { withTimezone: true }),
 }, (t) => [
   // One credential per API per environment: without this, a second POST would
   // silently shadow the first and the MCP path would pick arbitrarily.
   uniqueIndex('credentials_api_environment_idx').on(t.apiId, t.environment),
   index('credentials_org_id_idx').on(t.orgId),
+  check('credentials_write_consent_sandbox_only', sql`${t.writeConsentAt} IS NULL OR ${t.environment} = 'sandbox'`),
+  check('credentials_burst_consent_sandbox_only', sql`${t.burstConsentAt} IS NULL OR ${t.environment} = 'sandbox'`),
 ]);
 
 // Append-only audit trail for the vault. §5 makes this a release gate for
@@ -491,6 +519,7 @@ export const lineageRuns = pgTable('lineage_runs', {
   apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
   specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
   environment: text('environment').notNull().default('production'),
+  credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
   status: text('status').notNull(), // succeeded|failed|aborted
   chainsPlanned: integer('chains_planned').notNull().default(0),
   chainsExecuted: integer('chains_executed').notNull().default(0),

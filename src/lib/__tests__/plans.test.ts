@@ -47,6 +47,18 @@ describe('PLAN_LIMITS', () => {
   });
 });
 
+// A test key costs its owner nothing to exercise, so the ability to store one
+// and let the probes use it is not something to sell. Production vaulting stays
+// Team+ above; this is the sandbox lane.
+describe('sandboxProbing', () => {
+  it('is granted on every plan, Free included', () => {
+    for (const plan of ['free', 'launch', 'pro', 'team', 'business'] as const) {
+      expect(PLAN_LIMITS[plan].sandboxProbing).toBe(true);
+    }
+    expect(can('free', 'sandboxProbing')).toBe(true);
+  });
+});
+
 describe('limitsFor / can', () => {
   it('falls back to free for an unknown plan string', () => {
     expect(limitsFor('nonexistent')).toEqual(PLAN_LIMITS.free);

@@ -1,42 +1,42 @@
 import { auth } from '@clerk/nextjs/server';
 import { ownershipError, resolveApiOwnership } from '@/lib/apiOwnership';
+import { parseConsentPatch, parseCredentialPost } from '@/lib/credentialRequest';
 import { dbReady, getDb } from '@/lib/db';
 import { masterKeyReady } from '@/lib/keys';
 import { actorHashForToken } from '@/lib/mcpAccess';
-import { can } from '@/lib/plans';
+import { loadPersistentRecord } from '@/lib/persistentApi';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { VaultError } from '@/lib/vault';
-import { deleteCredential, listCredentialMeta, storeCredential, writeAudit } from '@/lib/vaultStore';
+import {
+  credentialGate,
+  CREDENTIAL_ENVIRONMENTS,
+  deleteCredential,
+  listCredentialMeta,
+  recentAuditForApi,
+  storeCredential,
+  updateCredentialConsents,
+  writeAudit,
+  type CredentialEnvironment,
+} from '@/lib/vaultStore';
 
 export const maxDuration = 30;
 
-const WRITE_LIMIT = { limit: 20, windowSec: 600 };
-const ENVIRONMENTS = ['production', 'sandbox'] as const;
-
-// Vaulted upstream credentials for one API (Team+). BYOK stays the default
-// everywhere; this is the opt-in for teams that would rather DocentAPI hold the
-// key than paste it into every agent config.
+// The vault's owner surface. Two lanes with two gates: a SANDBOX credential —
+// a test key the probes may use for writes with cleanup, and for rate-limit
+// discovery, on every plan — and a PRODUCTION credential, Team+. Environment is
+// parsed before the gate, because the gate depends on it.
 //
-// GET returns metadata only — fingerprint, hint, versions, timestamps. There is
-// deliberately no read-back endpoint for the plaintext: the only code path that
-// decrypts is resolveCredential(), inside the MCP/probe execution path, and
-// adding a "show me my key" route would turn one audited execution path into an
-// unaudited exfiltration one.
+// Plaintext never comes back out. It is decrypted only inside the MCP and probe
+// execution paths, and every decrypt is audited; the trail is returned here so
+// the owner can see it beside the credential.
+
+const WRITE_LIMIT = { limit: 20, windowSec: 600 };
 
 function notConfigured(): Response {
   return Response.json(
     { error: 'The credential vault is not configured — set DOCENTAPI_MASTER_KEY and redeploy' },
     { status: 503 },
   );
-}
-
-function planGate(plan: string): Response | null {
-  return can(plan, 'vaultedCredentials')
-    ? null
-    : Response.json(
-        { error: 'Vaulted credentials are a Team plan feature — upgrade, or keep passing your key per request (BYOK).' },
-        { status: 403 },
-      );
 }
 
 async function authorize(slug: string) {
@@ -61,18 +61,32 @@ async function authorize(slug: string) {
   return { db, clerkUserId: userId, api: owned.api };
 }
 
+function gateResponse(plan: string, environment: CredentialEnvironment): Response | null {
+  const gate = credentialGate(plan, environment);
+  return gate.ok ? null : Response.json({ error: gate.error }, { status: gate.status });
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
   const authorized = await authorize(slug);
   if (authorized.error) return authorized.error;
   const { db, api } = authorized;
 
-  const gate = planGate(api.orgPlan);
-  if (gate) return gate;
+  const gates = {
+    sandbox: credentialGate(api.orgPlan, 'sandbox').ok,
+    production: credentialGate(api.orgPlan, 'production').ok,
+  };
+  if (!gates.sandbox && !gates.production) {
+    const denied = gateResponse(api.orgPlan, 'production');
+    if (denied) return denied;
+  }
 
+  const [credentials, audit] = await Promise.all([listCredentialMeta(db, api.id), recentAuditForApi(db, api.orgId, api.id, 20)]);
   return Response.json({
     slug: api.slug,
-    credentials: await listCredentialMeta(db, api.id),
+    credentials,
+    audit,
+    gates,
     note: 'Plaintext is never returned. It is decrypted only inside the MCP and probe execution paths, and every decrypt is audited.',
   });
 }
@@ -86,13 +100,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const rl = await getLimiter('vault-write', WRITE_LIMIT).limit(clerkUserId);
   if (!rl.success) return tooMany(rl.reset);
 
-  const gate = planGate(api.orgPlan);
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  // The API's base URLs let the inference notice a sandbox-looking host.
+  const record = await loadPersistentRecord(api.slug);
+  const parsed = parseCredentialPost(body, { baseUrls: record?.baseUrls ?? [] });
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: parsed.status });
+  const { value } = parsed;
+
+  const gate = gateResponse(api.orgPlan, value.environment);
   if (gate) {
-    // A denied attempt on a real API is exactly the kind of thing an owner
-    // should be able to see later.
+    // A refused store is itself worth a row in the trail.
     await writeAudit(db, {
       orgId: api.orgId,
       apiId: api.id,
+      environment: value.environment,
       action: 'denied',
       actor: { type: 'user', hash: actorHashForToken(clerkUserId) },
       detail: `plan=${api.orgPlan}`,
@@ -100,43 +127,69 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     return gate;
   }
 
-  let body: { secret?: unknown; environment?: unknown };
+  try {
+    const stored = await storeCredential(db, {
+      orgId: api.orgId,
+      apiId: api.id,
+      environment: value.environment,
+      secret: value.secret,
+      createdBy: api.userId,
+      actor: { type: 'user', hash: actorHashForToken(clerkUserId) },
+      label: value.label,
+      writeConsent: value.writeConsent,
+      burstConsent: value.burstConsent,
+      consentedBy: api.userId,
+      inferred: value.inferred,
+    });
+    return Response.json({
+      slug: api.slug,
+      credential: stored,
+      ...(value.warning ? { warning: value.warning } : {}),
+      note:
+        value.environment === 'sandbox'
+          ? 'Stored encrypted. Used only by DocentAPI’s probes against your sandbox; every use is audited and you can revoke it here at any time.'
+          : 'Stored encrypted. This value cannot be read back — rotate by POSTing a new one.',
+    });
+  } catch (err) {
+    if (err instanceof VaultError) {
+      return Response.json({ error: err.message }, { status: 400 });
+    }
+    console.error('[vault] store failed', { slug: api.slug, environment: value.environment });
+    return Response.json({ error: 'Could not store credential' }, { status: 500 });
+  }
+}
+
+// Consents and the label, on the sandbox credential only.
+export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string }> }) {
+  const { slug } = await ctx.params;
+  const authorized = await authorize(slug);
+  if (authorized.error) return authorized.error;
+  const { db, clerkUserId, api } = authorized;
+
+  const rl = await getLimiter('vault-write', WRITE_LIMIT).limit(clerkUserId);
+  if (!rl.success) return tooMany(rl.reset);
+
+  const gate = gateResponse(api.orgPlan, 'sandbox');
+  if (gate) return gate;
+
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
+  const parsed = parseConsentPatch(body);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: parsed.status });
 
-  const secret = typeof body.secret === 'string' ? body.secret.trim() : '';
-  if (!secret) return Response.json({ error: 'secret is required' }, { status: 400 });
-
-  const environment = typeof body.environment === 'string' ? body.environment.trim().toLowerCase() : 'production';
-  if (!ENVIRONMENTS.includes(environment as (typeof ENVIRONMENTS)[number])) {
-    return Response.json({ error: `environment must be one of: ${ENVIRONMENTS.join(', ')}` }, { status: 400 });
-  }
-
-  try {
-    const stored = await storeCredential(db, {
-      orgId: api.orgId,
-      apiId: api.id,
-      environment,
-      secret,
-      createdBy: api.userId,
-      actor: { type: 'user', hash: actorHashForToken(clerkUserId) },
-    });
-    return Response.json({
-      slug: api.slug,
-      credential: stored,
-      note: 'Stored encrypted. This value cannot be read back — rotate by POSTing a new one.',
-    });
-  } catch (err) {
-    if (err instanceof VaultError) {
-      // VaultError messages are written to never contain key material.
-      return Response.json({ error: err.message }, { status: 400 });
-    }
-    console.error('[vault] store failed', { slug: api.slug, environment });
-    return Response.json({ error: 'Could not store credential' }, { status: 500 });
-  }
+  const updated = await updateCredentialConsents(db, {
+    orgId: api.orgId,
+    apiId: api.id,
+    ...parsed.value,
+    consentedBy: api.userId,
+    actor: { type: 'user', hash: actorHashForToken(clerkUserId) },
+  });
+  if (!updated) return Response.json({ error: 'No sandbox credential stored for this API' }, { status: 404 });
+  return Response.json({ slug: api.slug, credential: updated });
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ slug: string }> }) {
@@ -148,12 +201,12 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ slug: string
   const rl = await getLimiter('vault-write', WRITE_LIMIT).limit(clerkUserId);
   if (!rl.success) return tooMany(rl.reset);
 
-  // Deliberately NOT plan-gated: a downgraded org must always be able to remove
-  // credentials it can no longer use.
+  // Deliberately not plan-gated: an owner must always be able to remove a key,
+  // including after a downgrade.
   const url = new URL(req.url);
   const environment = (url.searchParams.get('environment') ?? 'production').trim().toLowerCase();
-  if (!ENVIRONMENTS.includes(environment as (typeof ENVIRONMENTS)[number])) {
-    return Response.json({ error: `environment must be one of: ${ENVIRONMENTS.join(', ')}` }, { status: 400 });
+  if (!(CREDENTIAL_ENVIRONMENTS as readonly string[]).includes(environment)) {
+    return Response.json({ error: `environment must be one of: ${CREDENTIAL_ENVIRONMENTS.join(', ')}` }, { status: 400 });
   }
 
   const removed = await deleteCredential(db, {

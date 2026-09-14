@@ -48,6 +48,9 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
   // landing page promises we do not do. See /api/apis/[slug]/verify: the key
   // reaches runScoreEngine and is discarded with the request.
   const [devKey, setDevKey] = useState('');
+  // The field shows `sk_test_…` and asks for a test key, so that is the default
+  // label for whatever is pasted — every fact the run records carries it.
+  const [devKeyEnvironment, setDevKeyEnvironment] = useState<'sandbox' | 'production'>('sandbox');
   const [verifying, setVerifying] = useState(false);
   const [withVerify, setWithVerify] = useState(false);
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -87,7 +90,7 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
       await fetch(`/api/apis/${slug}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upstreamKey: key }),
+        body: JSON.stringify({ upstreamKey: key, environment: devKeyEnvironment }),
         signal: controller.signal,
       });
     } catch {
@@ -277,9 +280,34 @@ export default function ImportForm({ deep = false }: { deep?: boolean }) {
             placeholder="sk_test_…"
             onChange={(event) => setDevKey(event.target.value)}
           />
+          {devKey && (
+            <div className="import-hint" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  name="import-devkey-env"
+                  checked={devKeyEnvironment === 'sandbox'}
+                  onChange={() => setDevKeyEnvironment('sandbox')}
+                  disabled={busy}
+                />
+                This is a test / sandbox key
+              </label>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  name="import-devkey-env"
+                  checked={devKeyEnvironment === 'production'}
+                  onChange={() => setDevKeyEnvironment('production')}
+                  disabled={busy}
+                />
+                This is a production key
+              </label>
+            </div>
+          )}
           <p className="import-hint">
-            A sandbox or test key is enough. We only run read-safe calls — writes are never
-            executed. Used for this run and discarded: never stored, never logged.
+            Used once for read-safe checks in this run, then discarded — never stored, never logged.
+            To let us exercise writes (with cleanup) and discover your rate limit, store a sandbox
+            key from your workspace afterwards.
           </p>
         </div>
       )}

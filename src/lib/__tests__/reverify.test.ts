@@ -602,3 +602,58 @@ describe('canary evidence reaches the database', () => {
     expect(run.probesRun).toMatchObject({ version: 1, environment: 'production', stages: [{ stage: 'doc_drift', requests: 2, outcome: 'ran' }] });
   });
 });
+
+// The key decides the environment. A Free org with a stored sandbox key gets
+// a sandbox run, labelled everywhere; Team+ prefers production.
+describe('the key decides the environment', () => {
+  const vaultAuth = (environment: 'production' | 'sandbox') => async () =>
+    ({
+      kind: 'vault' as const,
+      upstreamKey: 'vaulted-fixture',
+      environment,
+      credentialId: null as string | null,
+      label: 'test ws',
+      writeConsentAt: null,
+      burstConsentAt: null,
+    });
+
+  it('stamps a sandbox run on the run row, the score and the facts', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+    let seenEnvironment: string | undefined;
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      selectAuth: vaultAuth('sandbox') as never,
+      scoreEngine: async (_rec, opts) => {
+        seenEnvironment = opts?.environment;
+        return { ...SCORE, environment: 'sandbox' };
+      },
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => ({ observations: [], requestsMade: 0, aborted: null }),
+    });
+
+    expect(seenEnvironment).toBe('sandbox');
+    expect(outcome).toMatchObject({ environment: 'sandbox', usedVaultedCredential: true });
+    const [run] = await db.select().from(schema.scoreRuns).where(eq(schema.scoreRuns.apiId, seeded.apiId));
+    expect(run).toMatchObject({ environment: 'sandbox', trigger: 'cron' });
+    const [score] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, seeded.apiId));
+    expect(score.environment).toBe('sandbox');
+    const facts = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, seeded.apiId));
+    expect(facts.filter((f) => f.kind === 'probe.auth_reject').every((f) => f.environment === 'sandbox')).toBe(true);
+  });
+
+  it('runs unauthenticated, as production, when nothing is stored', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+    let seenKey: string | undefined = 'unset';
+    const outcome = await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async (_rec, opts) => {
+        seenKey = opts?.upstreamKey;
+        return SCORE;
+      },
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => ({ observations: [], requestsMade: 0, aborted: null }),
+    });
+    expect(seenKey).toBeUndefined();
+    expect(outcome).toMatchObject({ environment: 'production', usedVaultedCredential: false, credentialId: null });
+  });
+});

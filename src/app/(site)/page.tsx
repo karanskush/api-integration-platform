@@ -44,7 +44,7 @@ function Check() {
 // What the two steps buy you, stated as outcomes rather than features. Keyline
 // bullets, not ticks — none of this has been verified for the visitor yet.
 const AFTER = [
-  'Every read-safe endpoint run and recorded',
+  'Every read-safe endpoint run and recorded — writes too, with cleanup, once you store a sandbox key',
   'Your MCP server, live at a URL you own',
   'Docs that answer questions, not just describe fields',
 ];
@@ -132,7 +132,7 @@ export default function Home() {
               <p className="hero-note">
                 Sign in, paste your spec and a dev key. About a minute.
                 <br />
-                Read-safe calls only — the key is never stored.
+                The key you paste is used once for read-safe calls and never stored.
               </p>
             </div>
 
@@ -375,8 +375,9 @@ export default function Home() {
                 <h3>Paste spec + dev key</h3>
               </div>
               <p>
-                An OpenAPI URL, a Postman collection, or a single cURL command. The key runs
-                read-safe calls and is never stored.
+                An OpenAPI URL, a Postman collection, or a single cURL command. The pasted key runs
+                read-safe calls and is never stored. Store a sandbox key later and we exercise writes
+                with cleanup and discover your rate limit.
               </p>
               <div className="ob-mock" aria-hidden="true">
                 <div className="field focus">https://api.acme.com/openapi.json</div>
@@ -417,7 +418,7 @@ export default function Home() {
             Connect your API <Arrow />
           </a>
           <p className="cta-note">
-            Free while your API is public · keys never stored · cancel by deleting the project
+            Free while your API is public · pasted keys never stored · sandbox keys encrypted and revocable
           </p>
         </div>
       </section>

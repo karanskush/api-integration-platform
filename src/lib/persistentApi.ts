@@ -23,6 +23,10 @@ export type VerifiedScore = {
   // accounting existed, which the panel reports as unknown rather than as none.
   liveCallsAttempted: number;
   liveCallsSucceeded: number;
+  // Which environment earned this score. A sandbox-earned score is a real
+  // measurement of the owner's test environment; every renderer labels it so
+  // it is never read as production truth.
+  environment: 'production' | 'sandbox';
 };
 
 export type ApiVerificationState = {
@@ -174,6 +178,7 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
       verifiedAt: scores.verifiedAt,
       liveCallsAttempted: scores.liveCallsAttempted,
       liveCallsSucceeded: scores.liveCallsSucceeded,
+      scoreEnvironment: scores.environment,
     })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
@@ -203,6 +208,7 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
             specVersionId: row.scoreSpecVersionId!,
             liveCallsAttempted: row.liveCallsAttempted ?? 0,
             liveCallsSucceeded: row.liveCallsSucceeded ?? 0,
+            environment: row.scoreEnvironment === 'sandbox' ? 'sandbox' : 'production',
           },
   };
 }

@@ -43,6 +43,9 @@ export type AdvisorInsights = {
     liveCallsSucceeded: number;
     observedPoints: number;
     staticPoints: number;
+    // Which environment earned the score. A sandbox-earned score is a real
+    // measurement of the owner's test environment and every tool says so.
+    environment: 'production' | 'sandbox';
   } | null;
   // Observed probe findings, keyed by the action id used in ImportRecord.
   errorObservations: Array<{

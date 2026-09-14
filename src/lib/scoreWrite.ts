@@ -7,7 +7,7 @@
 // a real transaction, and why every id below is generated client-side.
 
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { buildLifecycleChangeStatements, type LifecycleFactInput } from './changes/ledger';
 import type { Db, NeonDb } from './db';
@@ -21,6 +21,9 @@ export type ScoreRunInput = {
   // Stamped on every non-static fact; a sandbox observation filed as
   // production truth is the single confusion this column exists to prevent.
   environment?: 'production' | 'sandbox';
+  // The vaulted credential the run used, when it used one. Linked on the run
+  // and the score rather than on every fact.
+  credentialId?: string | null;
   total: number;
   subscores: {
     authClarity: number;
@@ -186,8 +189,11 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     return { statements, verified: false };
   }
 
+  const environment = input.environment ?? 'production';
   const scoreValues = {
     specVersionId,
+    environment,
+    credentialId: input.credentialId ?? null,
     total,
     authClarity: subscores.authClarity,
     errorQuality: subscores.errorQuality,
@@ -200,11 +206,20 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     explanation,
   };
 
+  // One row per API, and production-earned rows take precedence: a sandbox
+  // run may replace a sandbox score, and a production run may replace either,
+  // but a sandbox run never overwrites a score earned against production —
+  // the sandbox is the owner's test environment, not the contract customers
+  // integrate against.
   statements.push(
     db
       .insert(scores)
       .values({ apiId, ...scoreValues })
-      .onConflictDoUpdate({ target: scores.apiId, set: { ...scoreValues, verifiedAt: new Date() } }),
+      .onConflictDoUpdate({
+        target: scores.apiId,
+        set: { ...scoreValues, verifiedAt: new Date() },
+        setWhere: sql`${scores.environment} = 'sandbox' OR ${sql.raw(`'${environment}'`)} = 'production'`,
+      }),
   );
 
   return { statements, verified: true };

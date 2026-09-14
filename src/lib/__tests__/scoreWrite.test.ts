@@ -450,3 +450,49 @@ describe('buildEvidenceStatements', () => {
     expect(statements).toEqual([]);
   });
 });
+
+// The sandbox is the owner's test environment; the production score is the
+// contract customers integrate against. One row per API, production wins.
+describe('score precedence across environments', () => {
+  const base = (environment: 'production' | 'sandbox', total: number): Omit<ScoreRunInput, 'apiId' | 'specVersionId'> => ({
+    environment,
+    total,
+    subscores: { authClarity: 25, errorQuality: 25, docDrift: 25, idempotency: 25 },
+    liveCalls: { attempted: 4, succeeded: 4, failed: 0 },
+    points: { observed: 50, static: 50, max: 100 },
+    evidence: [],
+  });
+
+  it('a sandbox run never overwrites a production-earned score', async () => {
+    const api = await makeApi('prec-1');
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('production', 80) })).statements);
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('sandbox', 40) })).statements);
+    const [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, api.apiId));
+    expect(row.total).toBe(80);
+    expect(row.environment).toBe('production');
+  });
+
+  it('a production run replaces a sandbox-earned score, and a sandbox run replaces a sandbox one', async () => {
+    const api = await makeApi('prec-2');
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('sandbox', 40) })).statements);
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('sandbox', 45) })).statements);
+    let [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, api.apiId));
+    expect(row).toMatchObject({ total: 45, environment: 'sandbox' });
+
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('production', 70) })).statements);
+    [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, api.apiId));
+    expect(row).toMatchObject({ total: 70, environment: 'production' });
+  });
+
+  it('records the credential a vaulted run used', async () => {
+    const api = await makeApi('prec-3');
+    const [org] = await db.select().from(schema.orgs).limit(1);
+    const [cred] = await db
+      .insert(schema.credentials)
+      .values({ orgId: org.id, apiId: api.apiId, environment: 'sandbox', encryptedKey: 'x', iv: 'x', authTag: 'x', wrappedDek: 'x', kmsKeyId: 'k', fingerprint: 'f', hint: 'abcd' })
+      .returning();
+    await runSequentially((await buildScoreRunStatements(db, { ...api, ...base('sandbox', 40), credentialId: cred.id })).statements);
+    const [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, api.apiId));
+    expect(row.credentialId).toBe(cred.id);
+  });
+});

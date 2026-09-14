@@ -12,6 +12,9 @@ import { invokeAction } from '@/lib/mcpTools';
 import { runScoreEngine } from '@/lib/probes/run';
 import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
+import { actorHashForToken } from '@/lib/mcpAccess';
+import { selectProbeAuth } from '@/lib/probeCredential';
+import type { ProbeEnvironment } from '@/lib/probes/types';
 import { probePaceMs } from '@/lib/reverify';
 import { applyEvidenceFacts, applyScoreRun } from '@/lib/scoreWrite';
 
@@ -59,13 +62,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const rl = await getLimiter('score-run', { limit: 1, windowSec: 3600 }).limit(api.orgId);
   if (!rl.success) return tooMany(rl.reset);
 
-  let body: { upstreamKey?: unknown };
+  let body: { upstreamKey?: unknown; environment?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const upstreamKey = typeof body.upstreamKey === 'string' ? body.upstreamKey : undefined;
+  const pastedKey = typeof body.upstreamKey === 'string' && body.upstreamKey.trim() ? body.upstreamKey.trim() : undefined;
+  const declared = typeof body.environment === 'string' ? body.environment.trim().toLowerCase() : 'production';
+  if (declared !== 'production' && declared !== 'sandbox') {
+    return Response.json({ error: 'environment must be production or sandbox' }, { status: 400 });
+  }
+
+  // A pasted key is used once and discarded, in the environment the caller
+  // declared. Without one, the org's vault decides: production on Team+, else
+  // a sandbox credential on any plan, else the reads run unauthenticated.
+  const probeAuth = await selectProbeAuth(db, {
+    orgId: api.orgId,
+    apiId: api.id,
+    plan: orgPlan,
+    actor: { type: 'probe', hash: actorHashForToken(userId) },
+    byok: pastedKey ? { key: pastedKey, environment: declared as ProbeEnvironment } : null,
+  });
+  const upstreamKey = probeAuth.upstreamKey;
+  const environment: ProbeEnvironment = probeAuth.environment;
+  const credentialId = probeAuth.credentialId;
 
   const record = await loadPersistentRecord(slug);
   if (!record) return Response.json({ error: 'Unknown API' }, { status: 404 });
@@ -76,11 +97,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const budget = createBudget({ maxRequests: budgetLimit, deadlineMs: outboundDeadlineMs() });
   const budgetedInvoke = withBudget(invokeAction, budget);
 
-  const [run] = await db.insert(scoreRuns).values({ apiId: api.id, status: 'running' }).returning();
-
-  // A pasted key is treated as production until the caller can say otherwise
-  // (slice 2 adds the environment choice to the request).
-  const environment = 'production' as const;
+  const [run] = await db
+    .insert(scoreRuns)
+    .values({ apiId: api.id, status: 'running', environment, credentialId, trigger: 'manual' })
+    .returning();
 
   try {
     const result = await runScoreEngine(record, {
@@ -96,6 +116,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       apiId: api.id,
       specVersionId: api.currentSpecVersionId!,
       environment,
+      credentialId,
       total: result.total,
       subscores: result.subscores,
       liveCalls: result.liveCalls,
@@ -145,6 +166,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
           apiId: api.id,
           specVersionId: api.currentSpecVersionId!,
           environment,
+          credentialId,
           chainsPlanned: executionPlan.chains.length,
           budgetLimit,
           result: chainResult,
@@ -168,7 +190,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     // and the badge manifest, so none may serve its cached pre-run version.
     purgeApiSurfaces(slug);
 
-    return Response.json({ ...result, ...(chains ? { chains } : {}) });
+    return Response.json({
+      ...result,
+      usedVaultedCredential: probeAuth.kind === 'vault',
+      credentialLabel: probeAuth.label,
+      ...(chains ? { chains } : {}),
+    });
   } catch {
     console.error('[verify]', { slug, apiId: api.id });
     await db

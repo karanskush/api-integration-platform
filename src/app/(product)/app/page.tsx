@@ -43,8 +43,9 @@ export default async function AppHome() {
             </li>
           </ol>
           <p className="app-privacy">
-            Credentials are never stored. A dev key is used for the read-safe calls in this run and
-            discarded with the request — writes are never executed.
+            The dev key you paste here is used for read-safe calls in this run and discarded with the
+            request; writes are never executed with it. Sandbox keys you choose to store later are
+            encrypted, audited and revocable.
           </p>
           <p className="app-privacy">
             Signed in, deep analysis starts automatically with your import: it crawls the

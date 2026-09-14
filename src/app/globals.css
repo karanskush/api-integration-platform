@@ -1029,7 +1029,8 @@ table.params td.desc { color: var(--fg-dim); }
 
 /* Import form: the optional dev key and its escape hatch. The key field is the
    second half of the two-step onboarding the landing page sells, so its hint
-   carries the same promise the page makes — read-safe only, never stored. */
+   carries the same promise the page makes — a pasted key is read-safe only and never
+   stored; a stored sandbox key is SandboxCredentialPanel's business. */
 .import-hint {
   margin-top: 8px;
   font-size: 12px;

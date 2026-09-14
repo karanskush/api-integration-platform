@@ -197,7 +197,11 @@ export async function buildCanaryStatements(db: Db, input: CanaryRunInput): Prom
   // The one place operation_stability is written. 'drifted' means exactly what
   // the column's vocabulary says: this operation's live behaviour no longer
   // matches its documentation.
-  if (driftedActionKeys.length) {
+  // ...and a claim about PRODUCTION. A sandbox shape that disagrees with the
+  // spec says the sandbox differs; flagging the operation drifted would tell
+  // every reader of the production page something observed elsewhere.
+  const writesStability = environment === 'production';
+  if (writesStability && driftedActionKeys.length) {
     statements.push(
       db
         .update(actions)
@@ -219,7 +223,7 @@ export async function buildCanaryStatements(db: Db, input: CanaryRunInput): Prom
   // fields, has produced no evidence that it matches — and clearing a warning
   // on absence of evidence is the same mistake as publishing a green score
   // with zero successful calls.
-  if (consistentActionKeys.length) {
+  if (writesStability && consistentActionKeys.length) {
     statements.push(
       db
         .update(actions)

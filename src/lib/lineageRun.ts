@@ -27,6 +27,7 @@ export type LineageRunInput = {
   apiId: string;
   specVersionId: string;
   environment?: string;
+  credentialId?: string | null;
   chainsPlanned: number;
   budgetLimit: number;
   result: ChainResult;
@@ -57,6 +58,7 @@ export function buildLineageRunStatements(db: Db, input: LineageRunInput): Linea
       apiId,
       specVersionId,
       environment,
+      credentialId: input.credentialId ?? null,
       status: statusFor(result),
       chainsPlanned,
       chainsExecuted: result.observations.length,

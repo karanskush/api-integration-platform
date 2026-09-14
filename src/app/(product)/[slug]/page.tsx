@@ -10,6 +10,8 @@ import FreshnessStrip from '@/components/product/FreshnessStrip';
 import McpBlock from '@/components/product/McpBlock';
 import Playground from '@/components/product/Playground';
 import RunVerificationButton from '@/components/product/RunVerificationButton';
+import { listCredentialMeta } from '@/lib/vaultStore';
+import SandboxCredentialPanel from '@/components/product/SandboxCredentialPanel';
 import ScorePreviewPanel from '@/components/product/ScorePreviewPanel';
 import VerifiedScorePanel from '@/components/product/VerifiedScorePanel';
 import { suggestedQuestions } from '@/lib/askSeeds';
@@ -68,6 +70,7 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
   if (!(await canViewApi(slug, userId))) notFound();
 
   let canVerify = false;
+  let sandboxCredential: { label: string | null; hint: string } | null = null;
   if (userId && verification?.claimStatus === 'claimed') {
     const db = getDb();
     const membership = await db
@@ -77,6 +80,11 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
       .where(and(eq(users.clerkUserId, userId), eq(orgMembers.orgId, verification.orgId)))
       .limit(1);
     canVerify = membership.length > 0;
+    if (canVerify) {
+      // Metadata only — the hint is the last four characters, never the key.
+      const stored = (await listCredentialMeta(db, verification.apiId)).find((c) => c.environment === 'sandbox');
+      sandboxCredential = stored ? { label: stored.label, hint: stored.hint } : null;
+    }
   }
 
   const mcpUrl = `${appOrigin()}/mcp/${record.id}`;
@@ -168,7 +176,10 @@ export default async function PersistentApiPage({ params }: { params: Promise<{ 
         <>
           <AuthGuide record={record} />
           {verification?.scores ? <VerifiedScorePanel scores={verification.scores} /> : <ScorePreviewPanel record={record} />}
-          {canVerify && <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} />}
+          {canVerify && (
+            <RunVerificationButton slug={slug} authRequired={record.auth !== 'none'} sandboxCredential={sandboxCredential} />
+          )}
+          {canVerify && <SandboxCredentialPanel slug={slug} baseUrls={record.baseUrls} />}
           {clerkReady &&
             (userId ? (
               <AskChannel

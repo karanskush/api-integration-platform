@@ -4,11 +4,15 @@ import * as schema from '../db/schema';
 import { createTestDb, type TestDb } from '../db/__tests__/testDb';
 import {
   countCredentials,
+  credentialGate,
   deleteCredential,
   listCredentialMeta,
   recentAudit,
+  recentAuditForApi,
   resolveCredential,
+  resolveProbeCredential,
   storeCredential,
+  updateCredentialConsents,
   writeAudit,
 } from '../vaultStore';
 
@@ -79,7 +83,7 @@ describe('storeCredential', () => {
     const [entry] = await auditFor(orgId);
     expect(entry.action).toBe('created');
     expect(entry.actorType).toBe('user');
-    expect(entry.detail).toBe('key_version=1');
+    expect(entry.detail).toContain('key_version=1');
   });
 
   // The unique (api_id, environment) index is what makes this a rotation rather
@@ -274,5 +278,105 @@ describe('countCredentials', () => {
     expect(await countCredentials(db, orgId)).toBe(0);
     await storeCredential(db, { orgId, apiId, environment: 'production', secret: SECRET, actor: ACTOR });
     expect(await countCredentials(db, orgId)).toBe(1);
+  });
+});
+
+// Sandbox credentials on every plan: consents live on the row, the database
+// refuses them on production, and a probe runner has one function to call.
+describe('sandbox credentials', () => {
+
+  it('gates sandbox by sandboxProbing (every plan) and production by vaultedCredentials (Team+)', () => {
+    expect(credentialGate('free', 'sandbox').ok).toBe(true);
+    expect(credentialGate('free', 'production').ok).toBe(false);
+    expect(credentialGate('team', 'production').ok).toBe(true);
+    expect(credentialGate('business', 'sandbox').ok).toBe(true);
+  });
+
+  it('stores label, consents and what the key looked like on a sandbox row', async () => {
+    const { orgId, apiId } = await seed();
+    const meta = await storeCredential(db, {
+      orgId,
+      apiId,
+      environment: 'sandbox',
+      secret: SECRET,
+      actor: ACTOR,
+      label: 'Dub test workspace',
+      writeConsent: true,
+      burstConsent: false,
+      inferred: { environment: 'unknown', basis: 'none' },
+    });
+    expect(meta.label).toBe('Dub test workspace');
+    expect(meta.writeConsentAt).toBeInstanceOf(Date);
+    expect(meta.burstConsentAt).toBeNull();
+    expect(meta.inferredEnvironment).toBe('unknown');
+    expect(meta.inferenceBasis).toBe('none');
+  });
+
+  it('drops consents on a production row rather than tripping the database', async () => {
+    const { orgId, apiId } = await seed();
+    const meta = await storeCredential(db, { orgId, apiId, environment: 'production', secret: SECRET, actor: ACTOR, writeConsent: true, burstConsent: true });
+    expect(meta.writeConsentAt).toBeNull();
+    expect(meta.burstConsentAt).toBeNull();
+  });
+
+  it('the database itself refuses write consent on a production row', async () => {
+    const { orgId, apiId } = await seed();
+    const meta = await storeCredential(db, { orgId, apiId, environment: 'production', secret: SECRET, actor: ACTOR });
+    await expect(
+      db.update(schema.credentials).set({ writeConsentAt: new Date() }).where(eq(schema.credentials.id, meta.id)),
+    ).rejects.toThrow();
+  });
+
+  it('resolves a sandbox key for a probe, records the use, and refuses writes without consent', async () => {
+    const { orgId, apiId } = await seed();
+    await storeCredential(db, { orgId, apiId, environment: 'sandbox', secret: SECRET, actor: ACTOR });
+
+    const denied = await resolveProbeCredential(db, { orgId, apiId, environment: 'sandbox', actor: { type: 'probe' }, requireWriteConsent: true });
+    expect(denied).toEqual({ ok: false, reason: 'no_write_consent' });
+
+    const reads = await resolveProbeCredential(db, { orgId, apiId, environment: 'sandbox', actor: { type: 'probe' } });
+    expect(reads.ok).toBe(true);
+    expect(reads.ok && reads.secret).toBe(SECRET);
+    expect(reads.ok && reads.environment).toBe('sandbox');
+
+    const [row] = await db.select().from(schema.credentials).where(eq(schema.credentials.apiId, apiId));
+    expect(row.lastProbeRunAt).toBeInstanceOf(Date);
+
+    const trail = await recentAuditForApi(db, orgId, apiId);
+    const actions = trail.map((r) => `${r.action}:${r.actorType}`);
+    expect(actions).toContain('denied:probe');
+    expect(actions).toContain('used:probe');
+    expect(trail.find((r) => r.action === 'denied')?.detail).toBe('reason=no_write_consent');
+  });
+
+  it('changes consents and the label on the sandbox row, and audits it', async () => {
+    const { orgId, apiId } = await seed();
+    await storeCredential(db, { orgId, apiId, environment: 'sandbox', secret: SECRET, actor: ACTOR });
+    const updated = await updateCredentialConsents(db, { orgId, apiId, writeConsent: true, burstConsent: true, label: 'renamed', actor: ACTOR });
+    expect(updated?.writeConsentAt).toBeInstanceOf(Date);
+    expect(updated?.burstConsentAt).toBeInstanceOf(Date);
+    expect(updated?.label).toBe('renamed');
+
+    const revoked = await updateCredentialConsents(db, { orgId, apiId, writeConsent: false, actor: ACTOR });
+    expect(revoked?.writeConsentAt).toBeNull();
+    expect(revoked?.burstConsentAt).toBeInstanceOf(Date);
+
+    const trail = await recentAuditForApi(db, orgId, apiId);
+    expect(trail.filter((r) => r.action === 'consent_changed')).toHaveLength(2);
+    expect(trail[0].detail).toBe('write_consent=0 burst_consent=1');
+  });
+
+  it('returns null when there is no sandbox credential to update', async () => {
+    const { orgId, apiId } = await seed();
+    expect(await updateCredentialConsents(db, { orgId, apiId, writeConsent: true, actor: ACTOR })).toBeNull();
+  });
+
+  it('a stored sandbox credential is no longer a dead write — resolveProbeCredential finds it', async () => {
+    const { orgId, apiId } = await seed();
+    await storeCredential(db, { orgId, apiId, environment: 'sandbox', secret: SECRET, actor: ACTOR });
+    const production = await resolveProbeCredential(db, { orgId, apiId, environment: 'production', actor: { type: 'probe' } });
+    expect(production).toEqual({ ok: false, reason: 'not_found' });
+    const sandbox = await resolveProbeCredential(db, { orgId, apiId, environment: 'sandbox', actor: { type: 'probe' } });
+    expect(sandbox.ok).toBe(true);
   });
 });

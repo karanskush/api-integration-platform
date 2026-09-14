@@ -36,6 +36,13 @@ export type PlanLimits = {
   // are the same decision. Plans without it keep the honest
   // "spec structure only" answer they get today, so nothing regresses.
   chainVerification: boolean;
+  // Storing a SANDBOX credential, and letting the probes use it for writes with
+  // cleanup and for rate-limit discovery. On every plan, Free included: the
+  // point of a test key is that exercising it costs the owner nothing, and a
+  // probe that cannot use the key it was given is not a probe. Production
+  // credential vaulting stays `vaultedCredentials` (Team+) — a stored
+  // production key is a different risk and a different product.
+  sandboxProbing: boolean;
 };
 
 // The whole-run outbound ceiling shared by the score engine, the canary and the
@@ -65,6 +72,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     privateApis: false,
     vaultedCredentials: false,
     chainVerification: false,
+    sandboxProbing: true,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -79,6 +87,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     privateApis: false,
     vaultedCredentials: false,
     chainVerification: false,
+    sandboxProbing: true,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -93,6 +102,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     privateApis: false,
     vaultedCredentials: false,
     chainVerification: false,
+    sandboxProbing: true,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -107,6 +117,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     privateApis: true,
     vaultedCredentials: true,
     chainVerification: true,
+    sandboxProbing: true,
     customDomain: true,
     seats: envInt('PLAN_SEATS_TEAM', 5),
     scheduledVerification: false,
@@ -121,6 +132,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     privateApis: true,
     vaultedCredentials: true,
     chainVerification: true,
+    sandboxProbing: true,
     customDomain: true,
     seats: envInt('PLAN_SEATS_BUSINESS', 20),
     scheduledVerification: true,

@@ -18,7 +18,7 @@ const verified = {
   liveCallsAttempted: 6,
   liveCallsSucceeded: 4,
   observedPoints: 20,
-  staticPoints: 40,
+  staticPoints: 40, environment: 'production' as const,
 };
 
 describe('getScoreExplanation', () => {
@@ -42,6 +42,16 @@ describe('getScoreExplanation', () => {
     const res = getScoreExplanation(ctx(petstoreActions(), { verified }));
     expect(res.verified).toBe(true);
     expect(res.basis).toContain('live probes');
+    expect(res.verifiedAt).toBe('2026-07-20T10:00:00.000Z');
+    expect(res.total).toBe(82);
+  });
+
+  it('labels a sandbox-earned score as such and warns that production may differ', () => {
+    const res = getScoreExplanation(ctx(petstoreActions(), { verified: { ...verified, environment: 'sandbox' as const } }));
+    expect(res.verified).toBe(true);
+    expect(res.basis).toContain('sandbox');
+    expect(res.environment).toBe('sandbox');
+    expect(res.environmentNote).toMatch(/production may/);
     expect(res.verifiedAt).toBe('2026-07-20T10:00:00.000Z');
     expect(res.total).toBe(82);
   });
@@ -117,7 +127,7 @@ describe('getScoreExplanation reports its sample', () => {
   });
 
   it('admits when a score predates the accounting rather than implying a sample', () => {
-    const legacy = { ...verified, liveCallsAttempted: 0, liveCallsSucceeded: 0, observedPoints: 0, staticPoints: 0 };
+    const legacy = { ...verified, liveCallsAttempted: 0, liveCallsSucceeded: 0, observedPoints: 0, staticPoints: 0, environment: 'production' as const };
     const res = getScoreExplanation(ctx(petstoreActions(), { verified: legacy }));
 
     expect(res.sample.recorded).toBe(false);

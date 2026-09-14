@@ -18,7 +18,8 @@ const SUBSCORES: { key: keyof VerifiedScore; label: string }[] = [
 // the one being served. Rendering it green would be the exact failure the
 // version fence exists to prevent.
 export default function VerifiedScorePanel({ scores }: { scores: VerifiedScore }) {
-  const { total, explanation, stale, verifiedAt, liveCallsAttempted, liveCallsSucceeded } = scores;
+  const { total, explanation, stale, verifiedAt, liveCallsAttempted, liveCallsSucceeded, environment } = scores;
+  const sandbox = environment === 'sandbox';
   // The claim below is "computed from live probes against the real API", which
   // is only true because scoreWrite.ts now refuses to write a row unless a call
   // actually succeeded. Showing the sample is what lets a reader check that
@@ -40,14 +41,16 @@ export default function VerifiedScorePanel({ scores }: { scores: VerifiedScore }
           </span>
         ) : (
           <span className="chip" style={{ marginLeft: 8, color: 'var(--accent-green)', borderColor: 'rgba(67, 217, 163, 0.3)' }}>
-            verified
+            {sandbox ? 'verified · sandbox' : 'verified'}
           </span>
         )}
       </h2>
       <p style={{ color: 'var(--fg-mute)', fontSize: 12.5, marginBottom: 16 }}>
         {stale
           ? `Computed from live probes on ${formatUtcDate(verifiedAt)} against a previous spec version. The spec has changed since; these numbers describe the old contract until the next verification run.`
-          : `Computed from live probes run against the real API on ${formatUtcDate(verifiedAt)} — this is the earned Agent-Ready Score, not a static estimate.`}
+          : sandbox
+            ? `Computed from live probes against your sandbox with your test key on ${formatUtcDate(verifiedAt)}. A real measurement of the sandbox — production may differ.`
+            : `Computed from live probes run against the real API on ${formatUtcDate(verifiedAt)} — this is the earned Agent-Ready Score, not a static estimate.`}
       </p>
       <p className="mono" style={{ color: 'var(--fg-dim)', fontSize: 11.5, marginTop: -10, marginBottom: 16 }}>
         {sample}
@@ -57,7 +60,7 @@ export default function VerifiedScorePanel({ scores }: { scores: VerifiedScore }
         <span className="mono" style={{ fontSize: 32, fontWeight: 600, color: accent }}>
           {total}
         </span>
-        <span style={{ color: 'var(--fg-mute)', fontSize: 13 }}>/ 100 · {stale ? 'previous version' : 'verified'}</span>
+        <span style={{ color: 'var(--fg-mute)', fontSize: 13 }}>/ 100 · {stale ? 'previous version' : sandbox ? 'verified in sandbox' : 'verified'}</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>

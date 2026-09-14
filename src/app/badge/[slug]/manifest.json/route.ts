@@ -30,6 +30,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
       visibility: apis.visibility,
       currentSpecVersionId: apis.currentSpecVersionId,
       total: scores.total,
+      scoreEnvironment: scores.environment,
       verifiedAt: scores.verifiedAt,
       scoreSpecVersionId: scores.specVersionId,
       currentVersionHash: specVersions.contentHash,
@@ -52,6 +53,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
       score: row.total ?? null,
       // A stale score is still a real measurement — of a superseded contract.
       stale,
+      // Which environment earned it. A sandbox-earned badge is honest about
+      // being one; a consumer may weigh it differently.
+      environment: row.total == null ? null : row.scoreEnvironment ?? 'production',
       verifiedAt: row.verifiedAt?.toISOString() ?? null,
       specVersion: row.currentVersionHash?.slice(0, 12) ?? null,
       lastCheckedAt: summary.lastCheckedAt,

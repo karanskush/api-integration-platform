@@ -35,7 +35,8 @@ import { applyLineageRun } from './lineageRun';
 import { invokeAction } from './mcpTools';
 import { runScoreEngine } from './probes/run';
 import { applyEvidenceFacts, applyScoreRun } from './scoreWrite';
-import { resolveCredential } from './vaultStore';
+import { selectProbeAuth, type ProbeAuth } from './probeCredential';
+import type { ProbeEnvironment } from './probes/types';
 
 // How stale a verified score may get before it is re-run. Env-overridable
 // because the right cadence is a product decision, not a code one.
@@ -125,6 +126,11 @@ export type ReverifyOutcome = {
   scored: boolean;
   total?: number;
   usedVaultedCredential: boolean;
+  // Which environment the run's key belonged to, and the credential row when a
+  // vaulted one was used. Every fact, snapshot and chain of this run carries
+  // the same environment.
+  environment: ProbeEnvironment;
+  credentialId: string | null;
   // The behavioural canary's result for this API: how many operations were
   // sampled, how many could be compared against a previous run, and what that
   // comparison found. Absent when the canary did not run.
@@ -155,6 +161,7 @@ export type ReverifyDeps = {
   scoreEngine?: typeof runScoreEngine;
   canary?: typeof runCanary;
   chains?: typeof runLineageChains;
+  selectAuth?: typeof selectProbeAuth;
   now?: () => Date;
 };
 
@@ -168,6 +175,7 @@ export async function reverifyOne(
   const scoreEngine = deps.scoreEngine ?? runScoreEngine;
   const canary = deps.canary ?? runCanary;
   const chains = deps.chains ?? runLineageChains;
+  const selectAuth = deps.selectAuth ?? selectProbeAuth;
 
   let specStatus: ReverifyOutcome['specStatus'] = 'skipped';
 
@@ -193,27 +201,34 @@ export async function reverifyOne(
   // Step 2: probe. Reload the record so it reflects any re-import above.
   const record = await loadRecord(candidate.slug);
   if (!record) {
-    return { slug: candidate.slug, specStatus, scored: false, usedVaultedCredential: false, error: 'record_unavailable' };
+    return {
+      slug: candidate.slug,
+      specStatus,
+      scored: false,
+      usedVaultedCredential: false,
+      environment: 'production',
+      credentialId: null,
+      error: 'record_unavailable',
+    };
   }
 
   // Resolved once and reused: the credential gate and the chain gate are the
   // same plan decision, and indexing PLAN_LIMITS twice invites them to drift.
   const planLimits = PLAN_LIMITS[(candidate.plan as Plan) in PLAN_LIMITS ? (candidate.plan as Plan) : 'free'];
 
-  let upstreamKey: string | undefined;
-  let usedVaultedCredential = false;
-  if (planLimits.vaultedCredentials) {
-    const resolved = await resolveCredential(db, {
-      orgId: candidate.orgId,
-      apiId: candidate.apiId,
-      environment: 'production',
-      actor: { type: 'cron' },
-    });
-    if (resolved.ok) {
-      upstreamKey = resolved.secret;
-      usedVaultedCredential = true;
-    }
-  }
+  // The key decides the environment: a production vault key on Team+, else a
+  // sandbox key on any plan, else none — and everything this run writes is
+  // stamped with the environment that key belongs to.
+  const auth: ProbeAuth = await selectAuth(db, {
+    orgId: candidate.orgId,
+    apiId: candidate.apiId,
+    plan: candidate.plan,
+    actor: { type: 'cron' },
+  });
+  const upstreamKey = auth.upstreamKey;
+  const usedVaultedCredential = auth.kind === 'vault';
+  const environment: ProbeEnvironment = auth.environment;
+  const credentialId = auth.credentialId;
 
   // ONE ceiling for the whole run, applied at the DI seam every probe already
   // calls through, so the score engine, the canary and the chain runner draw
@@ -223,11 +238,10 @@ export async function reverifyOne(
   const budget = createBudget({ maxRequests: budgetLimit, deadlineMs: outboundDeadlineMs() });
   const budgetedInvoke = withBudget(invokeAction, budget);
 
-  const [run] = await db.insert(scoreRuns).values({ apiId: candidate.apiId, status: 'running' }).returning();
-
-  // Until sandbox credentials resolve here (slice 2), every scheduled run is a
-  // production run — stated explicitly rather than assumed by a default.
-  const environment = 'production' as const;
+  const [run] = await db
+    .insert(scoreRuns)
+    .values({ apiId: candidate.apiId, status: 'running', environment, credentialId, trigger: 'cron' })
+    .returning();
 
   try {
     const result = await scoreEngine(record, {
@@ -253,6 +267,7 @@ export async function reverifyOne(
       apiId: candidate.apiId,
       specVersionId,
       environment,
+      credentialId,
       total: result.total,
       subscores: result.subscores,
       liveCalls: result.liveCalls,
@@ -319,6 +334,7 @@ export async function reverifyOne(
           apiId: candidate.apiId,
           specVersionId,
           environment,
+          credentialId,
           chainsPlanned: plan.chains.length,
           budgetLimit,
           result: chainResult,
@@ -348,6 +364,8 @@ export async function reverifyOne(
       scored: true,
       total: result.total,
       usedVaultedCredential,
+      environment,
+      credentialId,
       ...(canaryOutcome ? { canary: canaryOutcome } : {}),
       ...(chainOutcome ? { chains: chainOutcome } : {}),
     };
@@ -360,6 +378,8 @@ export async function reverifyOne(
       slug: candidate.slug,
       reason: err instanceof Error ? err.name : 'unknown',
     });
-    return { slug: candidate.slug, specStatus, scored: false, usedVaultedCredential, error: 'score_run_failed' };
+    return { slug: candidate.slug, specStatus, scored: false, usedVaultedCredential,
+      environment,
+      credentialId, error: 'score_run_failed' };
   }
 }

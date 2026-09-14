@@ -175,7 +175,7 @@ describe('checkFreshness', () => {
         liveCallsAttempted: 6,
         liveCallsSucceeded: 4,
         observedPoints: 20,
-        staticPoints: 40,
+        staticPoints: 40, environment: 'production' as const,
       },
     });
     expect(checkFreshness(context).verified).toMatchObject({ total: 82, stale: true });

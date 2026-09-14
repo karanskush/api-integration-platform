@@ -315,3 +315,24 @@ describe('operation stability can recover', () => {
     expect(await stabilityOf(seeded.specVersionId)).toBe('drifted');
   });
 });
+
+// operation_stability is a claim about production. A sandbox shape that
+// disagrees with the spec says the sandbox differs, nothing more.
+describe('operation stability is written from production only', () => {
+  it('does not flag an operation drifted from a sandbox observation', async () => {
+    const seeded = await seedApi();
+    const result = await buildCanaryStatements(db, {
+      ...inputFor(seeded, [snapshot(seen({ id: 'x', name: 'n', undocumented: true }, 3))]),
+      environment: 'sandbox',
+    });
+    await run(result.statements);
+
+    // The observation itself is recorded, labelled sandbox…
+    expect(result.driftedActionKeys).toEqual(['a1']);
+    const obs = await observations(seeded.apiId);
+    expect(obs.every((o) => o.environment === 'sandbox')).toBe(true);
+    // …but the production page's stability flag is untouched.
+    const [row] = await db.select().from(schema.actions).where(eq(schema.actions.specVersionId, seeded.specVersionId));
+    expect(row.operationStability).not.toBe('drifted');
+  });
+});

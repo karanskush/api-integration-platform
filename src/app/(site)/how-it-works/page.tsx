@@ -124,7 +124,7 @@ const LAYERS = [
   },
   {
     title: 'Claim & verify',
-    body: 'Prove you own the domain — DNS, meta tag, or email — and the page is yours. Run read-safe probes and the score turns from preview to verified.',
+    body: 'Prove you own the domain — DNS, meta tag, or email — and the page is yours. Run live probes and the score turns from preview to verified — labelled production or sandbox.',
   },
 ];
 
@@ -447,7 +447,7 @@ export default function HowItWorks() {
           <p className="disclaimer">Session replay — scripted from a real drift finding.</p>
 
           <ul className="pa-list">
-            <li><b>Read-safe probes.</b> Live calls against real endpoints — writes are graded statically, never executed.</li>
+            <li><b>Live probes.</b> Reads run against production or your sandbox. Writes run only against a sandbox you connect, with explicit consent and cleanup — otherwise they are graded statically.</li>
             <li><b>Evidence-linked.</b> Every point traces back to a recorded fact, not a heuristic guess.</li>
             <li><b>Owner-verified.</b> Claim your domain, run verification — the mark is earned, never assumed.</li>
           </ul>
