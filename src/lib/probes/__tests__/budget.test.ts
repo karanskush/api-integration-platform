@@ -6,7 +6,7 @@
 // every probe already calls through so no probe has to remember it.
 
 import { describe, expect, it, vi } from 'vitest';
-import { BudgetExhaustedError, WriteFenceError, createBudget, withBudget, withPacing, withWriteFence } from '../budget';
+import { BudgetExhaustedError, EffectBudgetExhaustedError, WriteFenceError, createBudget, createEffectBudget, withBudget, withEffectBudget, withPacing, withWriteFence } from '../budget';
 import type { invokeAction } from '../../mcpTools';
 
 const ok = (async () => ({ status: 200, latencyMs: 1, bodyText: '{}' })) as typeof invokeAction;
@@ -168,5 +168,38 @@ describe('withPacing', () => {
     clock += 100; // the call took 100ms
     await paced(a, {}, target, undefined); // 150ms still owed
     expect(slept).toEqual([150]);
+  });
+});
+
+describe('withEffectBudget', () => {
+  const ok = (async () => ({ status: 200, latencyMs: 1, bodyText: '{}' })) as typeof invokeAction;
+  const op = (method: string) =>
+    ({ id: 'x', name: 'op', description: '', method, path: '/x', paramsSchema: { type: 'object', properties: {} }, auth: 'none', safety: 'write', examples: [] }) as Parameters<typeof invokeAction>[0];
+  const target = { baseUrls: ['https://api.example.com'] };
+
+  it('counts only mutating calls', async () => {
+    const effects = createEffectBudget(2);
+    const wrapped = withEffectBudget(ok, effects);
+    await wrapped(op('GET'), {}, target, undefined);
+    await wrapped(op('POST'), {}, target, undefined);
+    expect(effects.used()).toBe(1);
+    expect(effects.remaining()).toBe(1);
+  });
+
+  it('refuses the mutation that would exceed the ceiling, before it is sent', async () => {
+    let sent = 0;
+    const inner = (async () => {
+      sent++;
+      return { status: 200, latencyMs: 1, bodyText: '{}' };
+    }) as typeof invokeAction;
+    const wrapped = withEffectBudget(inner, createEffectBudget(1));
+    await wrapped(op('POST'), {}, target, undefined);
+    await expect(wrapped(op('DELETE'), {}, target, undefined)).rejects.toBeInstanceOf(EffectBudgetExhaustedError);
+    expect(sent).toBe(1);
+  });
+
+  it('a read still passes once the effect budget is spent', async () => {
+    const wrapped = withEffectBudget(ok, createEffectBudget(0));
+    await expect(wrapped(op('GET'), {}, target, undefined)).resolves.toMatchObject({ status: 200 });
   });
 });

@@ -145,3 +145,42 @@ export function withPacing(
     return inner(...args);
   }) as typeof invokeAction;
 }
+
+
+export class EffectBudgetExhaustedError extends Error {
+  constructor() {
+    super('effect_budget_exhausted');
+    this.name = 'EffectBudgetExhaustedError';
+  }
+}
+
+export type EffectBudget = { remaining(): number; spend(): boolean; used(): number };
+
+export function createEffectBudget(max: number): EffectBudget {
+  let used = 0;
+  return {
+    remaining: () => Math.max(0, max - used),
+    spend: () => {
+      if (used >= max) return false;
+      used++;
+      return true;
+    },
+    used: () => used,
+  };
+}
+
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Counts mutating calls against a separate ceiling. The request budget bounds
+ * how much traffic a run sends; this bounds how much it CHANGES. Cleanup calls
+ * go through an invoke composed without this decorator, so a spent effect
+ * budget never prevents a fixture from being removed.
+ */
+export function withEffectBudget(inner: typeof invokeAction, effects: EffectBudget): typeof invokeAction {
+  return (async (...args: Parameters<typeof invokeAction>) => {
+    const [action] = args;
+    if (MUTATING.has(action.method.toUpperCase()) && !effects.spend()) throw new EffectBudgetExhaustedError();
+    return inner(...args);
+  }) as typeof invokeAction;
+}

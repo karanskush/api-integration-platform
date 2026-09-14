@@ -36,6 +36,7 @@ import { invokeAction } from './mcpTools';
 import { runScoreEngine } from './probes/run';
 import { applyEvidenceFacts, applyScoreRun } from './scoreWrite';
 import { selectProbeAuth, type ProbeAuth } from './probeCredential';
+import { maybeEnqueueSandboxWriteRun, type MaybeEnqueueResult } from './probeJobs';
 import type { ProbeEnvironment } from './probes/types';
 
 // How stale a verified score may get before it is re-run. Env-overridable
@@ -131,6 +132,8 @@ export type ReverifyOutcome = {
   // the same environment.
   environment: ProbeEnvironment;
   credentialId: string | null;
+  // Whether a sandbox write run was queued after this read run, or why not.
+  writeRun?: MaybeEnqueueResult;
   // The behavioural canary's result for this API: how many operations were
   // sampled, how many could be compared against a previous run, and what that
   // comparison found. Absent when the canary did not run.
@@ -162,6 +165,7 @@ export type ReverifyDeps = {
   canary?: typeof runCanary;
   chains?: typeof runLineageChains;
   selectAuth?: typeof selectProbeAuth;
+  enqueueWriteRun?: typeof maybeEnqueueSandboxWriteRun;
   now?: () => Date;
 };
 
@@ -176,6 +180,7 @@ export async function reverifyOne(
   const canary = deps.canary ?? runCanary;
   const chains = deps.chains ?? runLineageChains;
   const selectAuth = deps.selectAuth ?? selectProbeAuth;
+  const enqueueWriteRun = deps.enqueueWriteRun ?? maybeEnqueueSandboxWriteRun;
 
   let specStatus: ReverifyOutcome['specStatus'] = 'skipped';
 
@@ -358,6 +363,16 @@ export async function reverifyOne(
       }
     }
 
+    // The write lifecycle is never run inside the cron loop: it is queued as
+    // its own job (probeJobs.ts), which only happens when the org's sandbox key
+    // carries write consent and the queue is configured.
+    let writeRun: MaybeEnqueueResult | undefined;
+    try {
+      writeRun = await enqueueWriteRun(db, { apiId: candidate.apiId, specVersionId, triggeredBy: 'cron' });
+    } catch (err) {
+      console.error('[reverify] write run enqueue failed', { slug: candidate.slug, reason: err instanceof Error ? err.name : 'unknown' });
+    }
+
     return {
       slug: candidate.slug,
       specStatus,
@@ -368,6 +383,7 @@ export async function reverifyOne(
       credentialId,
       ...(canaryOutcome ? { canary: canaryOutcome } : {}),
       ...(chainOutcome ? { chains: chainOutcome } : {}),
+      ...(writeRun ? { writeRun } : {}),
     };
   } catch (err) {
     await db

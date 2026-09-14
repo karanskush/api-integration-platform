@@ -3,6 +3,7 @@
 // /mcp/[slug] handler (Postgres-backed), so the two don't duplicate this
 // ~80-line core.
 
+import { makeRef, type ValueRef } from './transient';
 import { isAdvisorTool } from './advisor';
 import { pickCapturedHeaders } from './changes/lifecycle';
 import type { Action, AuthPlacement } from './ir';
@@ -93,6 +94,11 @@ export type InvokeActionOptions = {
   // option existed Ajv rejected that request client-side, so the probe never
   // reached the wire in production and graded nothing.
   validate?: boolean;
+  // Return the last path segment of a Location header as a ValueRef. The write
+  // runner needs the id of a fixture it just created and some APIs answer a
+  // POST with 201 + Location and an empty body. The URL itself is never kept
+  // or followed — only its final segment, wrapped so it cannot be written down.
+  captureLocation?: boolean;
 };
 
 // Pure validate → auth-check → upstream-call → decode-body core, shared by
@@ -109,7 +115,18 @@ export type InvokeResult = {
   // return a bare {status, latencyMs, bodyText} stay valid; probes treat an
   // absent map as "no signals".
   headers?: Record<string, string>;
+  // Present only when opts.captureLocation asked for it and the response
+  // carried a Location whose last segment is usable as an identifier.
+  locationRef?: ValueRef;
 };
+
+function locationRefFrom(headers: Headers): ValueRef | undefined {
+  const location = headers.get('location');
+  if (!location) return undefined;
+  const withoutQuery = location.split(/[?#]/)[0].replace(/\/+$/, '');
+  const last = withoutQuery.split('/').pop() ?? '';
+  return makeRef(last) ?? undefined;
+}
 
 export async function invokeAction(
   action: Action,
@@ -142,7 +159,14 @@ export async function invokeAction(
   const bodyText = new TextDecoder().decode(res.body);
   // Lifecycle headers ride along on every call the platform already makes —
   // the cheapest change signal available, and until now discarded.
-  return { status: res.status, latencyMs: res.latencyMs, bodyText, headers: pickCapturedHeaders(res.headers) };
+  const locationRef = opts.captureLocation ? locationRefFrom(res.headers) : undefined;
+  return {
+    status: res.status,
+    latencyMs: res.latencyMs,
+    bodyText,
+    headers: pickCapturedHeaders(res.headers),
+    ...(locationRef ? { locationRef } : {}),
+  };
 }
 
 // Throws only on truly unexpected errors — callers should catch, log with

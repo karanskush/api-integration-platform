@@ -14,6 +14,7 @@ import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
 import { actorHashForToken } from '@/lib/mcpAccess';
 import { selectProbeAuth } from '@/lib/probeCredential';
+import { maybeEnqueueSandboxWriteRun, type MaybeEnqueueResult } from '@/lib/probeJobs';
 import type { ProbeEnvironment } from '@/lib/probes/types';
 import { probePaceMs } from '@/lib/reverify';
 import { applyEvidenceFacts, applyScoreRun } from '@/lib/scoreWrite';
@@ -190,11 +191,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     // and the badge manifest, so none may serve its cached pre-run version.
     purgeApiSurfaces(slug);
 
+    // Writes never run inline here: when the org has a sandbox key with write
+    // consent and the queue is up, the write lifecycle is queued as its own job
+    // (probeJobs.ts) with its own budgets. The reason it was not queued is
+    // returned rather than swallowed.
+    let writeRun: MaybeEnqueueResult | null = null;
+    try {
+      writeRun = await maybeEnqueueSandboxWriteRun(db, { apiId: api.id, specVersionId: api.currentSpecVersionId!, triggeredBy: 'verify' });
+    } catch (err) {
+      console.error('[verify] write run enqueue failed', { slug, reason: err instanceof Error ? err.name : 'unknown' });
+    }
+
     return Response.json({
       ...result,
       usedVaultedCredential: probeAuth.kind === 'vault',
       credentialLabel: probeAuth.label,
       ...(chains ? { chains } : {}),
+      ...(writeRun ? { writeRun } : {}),
     });
   } catch {
     console.error('[verify]', { slug, apiId: api.id });

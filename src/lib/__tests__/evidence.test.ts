@@ -95,6 +95,41 @@ describe('parseEvidencePayload', () => {
     });
   });
 
+  describe('probe.write_lifecycle', () => {
+    const payload = {
+      actionId: 'a1',
+      entity: 'tag',
+      runId: 'r1',
+      steps: { create: 201, read: 200, update: 200, readAfterUpdate: 200, delete: 204, readAfterDelete: 404 },
+      idSource: 'body',
+      convergence: 'immediate',
+      pollCount: 0,
+      schemaValid: true,
+      unknownFieldCount: 1,
+      serverGeneratedFieldCount: 2,
+      updateReflected: true,
+      useAfterFree: 'gone_404',
+      cleanup: 'deleted_confirmed',
+    };
+
+    it('parses a complete lifecycle', () => {
+      expect(parseEvidencePayload('probe.write_lifecycle', payload)).toEqual(payload);
+    });
+
+    it('rejects an unknown cleanup state — the vocabulary is closed', () => {
+      expect(parseEvidencePayload('probe.write_lifecycle', { ...payload, cleanup: 'probably_fine' })).toBeNull();
+    });
+
+    it('rejects an entity name long enough to carry a payload', () => {
+      expect(parseEvidencePayload('probe.write_lifecycle', { ...payload, entity: 'x'.repeat(65) })).toBeNull();
+    });
+
+    it('carries statuses and enums only — never an identifier field', () => {
+      expect(Object.keys(payload)).not.toContain('resourceId');
+      expect(JSON.stringify(parseEvidencePayload('probe.write_lifecycle', { ...payload, resourceId: 'tag_123' }))).not.toContain('tag_123');
+    });
+  });
+
   it('never throws on a malformed payload, even completely unrelated shapes', () => {
     expect(() => parseEvidencePayload('probe.auth_reject', null)).not.toThrow();
     expect(() => parseEvidencePayload('probe.auth_reject', 'not an object')).not.toThrow();

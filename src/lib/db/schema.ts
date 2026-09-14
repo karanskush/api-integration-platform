@@ -579,3 +579,96 @@ export const lineageExecutions = pgTable('lineage_executions', {
   index('lineage_executions_edge_idx').on(t.apiId, t.specVersionId, t.consumerTool, t.consumerField, t.observedAt),
   index('lineage_executions_run_id_idx').on(t.runId),
 ]);
+
+// ---------------------------------------------------------------------------
+// Write probing (probes/writeRunner.ts, writeRun.ts, probeGc.ts).
+//
+// One row per write run with the six §12.11 terminal states; one row per
+// fixture the runner created, whose identifier is sealed under the vault KEK
+// only until deletion is confirmed and NULLed after (the HMAC survives); one
+// row per cleanup attempt; and the cleanup contracts §7.2 requires before a
+// create may run at all. Zero jsonb throughout — the same structural rule as
+// lineage_executions: a live value has nowhere to land.
+
+export const probeRuns = pgTable('probe_runs', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull(),
+  kind: text('kind').notNull(), // write_lifecycle
+  // queued|running|completed_clean|completed_with_quarantined_resources|
+  // failed_clean|failed_with_quarantined_resources|canceled_clean|canceled_with_quarantined_resources
+  status: text('status').notNull(),
+  familiesPlanned: integer('families_planned').notNull().default(0),
+  familiesExecuted: integer('families_executed').notNull().default(0),
+  requestsMade: integer('requests_made').notNull().default(0),
+  budgetLimit: integer('budget_limit').notNull().default(0),
+  effectsUsed: integer('effects_used').notNull().default(0),
+  effectBudget: integer('effect_budget').notNull().default(0),
+  createdCount: integer('created_count').notNull().default(0),
+  deletedConfirmedCount: integer('deleted_confirmed_count').notNull().default(0),
+  quarantinedCount: integer('quarantined_count').notNull().default(0),
+  // rate_limited|budget_exhausted|deadline_exceeded|effect_budget_exhausted|leak_cap_reached|policy_denied|cleanup_reserve_reached
+  abortedReason: text('aborted_reason'),
+  errorCode: text('error_code'),
+  credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
+  triggeredBy: text('triggered_by').notNull(), // owner|cron|verify
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [index('probe_runs_api_id_started_at_idx').on(t.apiId, t.startedAt)]);
+
+export const probeResources = pgTable('probe_resources', {
+  id: id(),
+  runId: uuid('run_id').notNull().references(() => probeRuns.id, { onDelete: 'cascade' }),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull(),
+  entity: text('entity').notNull(),
+  createActionKey: text('create_action_key').notNull(),
+  deleteActionKey: text('delete_action_key'),
+  // Permanent, non-reversible: "is this the same object?" without the id.
+  resourceIdHash: text('resource_id_hash').notNull(),
+  // The identifier itself, sealed under the vault KEK — the one deliberate
+  // exception to zero-value storage, scoped to fixtures the runner created,
+  // and NULLed the moment deletion is confirmed.
+  resourceIdCiphertext: text('resource_id_ciphertext'),
+  resourceIdIv: text('resource_id_iv'),
+  resourceIdAuthTag: text('resource_id_auth_tag'),
+  resourceIdWrappedDek: text('resource_id_wrapped_dek'),
+  resourceIdKeyVersion: integer('resource_id_key_version'),
+  idSource: text('id_source').notNull(), // body|location|unavailable
+  // live|deleted_confirmed|deleted_unconfirmed|delete_failed|quarantined|accepted_quarantine
+  cleanupStatus: text('cleanup_status').notNull(),
+  cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+  acceptedBy: uuid('accepted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  lastCleanupAt: timestamp('last_cleanup_at', { withTimezone: true }),
+}, (t) => [index('probe_resources_api_env_status_idx').on(t.apiId, t.environment, t.cleanupStatus)]);
+
+export const probeCleanupAttempts = pgTable('probe_cleanup_attempts', {
+  id: id(),
+  resourceId: uuid('resource_id').notNull().references(() => probeResources.id, { onDelete: 'cascade' }),
+  runId: uuid('run_id').references(() => probeRuns.id, { onDelete: 'set null' }),
+  deleteStatus: integer('delete_status'),
+  readbackStatus: integer('readback_status'),
+  // deleted_confirmed|deleted_unconfirmed|delete_failed|still_readable|transport_error
+  result: text('result').notNull(),
+  attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const cleanupContracts = pgTable('cleanup_contracts', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull(),
+  operation: text('operation').notNull(), // the CREATE tool name the contract covers
+  // inverse_operation|provider_ttl|ephemeral_environment_reset|approved_cleanup_job|reusable_fixture_pool|accepted_quarantine
+  mechanism: text('mechanism').notNull(),
+  approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  // Set by the first run that created, deleted and confirmed the object gone.
+  testedAt: timestamp('tested_at', { withTimezone: true }),
+  testedRunId: uuid('tested_run_id').references(() => probeRuns.id, { onDelete: 'set null' }),
+  residualRiskAcceptedBy: uuid('residual_risk_accepted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('cleanup_contracts_api_env_operation_idx').on(t.apiId, t.environment, t.operation)]);

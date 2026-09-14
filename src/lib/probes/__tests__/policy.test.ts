@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyEffect,
   cleanupSatisfied,
+  denylistPattern,
   mayProbe,
   releaseBlocked,
   riskWithCleanup,
@@ -197,6 +198,63 @@ describe('mayProbe — what it refuses', () => {
     for (const path of ['/pets', '/pets/{petId}', '/store/inventory', '/users/{username}']) {
       expect(mayProbe(action({ name: `get_${path}`, path }), readOnlyPolicy).allowed).toBe(true);
     }
+  });
+});
+
+describe('mayProbe — the rehearsal, the delete, and what a contract covers', () => {
+  const create = action({ name: 'create_widget', path: '/widgets', method: 'POST', safety: 'write' });
+  const update = action({ name: 'update_widget', path: '/widgets/{id}', method: 'PATCH', safety: 'write' });
+  const remove = action({ name: 'delete_widget', path: '/widgets/{id}', method: 'DELETE', safety: 'destructive' });
+  const untested: CleanupContract = { ...goodContract, tested: false };
+
+  // The first run of a family exists to test the contract. It stays R3 —
+  // individually approved — rather than being refused, or nothing could ever
+  // reach R2.
+  it('admits an approved create with an untested contract, at R3', () => {
+    expect(mayProbe(create, sandbox(), untested)).toEqual({ allowed: true, risk: 'R3', reason: 'ok' });
+  });
+
+  it('still refuses that same create when the policy did not approve it individually', () => {
+    expect(mayProbe(create, sandbox({ approvedOperations: new Set() }), untested).reason).toBe('not_individually_approved');
+  });
+
+  it('still refuses it when the policy caps at R2', () => {
+    expect(mayProbe(create, sandbox({ maxRisk: 'R2' }), untested).reason).toBe('above_policy_max');
+  });
+
+  it('a delete needs no contract, only approval and a sandbox', () => {
+    expect(mayProbe(remove, sandbox({ approvedOperations: new Set(['delete_widget']) }), null)).toEqual({ allowed: true, risk: 'R3', reason: 'ok' });
+    expect(mayProbe(remove, sandbox(), null).reason).toBe('not_individually_approved');
+    expect(mayProbe(remove, sandbox({ environment: 'production', approvedOperations: new Set(['delete_widget']) }), null).reason).toBe('production_mutation');
+  });
+
+  it("a contract covers the family's update of the same object, and nothing else", () => {
+    const covering: CleanupContract = { ...goodContract, covers: ['update_widget'] };
+    const policy = sandbox({ approvedOperations: new Set(['create_widget', 'update_widget']) });
+    expect(mayProbe(update, policy, covering).allowed).toBe(true);
+    expect(mayProbe(update, policy, goodContract).reason).toBe('cleanup_unsatisfied');
+    const other = action({ name: 'update_gadget', path: '/gadgets/{id}', method: 'PATCH', safety: 'write' });
+    expect(mayProbe(other, sandbox({ approvedOperations: new Set(['update_gadget']) }), covering).reason).toBe('cleanup_unsatisfied');
+  });
+});
+
+describe("the provider's never-touch list", () => {
+  it('turns the declared words into a token pattern, escaped', () => {
+    const re = denylistPattern(['payouts', 'a.b'])!;
+    expect(re.test('/payouts')).toBe(true);
+    expect(re.test('/payout')).toBe(true);
+    expect(re.test('/v1/tags')).toBe(false);
+    expect(re.test('/aXb')).toBe(false);
+    expect(denylistPattern([])).toBeNull();
+  });
+
+  it('escalates a matching operation to R4 with the provider named as the basis', () => {
+    const tags = action({ name: 'create_tag', path: '/tags', method: 'POST', safety: 'write' });
+    const plain = classifyEffect(tags);
+    expect(plain.risk).toBe('R3');
+    const denied = classifyEffect(tags, { denylist: denylistPattern(['tags']) });
+    expect(denied.risk).toBe('R4');
+    expect(denied.basis).toBe('provider_denylist');
   });
 });
 

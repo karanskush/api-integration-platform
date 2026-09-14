@@ -58,6 +58,23 @@ export function outboundDeadlineMs(): number {
   return envInt('PROBE_OUTBOUND_DEADLINE_MS', 30_000);
 }
 
+// The write runner's own ceilings (probes/writeRunner.ts). It runs in its own
+// job with its own request budget — a single family is eight to fourteen
+// sequential calls with polls — a deadline that fits a 300 s function, and an
+// EFFECT budget: how many mutating calls one run may make. Cleanup is exempt
+// from the effect budget so a spent budget can never strand a fixture.
+export function writeRequestsPerRun(): number {
+  return envInt('PROBE_WRITE_REQUESTS_PER_RUN', 30);
+}
+
+export function writeDeadlineMs(): number {
+  return envInt('PROBE_WRITE_DEADLINE_MS', 240_000);
+}
+
+export function writeEffectsPerRun(): number {
+  return envInt('PROBE_WRITE_EFFECTS_PER_RUN', 6);
+}
+
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   const n = raw ? Number(raw) : NaN;

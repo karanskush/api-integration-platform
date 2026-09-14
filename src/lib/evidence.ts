@@ -76,7 +76,9 @@ export type EvidenceKind =
   | 'probe.negative_partition'
   | 'probe.not_found_identity'
   | 'probe.method_support'
-  | 'probe.pagination_behavior';
+  | 'probe.pagination_behavior'
+  // Sandbox write probing (probes/writeRunner.ts).
+  | 'probe.write_lifecycle';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -291,6 +293,31 @@ const paginationBehaviorPayload = z.object({
   skipped: z.enum(['next_is_url', 'no_next', 'no_size_param', 'start_failed']).optional(),
 });
 
+// One fact per resource family the write runner exercised. Statuses, enums,
+// counts and a step ladder — never a body, never an identifier.
+const writeLifecyclePayload = z.object({
+  actionId: z.string(),
+  entity: z.string().max(64),
+  runId: z.string(),
+  steps: z.object({
+    create: z.number().nullable(),
+    read: z.number().nullable(),
+    update: z.number().nullable(),
+    readAfterUpdate: z.number().nullable(),
+    delete: z.number().nullable(),
+    readAfterDelete: z.number().nullable(),
+  }),
+  idSource: z.enum(['body', 'location', 'unavailable']).nullable(),
+  convergence: z.enum(['immediate', 'after_poll', 'never', 'not_attempted']),
+  pollCount: z.number(),
+  schemaValid: z.boolean().nullable(),
+  unknownFieldCount: z.number().nullable(),
+  serverGeneratedFieldCount: z.number().nullable(),
+  updateReflected: z.boolean().nullable(),
+  useAfterFree: z.enum(['gone_404', 'gone_410', 'soft_deleted', 'still_readable', 'not_attempted']),
+  cleanup: z.enum(['deleted_confirmed', 'deleted_unconfirmed', 'delete_failed', 'quarantined', 'not_created']),
+});
+
 const evidenceSchemas = {
   'parser.auth_discoverability': parserCheckPayload,
   'parser.base_url_validity': parserCheckPayload,
@@ -316,6 +343,7 @@ const evidenceSchemas = {
   'probe.not_found_identity': notFoundIdentityPayload,
   'probe.method_support': methodSupportPayload,
   'probe.pagination_behavior': paginationBehaviorPayload,
+  'probe.write_lifecycle': writeLifecyclePayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

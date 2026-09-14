@@ -28,6 +28,35 @@ type AuditRow = { id: number; action: string; actorType: string; environment: st
 
 type Payload = { credentials: Meta[]; audit: AuditRow[]; gates: { sandbox: boolean; production: boolean } };
 
+type WriteRun = {
+  id: string;
+  status: string;
+  triggeredBy: string;
+  familiesPlanned: number;
+  familiesExecuted: number;
+  requestsMade: number;
+  createdCount: number;
+  deletedConfirmedCount: number;
+  quarantinedCount: number;
+  abortedReason: string | null;
+  errorCode: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+type WritesPayload = { runs: WriteRun[]; quarantined: number; unresolved: number; releaseBlocked: boolean; canRun: boolean };
+
+const RUN_STATUS_LABEL: Record<string, string> = {
+  queued: 'queued',
+  running: 'running',
+  completed_clean: 'completed, everything cleaned up',
+  completed_with_quarantined_resources: 'completed, but some test records could not be removed',
+  failed_clean: 'failed, nothing left behind',
+  failed_with_quarantined_resources: 'failed, and some test records could not be removed',
+  canceled_clean: 'stopped early, everything cleaned up',
+  canceled_with_quarantined_resources: 'stopped early, and some test records could not be removed',
+};
+
 function when(value: string | null): string {
   if (!value) return 'never';
   return new Date(value).toISOString().slice(0, 10);
@@ -46,6 +75,8 @@ export default function SandboxCredentialPanel({ slug, baseUrls }: { slug: strin
   const [writeConsent, setWriteConsent] = useState(false);
   const [burstConsent, setBurstConsent] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [writes, setWrites] = useState<WritesPayload | null>(null);
+  const [probeBusy, setProbeBusy] = useState(false);
 
   const endpoint = `/api/apis/${slug}/credentials`;
 
@@ -64,9 +95,36 @@ export default function SandboxCredentialPanel({ slug, baseUrls }: { slug: strin
     }
   }, [endpoint]);
 
+  const loadWrites = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/apis/${slug}/probe-writes`);
+      if (res.ok) setWrites((await res.json()) as WritesPayload);
+    } catch {
+      // The credential panel still works without the run history.
+    }
+  }, [slug]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadWrites();
+  }, [load, loadWrites]);
+
+  const runProbe = async () => {
+    setProbeBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/apis/${slug}/probe`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Could not queue the probe');
+      setNotice('Sandbox probe queued. It creates, reads, updates and deletes its own test records and removes them afterwards; the result appears below in a minute or two.');
+      await loadWrites();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not queue the probe');
+    } finally {
+      setProbeBusy(false);
+    }
+  };
 
   const sandbox = data?.credentials.find((c) => c.environment === 'sandbox') ?? null;
   const production = data?.credentials.find((c) => c.environment === 'production') ?? null;
@@ -217,6 +275,33 @@ export default function SandboxCredentialPanel({ slug, baseUrls }: { slug: strin
             <input type="checkbox" checked={Boolean(sandbox.burstConsentAt)} onChange={(e) => patch({ burstConsent: e.target.checked })} disabled={busy} />
             <span>Rate-limit discovery burst (at most 120 cheap reads in a minute, stops at the first 429)</span>
           </label>
+          {sandbox.writeConsentAt && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn" onClick={runProbe} disabled={busy || probeBusy}>
+                  {probeBusy ? 'Queuing…' : 'Run sandbox probe'}
+                </button>
+                <span style={{ color: 'var(--fg-mute)' }}>Create → read → update → delete → confirm gone, on your sandbox. Two per hour.</span>
+              </div>
+              {writes && writes.runs.length > 0 && (
+                <p className="mono" style={{ color: 'var(--fg-dim)', fontSize: 11.5, margin: 0 }}>
+                  last run {when(writes.runs[0].startedAt)} · {RUN_STATUS_LABEL[writes.runs[0].status] ?? writes.runs[0].status}
+                  {' · '}
+                  {writes.runs[0].familiesExecuted}/{writes.runs[0].familiesPlanned} resource types · {writes.runs[0].createdCount} created ·{' '}
+                  {writes.runs[0].deletedConfirmedCount} confirmed gone
+                  {writes.runs[0].abortedReason ? ` · stopped: ${writes.runs[0].abortedReason.replace(/_/g, ' ')}` : ''}
+                  {writes.runs[0].errorCode ? ` · error: ${writes.runs[0].errorCode.replace(/_/g, ' ')}` : ''}
+                </p>
+              )}
+              {writes && (writes.quarantined > 0 || writes.unresolved > 0) && (
+                <p style={{ color: 'var(--accent-red)', fontSize: 12, margin: 0 }}>
+                  {writes.quarantined > 0
+                    ? `${writes.quarantined} test record${writes.quarantined === 1 ? '' : 's'} could not be removed after three attempts and need${writes.quarantined === 1 ? 's' : ''} a look — search your sandbox for docentapi-probe-.`
+                    : `${writes.unresolved} test record${writes.unresolved === 1 ? ' is' : 's are'} still being cleaned up; the next run retries.`}
+                </p>
+              )}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {confirmRevoke ? (
               <>

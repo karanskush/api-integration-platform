@@ -58,8 +58,14 @@ const IRREVERSIBLE_TOKENS =
 export type EffectClassification = {
   risk: RiskClass;
   tags: EffectTag[];
-  /** Why it landed here, so a provider override is an informed one. */
-  basis: 'read_method' | 'path_token' | 'write_method' | 'delete_method' | 'unknown_method';
+  basis: 'read_method' | 'path_token' | 'write_method' | 'delete_method' | 'unknown_method' | 'provider_denylist';
+};
+
+export type ClassifyOptions = {
+  // Path words the provider declared the probes must never touch (their
+  // optional declarations). Matched like the built-in token lists and escalated
+  // straight to R4: the provider's own word about their API outranks ours.
+  denylist?: RegExp | null;
 };
 
 // Path and name are tested SEPARATELY rather than joined. Joining them put a
@@ -77,7 +83,7 @@ function matchesToken(action: Action, pattern: RegExp): boolean {
  * Deliberately pessimistic. Being wrong upward costs a probe we could have run;
  * being wrong downward costs somebody's data.
  */
-export function classifyEffect(action: Action): EffectClassification {
+export function classifyEffect(action: Action, opts: ClassifyOptions = {}): EffectClassification {
   const method = action.method.toUpperCase();
 
   // Risk and effect tags are ORTHOGONAL, and an earlier version conflated them:
@@ -126,6 +132,9 @@ export function classifyEffect(action: Action): EffectClassification {
   // The path is the stronger signal where they disagree: `GET /accounts/{id}/close`
   // is a read by method and consequential in fact. Escalation only — a token
   // never LOWERS a risk the method already established.
+  if (opts.denylist && matchesToken(action, opts.denylist)) {
+    return { risk: 'R4', tags: [...new Set([...tags, 'external_side_effect_unknown' as const])], basis: 'provider_denylist' };
+  }
   if (matchesToken(action, IRREVERSIBLE_TOKENS)) {
     return { risk: 'R4', tags: [...new Set([...tags, 'external_side_effect_unknown' as const])], basis: 'path_token' };
   }
@@ -162,6 +171,13 @@ export type CleanupContract = {
    * worth anything.
    */
   operation: string;
+  /**
+   * Further operations on the SAME object whose effects this contract also
+   * undoes — a family's update of the fixture its create produced. Deleting
+   * the object removes the update with it, so one inverse operation covers
+   * both; a contract never covers an operation on a different resource.
+   */
+  covers?: string[];
   mechanism: CleanupMechanism;
   /** Approved by a person, per §10.2's "policy approval". */
   approved: boolean;
@@ -182,7 +198,7 @@ export type CleanupDenyReason =
 
 export function cleanupSatisfied(contract: CleanupContract | null, operation?: string): CleanupVerdict {
   if (!contract) return { satisfied: false, reason: 'no_contract' };
-  if (operation !== undefined && contract.operation !== operation) {
+  if (operation !== undefined && contract.operation !== operation && !contract.covers?.includes(operation)) {
     return { satisfied: false, reason: 'wrong_operation' };
   }
   if (!contract.approved) return { satisfied: false, reason: 'not_approved' };
@@ -223,13 +239,25 @@ export function riskWithCleanup(
 /** What the runner has been authorized to do, per §10.3's immutable policy. */
 export type ProbePolicy = {
   environment: 'production' | 'sandbox';
-  /** The highest class this runner may execute. */
   maxRisk: RiskClass;
-  /** Per-operation approval, required at R3 and above. */
   approvedOperations: ReadonlySet<string>;
-  /** Remaining consequential actions this run may take. */
   effectBudget: number;
+  /** Provider-declared never-touch words; see ClassifyOptions. */
+  denylist?: RegExp | null;
 };
+
+/** Builds the never-touch matcher from a provider's declared words, in the same shape as the built-in lists. */
+export function denylistPattern(tokens: string[]): RegExp | null {
+  // Stemmed to the singular so a provider who writes "payouts" (the path) also
+  // covers /payout, and vice versa; the matcher re-admits the optional 's'.
+  const clean = tokens
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => /^[a-z0-9_-]{2,40}$/.test(t))
+    .map((t) => (t.length > 3 && t.endsWith('s') ? t.slice(0, -1) : t));
+  if (!clean.length) return null;
+  const escaped = clean.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`(^|[/_-])(${escaped.join('|')})s?([/_-]|$)`, 'i');
+}
 
 export type ProbeDecision = { allowed: boolean; risk: RiskClass; reason: ProbeDenyReason | 'ok' };
 
@@ -252,7 +280,7 @@ export function mayProbe(
   policy: ProbePolicy,
   contract: CleanupContract | null = null,
 ): ProbeDecision {
-  const base = classifyEffect(action);
+  const base = classifyEffect(action, { denylist: policy.denylist ?? null });
   const risk = riskWithCleanup(base, contract, action.name);
   const deny = (reason: ProbeDenyReason): ProbeDecision => ({ allowed: false, risk, reason });
 
@@ -270,7 +298,19 @@ export function mayProbe(
   // probing. A sandbox is the only place a fixture can be created and undone.
   if (policy.environment === 'production') return deny('production_mutation');
 
-  if (!cleanupSatisfied(contract, action.name).satisfied) return deny('cleanup_unsatisfied');
+  // A delete IS the cleanup: it needs no contract of its own, and stays R3 so
+  // it is only ever sent as an individually approved operation. Whether the
+  // object being deleted is the runner's own is the ledger's job, not the
+  // gate's — the gate never sees identifiers.
+  //
+  // Every other mutation needs a contract that names it (or covers it) and is
+  // approved. An UNTESTED contract does not deny: it keeps the operation at R3
+  // (riskWithCleanup), where the policy has to approve it individually — and
+  // that is the cleanup rehearsal, the one run whose job is to test the
+  // contract. Without this path no family could ever reach R2.
+  const cleanup = cleanupSatisfied(contract, action.name);
+  const isDelete = base.tags.includes('deletes_resource');
+  if (!isDelete && !cleanup.satisfied && cleanup.reason !== 'not_tested') return deny('cleanup_unsatisfied');
 
   if (rank(risk) >= rank('R3') && !policy.approvedOperations.has(action.name)) {
     return deny('not_individually_approved');
