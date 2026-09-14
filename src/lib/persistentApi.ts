@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { dbReady, getDb, type Db } from './db';
 import { actions as actionsTable, apis, scores, specVersions } from './db/schema';
-import type { Action, ImportRecord, ImportSource } from './ir';
+import type { Action, ImportRecord, ImportSource, Webhook } from './ir';
 
 export type VerifiedScore = {
   total: number;
@@ -17,6 +17,12 @@ export type VerifiedScore = {
   stale: boolean;
   verifiedAt: string; // ISO
   specVersionId: string;
+  // The sample the number rests on (GAP_ANALYSIS_2026-08-04.md §0.2). A row is
+  // only written when at least one upstream call succeeded, so this is what
+  // makes "verified" mean something to a reader. 0 on rows written before the
+  // accounting existed, which the panel reports as unknown rather than as none.
+  liveCallsAttempted: number;
+  liveCallsSucceeded: number;
 };
 
 export type ApiVerificationState = {
@@ -73,12 +79,17 @@ export async function loadActionsForVersion(
 }
 
 async function assembleRecord(
-  db: ReturnType<typeof getDb>,
+  db: Db,
   api: ApiRow,
   specVersionId: string,
 ): Promise<ImportRecord | null> {
-  const [specVersion] = await db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1);
-  const { actions: actionsList } = await loadActionsForVersion(db, api.id, specVersionId);
+  // One round trip, not two: both reads depend only on ids already in hand.
+  // Against Neon over HTTP every sequential await is a network hop, and this
+  // function sits under every MCP tool call and every product page render.
+  const [[specVersion], { actions: actionsList }] = await Promise.all([
+    db.select().from(specVersions).where(eq(specVersions.id, specVersionId)).limit(1),
+    loadActionsForVersion(db, api.id, specVersionId),
+  ]);
   const counts = { total: actionsList.length, read: 0, write: 0, destructive: 0 };
   for (const a of actionsList) counts[a.safety]++;
 
@@ -87,11 +98,18 @@ async function assembleRecord(
     name: api.name,
     source: (specVersion?.source as ImportSource) ?? 'openapi',
     sourceUrl: specVersion?.sourceUrl ?? undefined,
+    ...(Array.isArray(specVersion?.webhooks) && (specVersion.webhooks as Webhook[]).length
+      ? { webhooks: specVersion.webhooks as Webhook[] }
+      : {}),
     baseUrls: (api.baseUrls as string[] | null) ?? [],
     auth: api.dominantAuth as ImportRecord['auth'],
     authIn: (api.authIn as ImportRecord['authIn']) ?? undefined,
     actions: actionsList,
     counts,
+    // Carried so lineage.ts can cache the computed graph across requests: this
+    // function returns a FRESH object literal every call, so the object-identity
+    // memo in lineage.ts can never hit for a persisted API.
+    specVersionId,
     createdAt: api.createdAt.getTime(),
     expiresAt: Number.MAX_SAFE_INTEGER,
   };
@@ -103,14 +121,16 @@ async function assembleRecord(
 // playground proxy, and the MCP handler work unchanged against either
 // storage. `expiresAt` is set to Number.MAX_SAFE_INTEGER — persistent
 // records never expire.
-export async function loadPersistentRecord(slug: string): Promise<ImportRecord | null> {
-  if (!dbReady()) return null;
-  const db = getDb();
+// `db` is optional so the pglite tests can hand in their own connection; the
+// production callers keep getting the shared Neon handle.
+export async function loadPersistentRecord(slug: string, db?: Db): Promise<ImportRecord | null> {
+  const conn = db ?? (dbReady() ? getDb() : null);
+  if (!conn) return null;
 
-  const [api] = await db.select().from(apis).where(eq(apis.slug, slug)).limit(1);
+  const [api] = await conn.select().from(apis).where(eq(apis.slug, slug)).limit(1);
   if (!api || !api.currentSpecVersionId) return null;
 
-  return assembleRecord(db, api, api.currentSpecVersionId);
+  return assembleRecord(conn, api, api.currentSpecVersionId);
 }
 
 // Same shape as loadPersistentRecord, but by (apiId, specVersionId) rather
@@ -152,6 +172,8 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
       explanation: scores.explanation,
       scoreSpecVersionId: scores.specVersionId,
       verifiedAt: scores.verifiedAt,
+      liveCallsAttempted: scores.liveCallsAttempted,
+      liveCallsSucceeded: scores.liveCallsSucceeded,
     })
     .from(apis)
     .leftJoin(scores, eq(scores.apiId, apis.id))
@@ -179,6 +201,8 @@ export async function loadApiVerificationState(slug: string): Promise<ApiVerific
             stale: row.scoreSpecVersionId !== row.currentSpecVersionId,
             verifiedAt: row.verifiedAt!.toISOString(),
             specVersionId: row.scoreSpecVersionId!,
+            liveCallsAttempted: row.liveCallsAttempted ?? 0,
+            liveCallsSucceeded: row.liveCallsSucceeded ?? 0,
           },
   };
 }

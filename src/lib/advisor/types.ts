@@ -14,6 +14,7 @@
 // agent as a quoted string in a `description` field rather than as prose the
 // model might read as its own directive.
 
+import type { FieldOrigin } from '../fieldMap';
 import type { ChangeSummary } from '../changes/query';
 import type { ChangeRow } from '../changes/ledger';
 import type { Action, ImportRecord } from '../ir';
@@ -33,6 +34,15 @@ export type AdvisorInsights = {
     // it describes a superseded contract (version fencing).
     stale: boolean;
     specVersionId: string;
+    // The sample size behind the number, and how much of it was actually
+    // measured against the running API. A row only exists when at least one
+    // call succeeded, so `liveCallsSucceeded` is never zero on a fresh row —
+    // but rows written before this accounting existed report 0, and the tools
+    // say "not recorded" rather than implying a measurement nobody took.
+    liveCallsAttempted: number;
+    liveCallsSucceeded: number;
+    observedPoints: number;
+    staticPoints: number;
   } | null;
   // Observed probe findings, keyed by the action id used in ImportRecord.
   errorObservations: Array<{
@@ -53,6 +63,86 @@ export type AdvisorInsights = {
     matchedParam?: string;
   }>;
   authObservations: Array<{ statusObserved: number; expectedAuth: string }>;
+  // Which values the API actually accepted, from probes/valueDomain.ts. Safe to
+  // carry verbatim, unlike anything the chain runner touches: every value here
+  // came from the provider's own published spec rather than out of a response.
+  valueDomains: Array<{ actionId: string; field: string; value: string; accepted: boolean; status: number }>;
+  // The states an entity was actually observed in — the read-only half of
+  // L2_ENGINE_SPEC §4's state-machine map. A vocabulary with NO transition
+  // claimed, because discovering transitions means write probing and that needs
+  // a policy that does not exist yet.
+  stateVocabularies: Array<{ actionId: string; field: string; values: string[]; sampleCount: number }>;
+  // What the canary actually saw in an operation's responses: for each
+  // documented response field, how many of the sampled responses carried it.
+  // The canary has stored this per path since the change ledger shipped
+  // (operation_observations.shape[path].presentIn), read back only by its own
+  // diff. A field documented as required and present in one sample of three
+  // is exactly what a provider's own developers know and a spec cannot say.
+  observedShapes: Array<{
+    actionId: string;
+    sampleCount: number;
+    observedAt: string;
+    fields: Array<{ path: string; presentIn: number; types: string[] }>;
+  }>;
+  // The rate-limit policy a live response declared for an operation — how many
+  // requests per what window — newest observation per operation. One of the
+  // first things a provider's own developers know, and the first wall an
+  // integrator hits. `windowSeconds` is null for the legacy X-RateLimit family,
+  // which states a quota without a window; that is reported, not guessed.
+  rateLimits: Array<{
+    actionId: string;
+    name?: string;
+    limit: number;
+    windowSeconds: number | null;
+    header: string;
+    observedAt: string;
+  }>;
+  // What the deep-analysis pass concluded a field MEANS, read back out of
+  // llm.field_semantics. This is the most expensive knowledge the system
+  // produces — a docs crawl plus an LLM pass over the provider's own
+  // documentation — and until now nothing read it back: PROBE_KINDS admitted
+  // four probe kinds and nothing else, so the enrichment reached the enriched
+  // spec artifact (which has no reader) and stopped there.
+  //
+  // Keyed by tool name and field path, which is exactly how describe_fields
+  // addresses a field, so no resolution step is needed.
+  fieldSemantics: Array<{
+    tool: string;
+    field: string;
+    meaning: string;
+    constraint?: string;
+    sourcedFrom: 'spec' | 'docs';
+  }>;
+  // Answers a PERSON who runs this API gave to questions we emailed them.
+  //
+  // The highest trust tier in the system (source 'human', confidence 1) and,
+  // until now, the one that reached no consumer at all: the answers were
+  // written to clarifications + evidence_facts and read back only by the
+  // enriched-spec artifact, which nothing reads either. So the product asked
+  // the provider's own team what a field means, was told, and then kept serving
+  // agents its own heuristic guess.
+  //
+  // `origin` is present only when the answer actually reclassified the field —
+  // an answer about a format or merge semantics confirms a field without
+  // changing where its value comes from. Same rule as enrichedSpec.ts.
+  ownerAnswers: Array<{ tool: string; field: string; origin?: FieldOrigin; question: string }>;
+  // Edges that were actually EXECUTED against the live API (lineageRun.ts).
+  //
+  // Everything else this server says about call order is derived from schema
+  // structure — sequence.ts and fields.ts both stamp their output "spec
+  // structure only — no live traffic was observed". These are the exceptions:
+  // an edge marked `observed` had its producer called, a real identifier read
+  // from the response, that identifier accepted by the consumer, AND a
+  // fabricated one rejected. Without that last part it would be a correlation.
+  lineageVerdicts: Array<{
+    /** producerTool.producerField->consumerTool.consumerField */
+    key: string;
+    verdict: 'observed' | 'refuted' | 'inconclusive';
+    attempts: number;
+    successes: number;
+    stale: boolean;
+    observedAt: string;
+  }>;
   // Recent classified changes plus the freshness summary, so an agent can ask
   // whether what it learned still holds. `summary` is null for an ephemeral
   // import, which has no stored history to report.
@@ -66,6 +156,13 @@ export function emptyInsights(): AdvisorInsights {
     driftObservations: [],
     idempotencyObservations: [],
     authObservations: [],
+    valueDomains: [],
+    stateVocabularies: [],
+    observedShapes: [],
+    rateLimits: [],
+    fieldSemantics: [],
+    ownerAnswers: [],
+    lineageVerdicts: [],
     changes: { recent: [], summary: null },
   };
 }

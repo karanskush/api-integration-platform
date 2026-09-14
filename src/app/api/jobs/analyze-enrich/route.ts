@@ -13,6 +13,7 @@ import {
 } from '@/lib/clarify';
 import { fieldMapFor } from '@/lib/fieldMap';
 import { loadRecordForVersion } from '@/lib/persistentApi';
+import { attemptsSoFar, shouldRetryStage } from '@/lib/analysisRetry';
 import { publishJob } from '@/lib/queue';
 
 export const maxDuration = 300;
@@ -296,6 +297,23 @@ async function handler(req: Request) {
       .update(analysisRuns)
       .set({ status: 'failed', completedAt: new Date(), error: err instanceof Error ? err.message : 'unknown error' })
       .where(eq(analysisRuns.id, run.id));
+
+    // GAP_ANALYSIS §0.5. Answering 200 here meant QStash — which retries on a
+    // non-2xx — never got the chance, so a transient failure was PERMANENT for
+    // this spec version. Give it a bounded number of attempts before falling
+    // through, and do NOT chain forward while retries remain, or the next stage
+    // would start against a half-finished one.
+    const attempts = await attemptsSoFar(db, apiId, specVersionId, 'enrich');
+    if (shouldRetryStage(attempts)) {
+      console.error('[enrich] failed, asking for a retry', {
+        apiId,
+        attempts,
+        // Name only. The message can carry a fetched URL, and analysis_runs
+        // already records it; a log line does not need to as well.
+        reason: err instanceof Error ? err.name : 'unknown',
+      });
+      return Response.json({ error: 'Stage failed; retrying', attempts }, { status: 503 });
+    }
     // Fall through to finalize anyway — heuristic-only facts (already
     // persisted synchronously at submission time) are still a usable result.
   }

@@ -49,6 +49,8 @@ What this means: the platform already *fetches* the spec, already *calls* the AP
 
 The survey below is what a buyer would find. Sources are in Appendix A.
 
+**Its conclusion has been superseded — see the correction in §2.8.**
+
 ### 2.1 Spec-to-spec diffing is a commodity
 
 - **oasdiff**: open source, 681 distinct checks over OpenAPI 3.0–3.2, the default CI gate for breaking changes.
@@ -99,6 +101,28 @@ Conclusion: for the large providers, spec repositories and feeds *are* a machine
 KushoAI's *State of Agentic API Testing 2026* (1.4 million test executions across 2,616 organizations): **41% of APIs experience undocumented schema changes within 30 days** of test creation; 34% of observed failures are authentication/authorization; schema and validation errors add 22%. Caveats: it is vendor telemetry with no published methodology, and the "63% within 90 days" number circulating alongside it does **not** appear on KushoAI's page (it originates in a FlareCanary post). Cite 41%/30 days; do not cite 63%.
 
 ### 2.8 Positioning conclusion
+
+> **Corrected 2026-09-08 — read this before acting on the section below.**
+>
+> The composite described here held for about six weeks and then stopped being
+> a differentiator. A fresh survey on 2026-09-08 found three of its four
+> ingredients shipped by competitors: FlareCanary polls endpoints on a schedule
+> and classifies by severity, ShiftGraph does shape-only traffic profiling
+> (describing itself as "structure only, values discarded at collection" — the
+> canary's exact design, arrived at independently), and Vercel's AI SDK 7.0.19
+> ships `fingerprintTools` / `detectToolDrift`. Arazzo generation is available
+> from Redocly, Speakeasy, Specmatic and Bruno. Jentic catalogues 6,000+ APIs
+> and 2,000+ workflows.
+>
+> "Nothing identified in this survey" was accurate when written and is not
+> accurate now, and the fusion argument is weaker than it reads: a composite of
+> commodities is a roadmap item for anyone who wants it, not a moat.
+>
+> What none of them do is publish knowledge that was **verified by executing
+> it**. That is the surviving claim, and the implementation log at the end of
+> this document ("Executed Lineage") records what was built against it. The
+> list below is retained as written rather than edited, because the point of a
+> dated survey is to be able to see how fast it aged.
 
 Every tool above holds one signal for one audience. Nothing identified in this survey:
 
@@ -473,3 +497,374 @@ Pro account, with no code change.
 This is worth stating plainly because §4 of this document proposes hourly
 polling as what a paid plan buys. On the current account that differentiator
 does not exist yet.
+
+---
+
+## Implementation log — Executed Lineage (2026-09-08)
+
+### Why the positioning in §2 needed correcting first
+
+Research on 2026-09-08 found the layer §2 treats as the differentiator has
+largely commoditised in the six weeks since this document was written:
+
+- **Shape-only traffic profiling is a shipped competitor feature.** ShiftGraph
+  describes itself as "built on the traffic-profiling approach, storing
+  structure only with values discarded at collection" — the canary's exact
+  design decision, arrived at independently.
+- FlareCanary polls endpoints on a schedule and classifies changes by severity.
+  PageCrawl ships an MCP server over the same idea.
+- Vercel's AI SDK 7.0.19 ships `fingerprintTools` and `detectToolDrift`, which
+  is what `changes/fingerprint.ts` does.
+- Arazzo generation is supported by Redocly, Speakeasy, Specmatic and Bruno.
+- Jentic catalogues 6,000+ APIs and 2,000+ workflows in OpenAPI/Arazzo/MCP —
+  but they are **authored**, not execution-verified.
+
+The open lane is the one thing none of them do: **publish knowledge that was
+verified by executing it.** Morest (ICSE 2022) is the academic blueprint — a
+producer–consumer property graph adapted at runtime from actual responses,
+reporting 152–232% more successfully-requested operations than spec-only
+sequence generation — and it has never been productised as published integration
+knowledge. `lineage.ts` already owns the top-down half of that model.
+
+### What shipped
+
+Read-only chain execution: take a candidate lineage edge, call the producer,
+read a real identifier out of its response, send it to the consumer, then send a
+fabricated one, and record what happened. Nine modules, each landed separately:
+`transient.ts`, `probes/budget.ts`, `lineagePlan.ts`, `lineageExtract.ts`,
+`lineageVerdict.ts`, `probes/lineageChain.ts`, `lineageRun.ts`, migration 0012,
+and the read-side change to `get_call_sequence`.
+
+### The rule that makes it worth having
+
+**A 2xx alone is correlation, not verification.** A soft-404 API answers 200 with
+`{"error":"not found"}`; a framework that ignores an unmatched path segment
+returns the collection; a handler may never read the parameter at all. Under a
+naive "we sent the id and got 200" rule, all three *confirm* every edge pointed
+at them — wrong ones included. That would manufacture false confidence at scale,
+which is strictly worse than the honest "spec structure only" string this
+replaces.
+
+So every confirmation requires a **negative control**: the same consumer, the
+same other parameters, a format-valid but fabricated value. If the control also
+succeeds, the run proves nothing. `fabricateLike` mirrors the real value's shape
+— uuid, hex, digits, or a validated prefix like `cus_` — because a provider that
+400s a malformed id *before looking anything up* would make every control
+non-2xx and every chain look discriminating, silently defeating the check.
+
+Confirming takes one run; **refuting takes agreement across runs**, since a 404
+is explained just as well by tenancy scoping, a deleted record, or a rate limit.
+
+### The value rule, and its honest limit
+
+`transient.ts` holds extracted identifiers in a genuinely private field.
+`JSON.stringify` yields `"[transient]"`, interpolation yields `[transient]`,
+spread yields only safe metadata, and a `util.inspect` hook covers logging —
+which matters because Node's inspect reaches into private fields, so a bare
+`console.error({ ref })` would otherwise put a live identifier in the platform
+log. `unwrap()` is called in exactly two audited places.
+
+The claim is **"zero retention in DocentAPI"**, not "zero retention": the value
+still reaches the provider's own access log, attributed to the owner's key.
+
+`lineage_executions` has zero json columns, which is strictly stronger than
+`operation_observations` — jsonb *could* hold a value and is kept safe by a
+careful writer; an integer cannot hold one at all. A whole-database sentinel
+scan asserts it, and a second test checks `operation_observations` *does* have a
+json column so the first cannot pass vacuously.
+
+### Runtime verification against live APIs (2026-09-08)
+
+Forced runs against both public Swagger Petstores. **Neither produced a
+confirmed edge**, and both were useful.
+
+**Petstore v3** — the chain planned correctly
+(`find_pets_by_status.response[].id -> get_pet_by_id.path.petId`, high
+confidence) and executed. The producer returned **HTTP 500**; so did
+`/store/inventory`. The demo server was broadly degraded, while `get_pet_by_id`
+answered 200. The runner made exactly **one** request, reported
+`inconclusive / producer_yielded_nothing`, and neither guessed an identifier nor
+spent the rest of its budget.
+
+**Petstore v2** — the chain planned, and the runner **declined to execute it**:
+that spec declares `oauth2` on `findPetsByStatus` and no credential was
+supplied. Correct behaviour, and not something to work around — deliberately
+sending unauthenticated requests is the auth-clarity probe's job, not a chain's.
+
+**Rick and Morty API** — the happy path, confirmed. That provider publishes no
+OpenAPI document, so the spec used was hand-written and minimal; it accurately
+describes the real endpoints, and every request went to the real service. What
+this verifies is the RUNNER — planning, extraction, the negative control, the
+verdict — not spec import, which has its own tests.
+
+```
+planned: list_characters.response.results[].id -> get_character.path.characterId [high]
+4 requests: 1 producer + 2 candidates + 1 control
+  2 real ids   -> 200
+  fabricated   -> 404          <- the endpoint discriminates
+OUTCOME: confirmed   p50 377ms
+state vocabulary: status = [Alive, Dead, unknown] across 20 records
+no character data in the serialized output
+```
+
+**Three more, deliberately different in shape.** None of these providers
+publishes an OAS either, so each spec was hand-written and minimal; every
+request went to the real service.
+
+| API | id type | chain | control | outcome |
+|---|---|---|---|---|
+| GoREST | integer | `list_users.response[].id -> get_user.path.userId` | 404 | **confirmed** (2/2, p50 535ms) |
+| JSONPlaceholder | integer | `list_posts.response[].id -> get_post.path.postId` | 404 | **confirmed** (2/2, p50 329ms) |
+| OpenBreweryDB | string/uuid | `list_breweries.response[].id -> get_brewerie.path.breweryId` | 404 | **confirmed** (2/2, p50 828ms) |
+
+So **four live third-party APIs confirmed**, across integer ids, string ids and
+both bare-array and enveloped list responses — a real identifier read out of one
+operation's response, accepted by another, with a fabricated one rejected. That
+last clause is the whole difference between a verified link and a coincidence.
+
+### The negative control, validated on a real non-discriminating API
+
+Four confirmations demonstrate the happy path. This is the one that demonstrates
+the design, because a confirmation that cannot be wrong is not evidence of
+anything.
+
+Query-filter endpoints are the textbook soft-404 shape, and several public APIs
+behave this way — `?by_city=Zzzznotarealcity` on OpenBreweryDB,
+`?name=Zzzznotarealname` on GoREST, and `?userId=999999` on JSONPlaceholder all
+answer **HTTP 200 with `[]`**. They do not reject an unknown value; they return
+an empty result for it.
+
+Run against JSONPlaceholder:
+
+```
+list_users.response[].id -> find_posts_by_user.query.userId   (query consumer)
+  2 real user ids   -> 200      successes 2/2
+  fabricated userId -> 200      <- the endpoint does not discriminate
+OUTCOME: inconclusive   reason: control_also_succeeded
+```
+
+A runner that checked only for 2xx would have published this as a **confirmed
+link**. It is not one: the endpoint answers 200 for any value, so the two real
+identifiers proved nothing about whether the link is real. The control is the
+only thing standing between those two readings, and a live API has now
+demonstrated it doing that job — not a test double.
+
+The honest consequence is that this particular link is unverifiable by this
+method, and the tool says `inconclusive` rather than inventing confidence.
+
+### The cardinality guard, validated on real data
+
+The state-vocabulary probe recorded `status = [Alive, Dead, unknown]` for Rick
+and Morty (3 distinct across 20) and `status = [active, inactive]` for GoREST
+(2 across 10). It recorded **nothing** for OpenBreweryDB — which is the result
+worth keeping.
+
+OpenBreweryDB has a field literally named `state`, and it holds **geography**:
+30 distinct values across 50 records (Arizona, Bayern, Aveiro, California…).
+The guard refused it, 30 x 2 >= 50. Without that rule this feature would have
+published "a Brewery is one of: Arizona, Aveiro, Bayern, California…" as a
+lifecycle vocabulary, which is nonsense — and it would have done so off a field
+whose NAME passed every check. The cardinality test is the only thing standing
+between the two cases, and a real API demonstrated it.
+
+### Four defects the live runs caught that the tests had not
+
+1. **A required parameter with a declared `default`/`enum` but no `example` was
+   treated as unsatisfiable.** Petstore v3's `findPetsByStatus` requires
+   `status`, which declares `default: "available"`. Refusing to run for want of
+   an *example* threw away that API's only executable chain. Using a value the
+   spec itself declares is reading the spec, not guessing.
+2. **Array parameters declare their values on `items`.** Swagger 2 does this
+   constantly — Petstore v2's own `findPetsByStatus` is `type: array` with
+   `items.enum` and `items.default` — and looking only at the top level made
+   every such producer unsatisfiable.
+3. **A top-level array response was unreadable.** `find_pets_by_status` returns a
+   bare array, so its producer path is `response[].id`, and the extractor
+   stripped `[]` only from *non-root* segments — reporting `path_absent` on a
+   perfectly good response.
+4. **A failed producer was reported as `path_absent`**, blaming the API's
+   response shape for what was actually an outage. Now `producer_failed`. This
+   is the same distinction-collapsing defect the canary's own first live run
+   exposed in itself, in a new place.
+
+### A correction: manual /verify does run chains
+
+This log first said manual `/verify` was deliberately left unwired, because "a
+single BYOK run cannot satisfy the cross-run agreement rule". That reasoning was
+wrong, and `lineageVerdict.ts` says so plainly: only REFUTATION requires two
+runs to agree, because a 404 has too many innocent explanations. A CONFIRMATION
+needs one.
+
+So an owner who clicks verify with their own key gets a proven link back
+immediately, rather than waiting for a scheduled run they may not even be on a
+plan to receive. It rides the same shared outbound budget and sits in its own
+try/catch, so a chain failure can never undo the score written above it — the
+same isolation the canary has in `reverifyOne`.
+
+### The six latent defects the plan listed, and what they turned out to be
+
+Mapping the program surfaced six defects in machinery the new work builds on.
+They were listed as "small, cheap" and mostly were, but three of them were
+producing or protecting a **false published claim**, which is the one failure
+mode this product cannot afford.
+
+1. **The canary's comparison floor silently swallowed operations.**
+   `DEFAULT_SAMPLES` and `MIN_SAMPLES` are both 3 and only 2xx responses build a
+   shape, so one failed sample left `sampleCount` at 2 and `diffSnapshots`
+   answered `[]`. The snapshot was still stored, which is what made the damage
+   outlast the blip: it became the newest row, so the *next* run compared
+   against an uncomparable baseline and also said nothing. One transient
+   failure disabled drift detection for that operation across two runs, silently.
+   Under-floor snapshots are now reported and not stored, which keeps the last
+   comparable snapshot as the baseline. The test covering this asserted the
+   defect — it checked that a two-sample snapshot *was* stored and called it
+   graceful degradation.
+
+2. **`loadPreviousSnapshots` was not fenced on environment.** The write path had
+   always stamped `environment`; the read ignored it, so a sandbox observation
+   and a production one competed for "newest". The sandbox shape became the
+   baseline for the next production run and the difference between two
+   *environments* was published as behavioural drift on the contract. Still
+   deliberately not fenced on `spec_version_id`: `actionKey` is stable across
+   versions precisely so a shape survives a re-import, and fencing there would
+   blind the canary exactly when a document changes.
+
+3. **Two identifier spaces in one result.** `inconclusive` carried tool names
+   while snapshots key on `action.id`. Nothing consumed more than `.length`, so
+   it never misbehaved — it was a trap for the first caller to join them.
+
+4. **`operation_stability` had no path back.** Only ever set to `drifted`, only
+   ever cleared by a re-import bringing fresh `actions` rows at the column
+   default — so the flag actually tracked "has this ever drifted since the last
+   import". It now clears from positive evidence only: operations `reconcile`
+   checked against a non-empty documented set and found consistent. Not from
+   "we saw no drift", because an operation nobody could sample has produced no
+   evidence that it matches. `reconcile` also answers `consistent` when the spec
+   documents nothing at all, which is absence of evidence wearing the same word,
+   so that case is excluded.
+
+5. **Orphaned `running` rows in `score_runs`.** Both writers update to a terminal
+   state in a `try/catch`, which covers a run that throws and not a process that
+   disappears. `score_runs` is the audit trail for whether an API was actually
+   probed, so a row permanently asserting `running` is the table contradicting
+   itself. Reaped from the reverify cron past a cutoff set well beyond the 300s
+   ceiling — snug against it would risk reaping a live run that then overwrites
+   its own terminal state.
+
+6. **The Ajv validator cache collided across APIs.** `validate.ts` keyed compiled
+   validators on `action.id`, which is `sha1(method + ' ' + path).slice(0, 8)` —
+   documented as stable *within* an import, never as unique across APIs. Two
+   tenants exposing `GET /v1/customers/{id}` shared one validator on a reused
+   Fluid Compute instance, so the second API's arguments were validated against
+   the first API's schema. Executed Lineage raised the stakes, because a chain
+   consults `validateParams` immediately before sending a real production
+   identifier. Now keyed on the schema, which is what a compiled validator is
+   actually a function of — correct by construction rather than by a uniqueness
+   claim that was never true. There was no test file for `validate.ts` at all.
+
+### One defect in the new code, found the same way
+
+`lineageChain.ts` memoized producer responses so five consumers taking
+`customerId` from `list_customers` cost one call rather than five — but keyed on
+the operation name, while what it memoizes is the *extraction*, which depends on
+`producerField`. `buildExecutionPlan` has no producer dedupe, so
+`list_orders.data[].orderId → get_order` and
+`list_orders.data[].customerId → get_customer` both become chains, and the
+second received the first's order IDs. Every one 404s, which is exactly the
+shape `judgeRun` calls `contradicted`; at `MIN_CONTRADICTIONS = 2` a second run
+promotes it to `refuted` and `get_call_sequence` publishes "Do not rely on this
+link" against a sound edge.
+
+Worth stating plainly because it is the mirror image of the failure the negative
+control exists to prevent. B0 says a 2xx alone is correlation and must never
+become a confirmation. This was the same error on the refutation side: a 404
+alone is not a contradiction either, and here the engine was manufacturing the
+404 itself. **An engine that invents a refutation is worse than one that says
+nothing** — the cost of the fix is one extra producer call per distinct field,
+bounded by `MAX_CHAINS`.
+
+---
+
+## Implementation log — closing the audit (2026-09-09)
+
+A review of everything built against the original ask — *know what the
+provider's own developers know: the variables, the values, the combinations* —
+plus the dependency surface and the one hot path every agent touches.
+
+### Three knowledge products that were captured and dropped
+
+Each of these had its raw material already in the system, reaching nobody.
+
+- **Rate limits.** `pickCapturedHeaders` had allowlisted `ratelimit-*` and
+  `x-ratelimit-*` on every probe response since the lifecycle work; no evidence
+  kind existed to persist them; nothing served them. `changes/rateLimit.ts` reads
+  both header families — the IETF structured form states quota *and* window, the
+  legacy X- form states only the quota, and that is reported as
+  `windowSeconds: null` rather than guessed. Only the *policy* is carried:
+  `remaining` and `reset` describe one response's position in the window and
+  are noise a minute later, and a test asserts they cannot leak. Served on
+  `get_endpoint_schema` with its basis and date; summarised on `check_freshness`.
+- **Observed field presence.** The canary had recorded, per documented response
+  field, how many of N sampled responses carried it — read back only by its own
+  diff. "The spec says required; it was in one response of three" is exactly
+  what a provider's team knows and a document cannot say. `describe_fields` now
+  attaches `observed: { presentIn, sampleCount, always }` per response field and
+  says in words when a documented-required field was missing. Fenced to the
+  current version and to production, newest observation per operation.
+- **Webhooks.** Neither OpenAPI 3.1 `webhooks` nor 3.0 `callbacks` was parsed —
+  the one part of a contract describing traffic in the other direction. Both
+  spellings now become one `Webhook` shape (a callback names the operation that
+  registers it), the payload schema goes through the same secret filter as any
+  other because an example payload is where a signing secret ends up pasted,
+  and `docentapi_get_webhooks` serves them with the basis *declared in the spec —
+  no delivery was observed*. Migration 0014, hand-written like 0007 onward.
+
+Checked and already covered: pagination, scopes, idempotency, deprecation and
+sunset (observed signals reach `get_changes_since` through the ledger with
+`source: 'header'`).
+
+### The hot path, measured
+
+Every `docentapi_*` call from every agent goes through `loadPersistentRecord`
+and `loadAdvisorInsights` against Neon over HTTP, where a round trip is a
+network hop. Parallel queries in one stage cost about one hop; sequential
+stages cost one each. Nobody had counted stages. A new ordinal tracer
+(`db/__tests__/tracedDb.ts`: a query opens a new stage iff every earlier query
+had completed when it was issued — no clock, so no jitter) measured **10
+sequential hops per advisor call**: 3 + 1 + 6. Every read after the first
+depended only on ids already in hand. Now **4**, same queries, and
+`hotPathRoundTrips.test.ts` pins the count so an `await` in the wrong place
+shows up as a red test rather than as latency nobody attributed. The presence
+read above joined the parallel stage rather than adding a hop.
+
+### The dependency surface
+
+Every in-range update taken (Next 16.3.4, ai 7.0.94, Clerk 7.9, and the rest).
+Then, each verified separately with typecheck, the full suite and a production
+build: the **2026-07-28 MCP protocol** — `@modelcontextprotocol/server` +
+`/core` 2.0, mcp-handler 2.1, zod 4 (one `z.record` call was the whole
+migration; the route registers at the low level, which survived intact) — with
+a seam test that drives the route's exact registration pattern through the
+real library; **TypeScript 7** (the native compiler, usable because Next 16.3
+drives `tsc` as a CLI and nothing here needs the JS compiler API); **vitest 5**
+(stricter defaults, suite passes under them unchanged); and
+`@readme/openapi-parser` 9, `@scalar/postman-to-openapi` 0.7, `undici` 8, each
+with a single unchanged call site. `@types/node` stays on 24 because that is the
+runtime. Remaining `npm audit` entries are all the old esbuild under
+drizzle-kit's dev-only loader — a dev-server advisory that does not reach a
+build.
+
+One thing worth recording honestly: the first attempt at the toolchain majors
+"failed" on every package, and every failure was the same one line — a type
+error in a test I had written in a parallel step and swept into the previous
+commit unchecked. The runtime was green throughout. Verify-or-revert gates are
+only as good as the state they start from.
+
+### Models
+
+Enrichment, triage and synthesis now default to `anthropic/claude-fable-5.1`
+on the Gateway; `ask` stays on `claude-sonnet-5`. The split is deliberate:
+enrichment reads a provider's published docs, ask carries a person's typed
+question, and Fable 5.1 has no zero-data-retention option. An explicitly
+configured ask provider (Azure, direct OpenAI) is followed by enrichment so no
+existing deployment changes behaviour.

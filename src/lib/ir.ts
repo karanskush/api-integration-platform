@@ -2,6 +2,8 @@
 // page renderer, playground proxy, MCP handler, snippets — reads this and
 // nothing else. See TECH_IMPLEMENTATION.md §3.
 
+import type { SecretFinding } from './secretScan';
+
 export type JSONSchema = Record<string, unknown>;
 
 export type AuthScheme = 'none' | 'apiKey' | 'bearer' | 'basic' | 'oauth2';
@@ -45,6 +47,23 @@ export type Action = {
 
 export type ImportSource = 'openapi' | 'swagger' | 'postman' | 'curl';
 
+/**
+ * An event the API EMITS — an OpenAPI 3.1 top-level `webhooks` entry, or an
+ * OpenAPI 3.0 operation `callbacks` entry. What a provider's own team knows
+ * and an integrator otherwise learns by reading prose: which events arrive,
+ * how they are delivered, and what the payload carries.
+ */
+export type Webhook = {
+  name: string;
+  method: string;
+  description: string;
+  payloadSchema?: JSONSchema;
+  /** Where the spec declared it. A callback is registered per subscription. */
+  source: 'webhooks' | 'callback';
+  /** For a callback: the tool name of the operation that registers it. */
+  callbackOf?: string;
+};
+
 export type ImportRecord = {
   id: string; // short public id (page + MCP URL segment)
   name: string; // API title from the spec, or hostname
@@ -61,7 +80,25 @@ export type ImportRecord = {
   // only ever consumed by the crawler and never used to construct a request
   // the way baseUrls is.
   externalDocsUrl?: string;
+  // Events the API emits, when the spec declares any. Absent rather than empty
+  // when it declares none, so the field's presence means something.
+  webhooks?: Webhook[];
   counts: { total: number; read: number; write: number; destructive: number };
+  // The spec version these actions were loaded from, when the record came out
+  // of Postgres. Absent for an ephemeral import, which has no spec_versions row.
+  //
+  // This is a stable, collision-free identity for the ACTION SET: actions are
+  // loaded by spec_version_id, so two records carrying the same one necessarily
+  // describe the same operations. lineage.ts uses it as a cross-request cache
+  // key — see the note there on why a derived key would not be safe.
+  specVersionId?: string;
+  // Example values withheld at import because they looked like credentials
+  // (secretScan.ts). An IMPORT-TIME artifact: present on a freshly imported
+  // record so the persist layer can record what was dropped, and deliberately
+  // absent from a record reassembled out of Postgres (persistentApi.ts), where
+  // the durable form is an evidence fact rather than a field on the record.
+  // Carries locations and masked hints, never a value.
+  redactions?: SecretFinding[];
   createdAt: number;
   expiresAt: number;
 };

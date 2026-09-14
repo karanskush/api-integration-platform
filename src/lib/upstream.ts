@@ -26,6 +26,7 @@ export function buildUpstreamRequest(
   auth: UpstreamAuth,
   baseUrl: string,
   authIn?: AuthPlacement,
+  opts: { userAgent?: string } = {},
 ): UpstreamRequest {
   const props = (action.paramsSchema.properties ?? {}) as Record<string, Record<string, unknown>>;
 
@@ -33,7 +34,13 @@ export function buildUpstreamRequest(
   const query = new URLSearchParams();
   const headers: Record<string, string> = {
     accept: 'application/json, */*',
-    'user-agent': 'docentapi-playground/0.1',
+    // Every outbound call the platform makes carried this, including probe and
+    // canary traffic — so a provider reading their access log saw automated
+    // verification traffic labelled as somebody using a playground. The design
+    // doc requires probe traffic to be identifiable; `opts.userAgent` lets the
+    // probe engine say what it actually is, and the default keeps the
+    // playground and MCP paths unchanged.
+    'user-agent': opts.userAgent ?? 'docentapi-playground/0.1',
   };
   let body: string | undefined;
 

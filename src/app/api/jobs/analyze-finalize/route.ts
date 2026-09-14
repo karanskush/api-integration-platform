@@ -9,6 +9,7 @@ import { getDb } from '@/lib/db';
 import { actions as actionsTable, analysisRuns, apis, clarifications, evidenceFacts, specVersions, users } from '@/lib/db/schema';
 import { emailReady, sendAnalysisReadyEmail, sendClarificationNeededEmail } from '@/lib/email';
 import { loadRecordForVersion } from '@/lib/persistentApi';
+import { purgeApiSurfaces } from '@/lib/purge';
 import { putArazzoArtifact, putEnrichedSpecArtifact } from '@/lib/specStore';
 import { appOrigin } from '@/lib/origin';
 
@@ -65,9 +66,15 @@ async function handler(req: Request) {
     .values({ apiId, specVersionId, stage: 'finalize', status: 'running' })
     .returning({ id: analysisRuns.id });
 
+  // Hoisted out of the try so the failure path below can purge too: every
+  // branch of this handler moves apis.analysisStatus, and that flag is what the
+  // product page branches its whole render on.
+  let slug: string | null = null;
+
   try {
     const [api] = await db.select().from(apis).where(eq(apis.id, apiId)).limit(1);
     if (!api) throw new Error('API not found');
+    slug = api.slug;
 
     let email: string | undefined;
     if (api.createdBy) {
@@ -231,6 +238,13 @@ async function handler(req: Request) {
       .where(eq(analysisRuns.id, run.id));
     await db.update(apis).set({ analysisStatus: 'failed' }).where(eq(apis.id, apiId));
   }
+
+  // Every other write path purges; this one never did. analysisStatus reaching
+  // 'complete' is what unlocks the product page's main block, and the page is
+  // ISR at 3600s — so a finished analysis could stay invisible for an hour
+  // after the work was actually done. Purged once here, after the status is
+  // durable, so it covers the needs_input, complete and failed branches alike.
+  if (slug) purgeApiSurfaces(slug);
 
   return Response.json({ ok: true });
 }

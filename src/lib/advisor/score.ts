@@ -69,6 +69,25 @@ export function getScoreExplanation(ctx: AdvisorContext) {
       interpretation: band(verified.total),
       scoring:
         'Each sub-score is graded out of 25. Sub-scores that could not be probed are excluded and the total is renormalized over the ones that ran, so an unprobeable check never reads as a failed one.',
+      // The sample this number rests on, and how much of it was actually
+      // measured. Published rather than blended away because "verified" over a
+      // handful of requests is a different claim from "verified" over a
+      // thorough one, and an agent is entitled to weigh them differently.
+      // A row is only written at all when at least one call succeeded.
+      sample:
+        verified.liveCallsAttempted === 0
+          ? {
+              recorded: false,
+              note: 'This score predates per-run call accounting, so its sample size is unknown. Treat it as weaker evidence than a score that reports one, and re-verify to replace it.',
+            }
+          : {
+              recorded: true,
+              upstreamCallsAttempted: verified.liveCallsAttempted,
+              upstreamCallsSucceeded: verified.liveCallsSucceeded,
+              observedPoints: verified.observedPoints,
+              staticPoints: verified.staticPoints,
+              note: 'observedPoints came from what the API actually returned; staticPoints were derived from the spec alone (auth scheme and idempotency parameter names cannot be measured by calling). A score with staticPoints only would not have been written.',
+            },
       subscores,
       evidence: verified.explanation.map((e) => ({ factId: e.factId, finding: asData(e.message, 300) })),
       note: 'Every finding above is backed by a stored evidence fact; factId is its durable identifier.',

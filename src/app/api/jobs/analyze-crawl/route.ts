@@ -4,6 +4,7 @@ import { asData } from '@/lib/advisor/types';
 import { getDb } from '@/lib/db';
 import { analysisRuns, apis, evidenceFacts } from '@/lib/db/schema';
 import { crawlDocs } from '@/lib/docsCrawler';
+import { attemptsSoFar, shouldRetryStage } from '@/lib/analysisRetry';
 import { publishJob } from '@/lib/queue';
 
 export const maxDuration = 120;
@@ -84,6 +85,23 @@ async function handler(req: Request) {
       .update(analysisRuns)
       .set({ status: 'failed', completedAt: new Date(), error: err instanceof Error ? err.message : 'unknown error' })
       .where(eq(analysisRuns.id, run.id));
+
+    // GAP_ANALYSIS §0.5. Answering 200 here meant QStash — which retries on a
+    // non-2xx — never got the chance, so a transient failure was PERMANENT for
+    // this spec version. Give it a bounded number of attempts before falling
+    // through, and do NOT chain forward while retries remain, or the next stage
+    // would start against a half-finished one.
+    const attempts = await attemptsSoFar(db, apiId, specVersionId, 'crawl');
+    if (shouldRetryStage(attempts)) {
+      console.error('[crawl] failed, asking for a retry', {
+        apiId,
+        attempts,
+        // Name only. The message can carry a fetched URL, and analysis_runs
+        // already records it; a log line does not need to as well.
+        reason: err instanceof Error ? err.name : 'unknown',
+      });
+      return Response.json({ error: 'Stage failed; retrying', attempts }, { status: 503 });
+    }
     // Fall through to enrichment anyway — doc grounding is optional context,
     // never a hard dependency of the pipeline.
   }

@@ -83,10 +83,19 @@ describe('runCanary', () => {
     const result = await runCanary({ record: record(), invoke: respond(['{"error":"boom"}'], 503) });
 
     expect(result.snapshots).toEqual([]);
-    expect(result.inconclusive).toEqual(['get_pet']);
+    expect(result.inconclusive).toEqual([
+      { actionKey: 'a1', tool: 'get_pet', reason: 'no_successful_sample' },
+    ]);
   });
 
-  it('degrades to the successful samples when some fail', async () => {
+  // This used to assert that a run losing one sample still STORED a
+  // two-sample snapshot, and called that graceful degradation. It is not.
+  // DEFAULT_SAMPLES and MIN_SAMPLES are both 3, so a two-sample snapshot can
+  // never be compared by diffSnapshots — and because it was stored it became
+  // the newest row, so the next run compared against an uncomparable baseline
+  // and also said nothing. One transient blip silently disabled drift
+  // detection for that operation across two runs, and no surface reported it.
+  it('does not store a snapshot too small to ever be compared', async () => {
     let i = 0;
     const invoke = (async () => {
       i++;
@@ -95,13 +104,25 @@ describe('runCanary', () => {
     }) as typeof invokeAction;
 
     const result = await runCanary({ record: record(), invoke });
-    expect(result.snapshots[0].sampleCount).toBe(DEFAULT_SAMPLES - 1);
+
+    expect(result.snapshots).toEqual([]);
+    expect(result.inconclusive).toEqual([
+      { actionKey: 'a1', tool: 'get_pet', reason: 'below_min_samples' },
+    ]);
+  });
+
+  it('still stores a snapshot that meets the comparison floor', async () => {
+    const result = await runCanary({ record: record(), invoke: respond(['{"id":"x"}']) });
+    expect(result.snapshots[0].sampleCount).toBe(DEFAULT_SAMPLES);
+    expect(result.inconclusive).toEqual([]);
   });
 
   it('ignores an unparseable body rather than throwing', async () => {
     const result = await runCanary({ record: record(), invoke: respond(['<html>nope</html>']) });
     expect(result.snapshots).toEqual([]);
-    expect(result.inconclusive).toEqual(['get_pet']);
+    expect(result.inconclusive).toEqual([
+      { actionKey: 'a1', tool: 'get_pet', reason: 'no_successful_sample' },
+    ]);
   });
 
   it('bounds how many operations one run touches', async () => {

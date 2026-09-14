@@ -13,10 +13,28 @@ export type EvidenceKind =
   | 'parser.base_url_validity'
   | 'parser.unsafe_action_ratio'
   | 'parser.tool_name_quality'
+  // An example value withheld at import because it looked like a credential
+  // (secretScan.ts). The payload is the record of WHAT was dropped — location,
+  // why, a masked hint and a length — and deliberately has no slot that could
+  // hold the value, so recording the redaction never becomes a second copy of
+  // the secret. Rows carry redaction_status: 'redacted'.
+  | 'parser.redacted_example'
   | 'probe.auth_reject'
   | 'probe.error_quality'
   | 'probe.doc_drift'
   | 'probe.idempotency_signal'
+  // Whether the API actually accepts a value its own spec declares
+  // (probes/valueDomain.ts). `value` is safe to store verbatim, unlike anything
+  // the chain runner handles: it came from the provider's PUBLISHED SPEC, not
+  // out of a response, so no customer owns it.
+  | 'probe.value_domain'
+  // The states an entity was actually seen in (probes/stateVocabulary.ts).
+  // These values DO come from responses, which is the direction this codebase
+  // otherwise refuses to store from — admissible only because the probe keeps
+  // nothing that fails a cardinality guard: a field whose distinct values are
+  // few and repeat across many records is a vocabulary, one with roughly as
+  // many values as records is data and is dropped whole.
+  | 'probe.state_vocabulary'
   // Static, spec-derived — computed by lib/lineage.ts, same "no live traffic
   // needed" character as parser.*. Namespaced separately because it isn't a
   // scorePreview check: it's the field-to-field data-flow graph schema.ts's
@@ -47,12 +65,47 @@ export type EvidenceKind =
   // A Deprecation / Sunset / Link / vendor lifecycle header observed on a live
   // response during a probe (changes/lifecycle.ts). Provider-asserted, so it
   // sits with the probe.* kinds in trust, and it never affects the score.
-  | 'probe.lifecycle_signal';
+  | 'probe.lifecycle_signal'
+  // A rate-limit POLICY read off a live response (changes/rateLimit.ts): how
+  // many requests per what window. Provider-asserted, never scored. Only the
+  // policy is durable — remaining/reset describe one response's position in
+  // the window and are noise a minute later, so they are never carried.
+  | 'probe.rate_limit';
 
 const parserCheckPayload = z.object({
   points: z.number(),
   maxPoints: z.number(),
   message: z.string(),
+});
+
+const redactedExamplePayload = z.object({
+  at: z.string(),
+  reason: z.enum(['known_prefix', 'private_key', 'jwt', 'sensitive_name', 'high_entropy']),
+  hint: z.string(),
+  length: z.number(),
+});
+
+const valueDomainPayload = z.object({
+  actionId: z.string(),
+  field: z.string(),
+  // Bounded here as well as at the probe: parseEvidencePayload is what every
+  // reader goes through, so a row written before the cap existed still cannot
+  // hand an unbounded provider string to a consumer.
+  value: z.string().max(120),
+  accepted: z.boolean(),
+  status: z.number(),
+});
+
+const stateVocabularyPayload = z.object({
+  actionId: z.string(),
+  field: z.string(),
+  // Bounded at the read boundary for the same reason valueDomainPayload.value
+  // is: STATE_VALUE_SHAPE constrains what the sole writer can store today, but
+  // parseEvidencePayload is what every reader goes through, and it must not
+  // depend on a writer-side regex staying correct to keep an unbounded
+  // provider string away from a consumer.
+  values: z.array(z.string().max(120)),
+  sampleCount: z.number(),
 });
 
 const authRejectPayload = z.object({
@@ -158,6 +211,20 @@ const lifecycleSignalPayload = z.object({
   url: z.string().optional(),
 });
 
+const rateLimitPayload = z.object({
+  actionId: z.string(),
+  tool: z.string(),
+  method: z.string(),
+  path: z.string(),
+  name: z.string().max(64).optional(),
+  limit: z.number(),
+  windowSeconds: z.number().nullable(),
+  header: z.string(),
+  // Bounded at the read boundary as well as at the parser, like every other
+  // provider string that reaches an agent.
+  raw: z.string().max(120),
+});
+
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
 const evidenceSchemas = {
@@ -165,10 +232,13 @@ const evidenceSchemas = {
   'parser.base_url_validity': parserCheckPayload,
   'parser.unsafe_action_ratio': parserCheckPayload,
   'parser.tool_name_quality': parserCheckPayload,
+  'parser.redacted_example': redactedExamplePayload,
   'probe.auth_reject': authRejectPayload,
   'probe.error_quality': errorQualityPayload,
   'probe.doc_drift': docDriftPayload,
   'probe.idempotency_signal': idempotencySignalPayload,
+  'probe.value_domain': valueDomainPayload,
+  'probe.state_vocabulary': stateVocabularyPayload,
   'graph.field_lineage': fieldLineagePayload,
   'llm.doc_grounding': docGroundingPayload,
   'llm.field_semantics': fieldSemanticsPayload,
@@ -176,6 +246,7 @@ const evidenceSchemas = {
   'human.clarification': humanClarificationPayload,
   'diff.spec_change': specChangePayload,
   'probe.lifecycle_signal': lifecycleSignalPayload,
+  'probe.rate_limit': rateLimitPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

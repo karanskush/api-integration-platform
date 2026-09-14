@@ -49,16 +49,26 @@ const readableInvoke = (async () => ({
   bodyText: JSON.stringify({ message: 'The requested field is missing entirely.' }),
 })) as typeof invokeAction;
 
+
+// One stub that behaves like a real API, because the probes now require it to.
+// errorQuality corrupts a request (it drops the required param, or poisons it)
+// and needs a 4xx to have anything to grade; docDrift sends the documented
+// example and needs a 2xx for its comparison to mean anything. A stub that
+// answered 200 to everything used to satisfy both, which is exactly the
+// blending this change removes.
+const realisticInvoke: typeof invokeAction = async (_action, params) => {
+  const p = (params ?? {}) as Record<string, unknown>;
+  const corrupted = p.id === undefined || p.id === '__docentapi_invalid__';
+  return corrupted
+    ? { status: 400, latencyMs: 5, bodyText: JSON.stringify({ message: 'id is required' }) }
+    : { status: 200, latencyMs: 5, bodyText: JSON.stringify({ id: 'abc' }) };
+};
+
 describe('runScoreEngine', () => {
   it('sums all four subscores 1:1 when every probe has enough data', async () => {
     const withResponseSchema = action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
     const record1 = record({ auth: 'none', actions: [withResponseSchema] });
-    const invoke: typeof invokeAction = async () => ({
-      status: 200,
-      latencyMs: 5,
-      bodyText: JSON.stringify({ id: 'abc' }),
-    });
-    const result = await runScoreEngine(record1, { invoke });
+    const result = await runScoreEngine(record1, { invoke: realisticInvoke });
     expect(result.subscores.authClarity).toBe(25);
     expect(result.subscores.idempotency).toBe(25);
     expect(result.subscores.errorQuality).not.toBeNull();
@@ -135,15 +145,70 @@ describe('runScoreEngine', () => {
       examples: [],
     });
     const rec = record({ auth: 'bearer', actions: [withResponseSchema, write] });
-    const invoke: typeof invokeAction = async () => ({
-      status: 200,
-      latencyMs: 5,
-      bodyText: JSON.stringify({ id: 'abc' }),
-    });
-    const result = await runScoreEngine(rec, { invoke });
+    const result = await runScoreEngine(rec, { invoke: realisticInvoke });
     const kinds = result.evidence.map((e) => e.kind);
     expect(kinds).toContain('probe.error_quality');
     expect(kinds).toContain('probe.doc_drift');
     expect(kinds).toContain('probe.idempotency_signal');
+  });
+});
+
+// The accounting that makes a score admissible (GAP_ANALYSIS §0.2). Before it
+// existed, a run where every call failed still produced a number, because
+// authClarity computes its subscore before any I/O and idempotency makes no
+// call at all.
+describe('runScoreEngine live-call accounting', () => {
+  it('counts every upstream call and how many actually succeeded', async () => {
+    const withResponseSchema = action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema] });
+
+    const result = await runScoreEngine(rec, { invoke: realisticInvoke });
+
+    expect(result.liveCalls.attempted).toBeGreaterThan(0);
+    expect(result.liveCalls.succeeded).toBeGreaterThan(0);
+    expect(result.liveCalls.attempted).toBe(result.liveCalls.succeeded + result.liveCalls.failed);
+  });
+
+  it('reports zero successes when the API is entirely unreachable', async () => {
+    const withResponseSchema = action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema] });
+    const dead = (async () => {
+      throw new Error('ECONNREFUSED');
+    }) as typeof invokeAction;
+
+    const result = await runScoreEngine(rec, { invoke: dead });
+
+    expect(result.liveCalls.succeeded).toBe(0);
+    expect(result.liveCalls.failed).toBeGreaterThan(0);
+    // The static subscores still compute — that is precisely the problem this
+    // accounting exists to expose, rather than to hide.
+    expect(result.subscores.authClarity).toBeGreaterThan(0);
+  });
+
+  it('counts a non-2xx as a failure, since no probe can measure on it', async () => {
+    const withResponseSchema = action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema] });
+    const serverError = (async () => ({
+      status: 500,
+      latencyMs: 5,
+      bodyText: '{"error":"boom"}',
+    })) as typeof invokeAction;
+
+    const result = await runScoreEngine(rec, { invoke: serverError });
+
+    expect(result.liveCalls.succeeded).toBe(0);
+    expect(result.liveCalls.attempted).toBeGreaterThan(0);
+  });
+
+  it('splits the total into what was observed and what was derived from the spec', async () => {
+    const withResponseSchema = action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema] });
+
+    const result = await runScoreEngine(rec, { invoke: realisticInvoke });
+
+    expect(result.points.observed + result.points.static).toBeLessThanOrEqual(result.points.max);
+    // authClarity and idempotency are structural by construction, so there is
+    // always a static component — the point is that it is now visible.
+    expect(result.points.static).toBeGreaterThan(0);
   });
 });

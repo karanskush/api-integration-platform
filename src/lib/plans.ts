@@ -29,7 +29,27 @@ export type PlanLimits = {
   // needs the same paid-tier floor as the other genuinely-costs-money features
   // rather than being free for anyone who can view the page.
   askAssistant: boolean;
+  // Executed Lineage: actually calling read-only chains against the live API to
+  // verify that one operation's output is accepted by another. Gated with
+  // vaultedCredentials rather than separately, because it needs a stored
+  // credential and the owner's consent to send real traffic — and because those
+  // are the same decision. Plans without it keep the honest
+  // "spec structure only" answer they get today, so nothing regresses.
+  chainVerification: boolean;
 };
+
+// The whole-run outbound ceiling shared by the score engine, the canary and the
+// chain runner (probes/budget.ts). Worst case today is ~6 + ~15 + ~12; this
+// bounds the total rather than letting three per-module constants add up.
+export function outboundRequestsPerRun(): number {
+  return envInt('PROBE_OUTBOUND_PER_RUN', 40);
+}
+
+// A run is several sequential calls inside a function with a 60s ceiling, so a
+// wall-clock deadline bounds it where a request count cannot.
+export function outboundDeadlineMs(): number {
+  return envInt('PROBE_OUTBOUND_DEADLINE_MS', 30_000);
+}
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -44,6 +64,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     removeBranding: false,
     privateApis: false,
     vaultedCredentials: false,
+    chainVerification: false,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -57,6 +78,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     removeBranding: false,
     privateApis: false,
     vaultedCredentials: false,
+    chainVerification: false,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -70,6 +92,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     removeBranding: true,
     privateApis: false,
     vaultedCredentials: false,
+    chainVerification: false,
     customDomain: false,
     seats: 1,
     scheduledVerification: false,
@@ -83,6 +106,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     removeBranding: true,
     privateApis: true,
     vaultedCredentials: true,
+    chainVerification: true,
     customDomain: true,
     seats: envInt('PLAN_SEATS_TEAM', 5),
     scheduledVerification: false,
@@ -96,6 +120,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     removeBranding: true,
     privateApis: true,
     vaultedCredentials: true,
+    chainVerification: true,
     customDomain: true,
     seats: envInt('PLAN_SEATS_BUSINESS', 20),
     scheduledVerification: true,

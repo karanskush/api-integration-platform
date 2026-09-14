@@ -72,6 +72,16 @@ function subscores(overrides: Partial<ScoreRunInput['subscores']> = {}): ScoreRu
   return { authClarity: 20, errorQuality: 15, docDrift: 10, idempotency: 25, ...overrides };
 }
 
+// Every fixture here describes a run that actually reached the API. The
+// zero-success case has its own tests below, because it is now the branch that
+// writes no scores row at all.
+function reached() {
+  return {
+    liveCalls: { attempted: 3, succeeded: 2, failed: 1 },
+    points: { observed: 20, static: 45, max: 75 },
+  };
+}
+
 describe('buildScoreRunStatements', () => {
   it('inserts evidence facts and a scores row linked to the api, resolving actionId to the actions row uuid', async () => {
     const { apiId, specVersionId } = await makeApi('a');
@@ -84,7 +94,7 @@ describe('buildScoreRunStatements', () => {
       },
     ];
 
-    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 70, subscores: subscores(), evidence });
+    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 70, subscores: subscores(), ...reached(), evidence });
     await runSequentially(result.statements);
 
     const allFacts = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, apiId));
@@ -117,7 +127,7 @@ describe('buildScoreRunStatements', () => {
       },
     ];
 
-    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 50, subscores: subscores(), evidence });
+    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 50, subscores: subscores(), ...reached(), evidence });
     await runSequentially(result.statements);
 
     const [fact] = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, apiId));
@@ -132,6 +142,7 @@ describe('buildScoreRunStatements', () => {
       specVersionId,
       total: 40,
       subscores: subscores({ authClarity: 10 }),
+      ...reached(),
       evidence: [
         { kind: 'probe.auth_reject', source: 'probe', actionId: 'a1', payload: { statusObserved: 401, expectedAuth: 'bearer' } },
       ],
@@ -143,6 +154,7 @@ describe('buildScoreRunStatements', () => {
       specVersionId,
       total: 90,
       subscores: subscores({ authClarity: 25 }),
+      ...reached(),
       evidence: [
         {
           kind: 'probe.error_quality',
@@ -176,7 +188,7 @@ describe('buildScoreRunStatements', () => {
       },
     ];
 
-    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 60, subscores: subscores(), evidence });
+    const result = await buildScoreRunStatements(db, { apiId, specVersionId, total: 60, subscores: subscores(), ...reached(), evidence });
     await runSequentially(result.statements);
 
     const [fact] = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, apiId));
@@ -213,6 +225,7 @@ describe('buildScoreRunStatements lifecycle evidence', () => {
       specVersionId: api.specVersionId,
       total: 80,
       subscores: { authClarity: 25, errorQuality: 20, docDrift: 15, idempotency: 20 },
+      ...reached(),
       evidence,
     };
   }
@@ -256,5 +269,106 @@ describe('buildScoreRunStatements lifecycle evidence', () => {
 
     const rows = await db.select().from(schema.apiChanges).where(eq(schema.apiChanges.apiId, api.apiId));
     expect(rows).toHaveLength(2);
+  });
+});
+
+// The gate itself (GAP_ANALYSIS_2026-08-04.md §0.2). A `scores` row is a claim
+// about how an API BEHAVES, so a run in which nothing answered has not earned
+// one — and must not overwrite a previously earned row with a number assembled
+// from static heuristics.
+describe('a run that reached nothing writes no score', () => {
+  const unreachable = { liveCalls: { attempted: 4, succeeded: 0, failed: 4 }, points: { observed: 0, static: 45, max: 50 } };
+
+  it('writes no scores row at all', async () => {
+    const { apiId, specVersionId } = await makeApi('gate-none');
+
+    const result = await buildScoreRunStatements(db, {
+      apiId,
+      specVersionId,
+      total: 90,
+      subscores: subscores(),
+      ...unreachable,
+      evidence: [],
+    });
+    await runSequentially(result.statements);
+
+    expect(result.verified).toBe(false);
+    const rows = await db.select().from(schema.scores).where(eq(schema.scores.apiId, apiId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('still records the evidence, because a failed attempt is a fact worth keeping', async () => {
+    const { apiId, specVersionId } = await makeApi('gate-evidence');
+
+    const result = await buildScoreRunStatements(db, {
+      apiId,
+      specVersionId,
+      total: 90,
+      subscores: subscores(),
+      ...unreachable,
+      evidence: [
+        { kind: 'probe.auth_reject', source: 'probe', payload: { statusObserved: 401, expectedAuth: 'bearer' } },
+      ],
+    });
+    await runSequentially(result.statements);
+
+    const facts = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, apiId));
+    expect(facts.length).toBeGreaterThan(0);
+  });
+
+  it('leaves a previously earned score standing rather than replacing it', async () => {
+    const { apiId, specVersionId } = await makeApi('gate-preserve');
+
+    const earned = await buildScoreRunStatements(db, {
+      apiId,
+      specVersionId,
+      total: 72,
+      subscores: subscores(),
+      ...reached(),
+      evidence: [],
+    });
+    await runSequentially(earned.statements);
+    expect(earned.verified).toBe(true);
+
+    const later = await buildScoreRunStatements(db, {
+      apiId,
+      specVersionId,
+      total: 95,
+      subscores: subscores(),
+      ...unreachable,
+      evidence: [],
+    });
+    await runSequentially(later.statements);
+
+    const [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, apiId));
+    // The real measurement stands. Its own version fencing already reports it
+    // stale if the contract has moved on.
+    expect(row.total).toBe(72);
+  });
+});
+
+describe('a run that reached the API records its sample size', () => {
+  it('persists the call counts and the observed/static split', async () => {
+    const { apiId, specVersionId } = await makeApi('sample-size');
+
+    await runSequentially(
+      (
+        await buildScoreRunStatements(db, {
+          apiId,
+          specVersionId,
+          total: 80,
+          subscores: subscores(),
+          liveCalls: { attempted: 6, succeeded: 4, failed: 2 },
+          points: { observed: 35, static: 45, max: 100 },
+          evidence: [],
+        })
+      ).statements,
+    );
+
+    const [row] = await db.select().from(schema.scores).where(eq(schema.scores.apiId, apiId));
+    expect(row.liveCallsAttempted).toBe(6);
+    expect(row.liveCallsSucceeded).toBe(4);
+    expect(row.observedPoints).toBe(35);
+    expect(row.staticPoints).toBe(45);
   });
 });

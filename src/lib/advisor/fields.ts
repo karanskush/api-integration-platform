@@ -20,15 +20,122 @@ function findAction(ctx: AdvisorContext, name: string): Action | undefined {
   return ctx.record.actions.find((a) => a.name === name);
 }
 
+export type FieldSemantics = { meaning: string; constraint?: string; sourcedFrom: 'spec' | 'docs' };
+
 // Compact wire shape. The full FieldNode carries more than an agent needs per
 // row, and a 300-field response is already at the edge of useful.
-function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[]) {
+export type OwnerAnswer = { origin?: string; question: string };
+
+/** Which declared values the API actually took, when a probe checked. */
+export type ObservedValues = { accepted: string[]; rejected: string[] };
+
+/** The states an entity was actually seen in. No transition is implied. */
+export type ObservedStates = { values: string[]; sampleCount: number };
+
+/** How many of the canary's sampled responses carried this field. */
+export type ObservedPresence = { presentIn: number; sampleCount: number; observedAt: string };
+
+/**
+ * Execution receipts for producer->consumer links, keyed exactly as
+ * lineageRun.ts keys them.
+ *
+ * get_call_sequence already reports these; without the same lookup here,
+ * describe_fields and trace_field would show a producer as merely "high
+ * confidence" when the very same link had been confirmed by running it — the
+ * same evidence reading differently depending on which tool you asked.
+ */
+function verdictLookup(ctx: AdvisorContext) {
+  const byKey = new Map<string, { verdict: string; successes: number; attempts: number }>();
+  for (const v of ctx.insights.lineageVerdicts) {
+    byKey.set(v.key, { verdict: v.verdict, successes: v.successes, attempts: v.attempts });
+  }
+  return (producerTool: string, producerField: string, consumerTool: string, consumerField: string) => {
+    const hit = byKey.get(`${producerTool}.${producerField}->${consumerTool}.${consumerField}`);
+    if (!hit) return {};
+    return {
+      verified: hit.verdict,
+      ...(hit.verdict === 'observed'
+        ? { verifiedDetail: `${hit.successes} of ${hit.attempts} identifiers from this producer were accepted, and a fabricated one was rejected.` }
+        : {}),
+      ...(hit.verdict === 'refuted'
+        ? { verifiedDetail: 'Identifiers from this producer were rejected here across more than one run. Do not rely on this link.' }
+        : {}),
+    };
+  };
+}
+
+function serialize(
+  field: FieldNode,
+  origin?: string,
+  producers?: LineageEdge[],
+  semantics?: FieldSemantics,
+  owner?: OwnerAnswer,
+  observed?: ObservedValues,
+  states?: ObservedStates,
+  // Pre-bound to this consumer operation and field, so serialize needs to know
+  // nothing about how a verdict is keyed.
+  receiptFor?: (producerTool: string, producerField: string) => Record<string, unknown>,
+  presence?: ObservedPresence,
+) {
   return {
     path: field.path,
     type: field.nullable ? `${field.type}|null` : field.type,
     required: field.required,
     ...(field.format ? { format: field.format } : {}),
     ...(field.enum ? { allowed: field.enum } : {}),
+    // `allowed` above is what the SPEC declares. This is what the API actually
+    // did when each declared value was sent — the difference between a document
+    // and a contract, and the first time this tool has been able to tell them
+    // apart. A value in `rejected` is declared but not honoured.
+    ...(observed && (observed.accepted.length || observed.rejected.length)
+      ? {
+          allowedObserved: {
+            // Through asData like every other third-party string this module
+            // returns. These values come from the provider's own spec document,
+            // so a hostile or compromised spec could otherwise put control
+            // characters or a runaway payload straight into an agent's context
+            // (LLM01/LLM05) — the exact rule this file's header states.
+            ...(observed.accepted.length ? { accepted: observed.accepted.map((v) => asData(v, 120)) } : {}),
+            ...(observed.rejected.length ? { rejected: observed.rejected.map((v) => asData(v, 120)) } : {}),
+            note: 'Checked by sending each declared value to the live API. Anything under "rejected" is declared by the spec but was not accepted.',
+          },
+        }
+      : {}),
+    // The states this field was actually seen holding. Deliberately NOT called
+    // a state machine: these are the cases a caller's switch has to handle, and
+    // nothing here claims which transitions between them are possible — that
+    // needs write probing and a policy this product does not have yet.
+    ...(states
+      ? {
+          observedStates: {
+            // Neutralized like accepted/rejected above. These came out of a
+            // provider's live response, and this is the LLM01/LLM05 boundary
+            // for everything third-party — applying it to one sibling and not
+            // the other is how the rule quietly stops being a rule.
+            values: states.values.map((v) => asData(v, 120)),
+            sampleCount: states.sampleCount,
+            note: 'Values seen across sampled records. A vocabulary, not a state machine — no transition between these is claimed.',
+          },
+        }
+      : {}),
+    // Whether the field actually shows up. A spec says "required"; the canary
+    // says "present in 1 of 3 responses", and when those disagree the second
+    // is the one an integrator's null check has to be written against.
+    ...(presence
+      ? {
+          observed: {
+            presentIn: presence.presentIn,
+            sampleCount: presence.sampleCount,
+            always: presence.presentIn >= presence.sampleCount,
+            ...(field.required && presence.presentIn < presence.sampleCount
+              ? {
+                  note: `Documented as required but absent from ${presence.sampleCount - presence.presentIn} of ${presence.sampleCount} sampled responses — treat as optional.`,
+                }
+              : {}),
+            observedAt: presence.observedAt,
+          },
+        }
+      : {}),
     ...(field.const !== undefined ? { mustEqual: field.const } : {}),
     ...(field.pattern ? { pattern: field.pattern } : {}),
     ...(field.minimum !== undefined ? { minimum: field.minimum } : {}),
@@ -43,6 +150,18 @@ function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[])
     ...(field.container ? { container: field.container } : {}),
     ...(field.title ? { schemaType: field.title } : {}),
     ...(origin ? { origin } : {}),
+    // Whether `origin` above is a person's answer or our own inference. Without
+    // this an agent cannot tell a confirmed fact from a heuristic guess, and
+    // they are not the same thing to act on.
+    ...(origin ? { originSource: owner?.origin ? 'owner' : 'inferred' } : {}),
+    ...(owner
+      ? {
+          ownerConfirmed: true,
+          // The question the owner was actually asked, so the confirmation is
+          // auditable rather than an unexplained badge.
+          ownerAnsweredQuestion: asData(owner.question, 240),
+        }
+      : {}),
     ...(producers?.length
       ? {
           from: producers.slice(0, MAX_EDGES_REPORTED).map((e) => ({
@@ -50,10 +169,24 @@ function serialize(field: FieldNode, origin?: string, producers?: LineageEdge[])
             field: e.from.field,
             confidence: e.confidence,
             why: e.why,
+            ...(receiptFor?.(e.from.tool, e.from.field) ?? {}),
           })),
         }
       : {}),
     ...(field.description ? { description: asData(field.description, 200) } : {}),
+    // Derived by the enrichment pass from the provider's own documentation, so
+    // it is third-party text twice over (their docs, then a model's reading of
+    // them) and goes through asData like every other untrusted string here.
+    // `meaningSource` is not decoration: 'docs' means a sentence in the
+    // provider's documentation backed this, 'spec' means it was inferred from
+    // the schema alone, and an agent should weigh those differently.
+    ...(semantics
+      ? {
+          meaning: asData(semantics.meaning, 300),
+          meaningSource: semantics.sourcedFrom,
+          ...(semantics.constraint ? { constraint: asData(semantics.constraint, 300) } : {}),
+        }
+      : {}),
   };
 }
 
@@ -92,6 +225,45 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
 
   const map: FieldMap = fieldMapFor(action);
   const graph = lineageFor(ctx.record);
+  // Narrowed to this operation once, rather than scanning the whole API's
+  // semantics per field.
+  const semanticsByPath = new Map<string, FieldSemantics>();
+  for (const s of ctx.insights.fieldSemantics) {
+    if (s.tool !== action.name) continue;
+    semanticsByPath.set(s.field, { meaning: s.meaning, constraint: s.constraint, sourcedFrom: s.sourcedFrom });
+  }
+  // Keyed on the action's stable id, which is what probe evidence carries.
+  const observedByPath = new Map<string, ObservedValues>();
+  for (const v of ctx.insights.valueDomains) {
+    if (v.actionId !== action.id) continue;
+    const entry = observedByPath.get(v.field) ?? { accepted: [], rejected: [] };
+    const bucket = v.accepted ? entry.accepted : entry.rejected;
+    if (!bucket.includes(v.value)) bucket.push(v.value);
+    observedByPath.set(v.field, entry);
+  }
+  // Matched on field NAME, not path: the probe reads records out of a list
+  // envelope whose shape varies (`data[]`, `items[]`, a bare array), while the
+  // response field map addresses the same field by its full path.
+  const statesByName = new Map<string, ObservedStates>();
+  for (const v of ctx.insights.stateVocabularies) {
+    if (v.actionId !== action.id) continue;
+    statesByName.set(v.field, { values: v.values, sampleCount: v.sampleCount });
+  }
+  // Matched on PATH: the canary addresses response fields exactly as the field
+  // map does (canaryRun.documentedResponsePaths compares the two directly).
+  const presenceByPath = new Map<string, ObservedPresence>();
+  const observedShape = ctx.insights.observedShapes.find((o) => o.actionId === action.id);
+  if (observedShape) {
+    for (const f of observedShape.fields) {
+      presenceByPath.set(f.path, { presentIn: f.presentIn, sampleCount: observedShape.sampleCount, observedAt: observedShape.observedAt });
+    }
+  }
+  const lookupVerdict = verdictLookup(ctx);
+  const ownerByPath = new Map<string, OwnerAnswer>();
+  for (const a of ctx.insights.ownerAnswers) {
+    if (a.tool !== action.name) continue;
+    ownerByPath.set(a.field, { origin: a.origin, question: a.question });
+  }
 
   const sections: Array<{ key: 'request' | 'response' | 'error'; fields: FieldNode[] }> = [];
   if (direction === 'request' || direction === 'all') sections.push({ key: 'request', fields: map.request });
@@ -112,9 +284,35 @@ export function describeFields(ctx: AdvisorContext, args: DescribeFieldsArgs) {
     totalReturned += page.length;
 
     out[key] = page.map((field) => {
-      if (key !== 'request') return serialize(field);
+      const semantics = semanticsByPath.get(field.path);
+      // Owner answers are only ever raised about request fields, so they are
+      // deliberately not consulted for the response and error views — a path
+      // that happens to collide there is a different field.
+      if (key !== 'request') {
+        return serialize(
+          field,
+          undefined,
+          undefined,
+          semantics,
+          undefined,
+          undefined,
+          statesByName.get(field.name),
+          undefined,
+          key === 'response' ? presenceByPath.get(field.path) : undefined,
+        );
+      }
       const producers = producersFor(graph, action.name, field.path);
-      return serialize(field, originOf(field, producers.length > 0), producers);
+      const owner = ownerByPath.get(field.path);
+      const observed = observedByPath.get(field.path);
+      // A person who runs this API outranks our inference about it. Without
+      // this the owner could tell us "the server assigns this, ignore what you
+      // send" and describe_fields would still answer caller_supplied — while
+      // now also claiming it was owner-confirmed, which is worse than never
+      // having asked. Same precedence rule as enrichedSpec.ts.
+      const origin = owner?.origin ?? originOf(field, producers.length > 0);
+      return serialize(field, origin, producers, semantics, owner, observed, undefined, (pt, pf) =>
+        lookupVerdict(pt, pf, action.name, field.path),
+      );
     });
   }
 
@@ -174,6 +372,7 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     args.direction === 'producers' || args.direction === 'consumers' ? args.direction : 'both';
   const includeLow = args.includeLowConfidence === true;
   const graph = lineageFor(ctx.record, includeLow ? { includeLow: true } : {});
+  const lookupVerdict = verdictLookup(ctx);
 
   let matches = findFieldsByName(ctx.record, wanted);
   if (toolFilter) matches = matches.filter((m) => m.tool === toolFilter);
@@ -219,6 +418,10 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
               field: e.from.field,
               confidence: e.confidence,
               why: e.why,
+              // The same receipt get_call_sequence reports. Without it this tool
+              // would call a link "high confidence" while another tool called
+              // the very same link verified.
+              ...lookupVerdict(e.from.tool, e.from.field, tool, field.path),
             })),
           }
         : {}),
@@ -252,7 +455,9 @@ export function traceField(ctx: AdvisorContext, args: TraceFieldArgs) {
     matched: matches.length,
     returned: results.length,
     results,
-    basis: 'spec structure only — derived from declared schemas, not observed traffic',
+    basis: ctx.insights.lineageVerdicts.length
+      ? 'spec structure, with some links confirmed by read-only execution against the live API — see the "verified" field on each producer'
+      : 'spec structure only — derived from declared schemas, not observed traffic',
     note: includeLow
       ? 'Low-confidence links are included. Treat anything below "high" as a lead to verify, not a fact.'
       : 'Only high and medium confidence links are shown. An empty "producedBy" means no operation MINTS this value — do not invent a source for it. It does NOT mean the field never appears in a response: check "alsoReturnedBy" for operations that return the same field, which is where values already in use can be read.',

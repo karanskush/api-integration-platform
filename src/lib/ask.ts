@@ -59,6 +59,27 @@ export function askModel(): string {
   );
 }
 
+// The model for the OFFLINE passes — deep enrichment (field semantics, the
+// most expensive knowledge the system produces), clarification triage and
+// synthesis. These read a provider's PUBLISHED documentation, never a user's
+// typed question, so they take the current flagship where `ask` deliberately
+// does not: Anthropic offers no zero-data-retention on Fable 5.1 (prompts are
+// held 30 days), which is the right trade for public docs and the wrong one
+// for a person's question about their own integration.
+//
+// Precedence keeps every existing deployment exactly as it was: an explicit
+// DOCENTAPI_ENRICH_MODEL wins; otherwise an explicitly configured ask model is
+// followed, because an operator who chose azure/ or a direct OpenAI model chose
+// a provider on purpose and must not find enrichment routed to the Gateway
+// behind their back; only a deployment on the built-in default moves.
+export function enrichModel(): string {
+  const explicit = process.env.DOCENTAPI_ENRICH_MODEL?.trim();
+  if (explicit) return explicit;
+  const askExplicit = (process.env.DOCENTAPI_ASK_MODEL ?? process.env.SPOTCHECK_ASK_MODEL)?.trim();
+  if (askExplicit) return askExplicit;
+  return 'anthropic/claude-fable-5.1';
+}
+
 const OPENAI_PREFIX = 'openai/';
 
 // The OpenAI model to call DIRECTLY, bypassing the Gateway, or null if this
@@ -76,9 +97,8 @@ const OPENAI_PREFIX = 'openai/';
 // "anthropic/claude-sonnet-5" still goes to the Gateway rather than being
 // quietly rewritten into a model you didn't choose. A bare name with no "/" is
 // read as OpenAI's own naming ("gpt-5-mini"), since every Gateway slug has one.
-function directOpenAIModel(): string | null {
+function directOpenAIModel(slug: string): string | null {
   if (!process.env.OPENAI_API_KEY?.trim()) return null;
-  const slug = askModel();
   if (slug.startsWith(OPENAI_PREFIX)) return slug.slice(OPENAI_PREFIX.length) || null;
   if (slug.startsWith(AZURE_PREFIX)) return null; // Azure is its own provider, below
   return slug.includes('/') ? null : slug;
@@ -207,10 +227,9 @@ function gatewayReady(): boolean {
 // "gpt-5-mini" callable — reporting ready in either case just moves the failure
 // from a clear 503 to a swallowed error inside the enrichment pass, which is the
 // one place this codebase can least afford it.
-export function resolveAskTarget():
-  | { ok: true; target: AskTarget }
-  | { ok: false; problem: AskConfigProblem } {
-  const slug = askModel();
+export function resolveAskTarget(
+  slug: string = askModel(),
+): { ok: true; target: AskTarget } | { ok: false; problem: AskConfigProblem } {
   const fail = (reason: string, hint: string) => ({ ok: false as const, problem: { reason, hint } });
 
   // An azure/ slug resolves to Azure ONLY, and never falls through — no other
@@ -239,7 +258,7 @@ export function resolveAskTarget():
     return { ok: true, target: { kind: 'azure', azure: { deployment, resourceName, apiKey, ...surface } } };
   }
 
-  const direct = directOpenAIModel();
+  const direct = directOpenAIModel(slug);
   if (direct) {
     return { ok: true, target: { kind: 'openai', modelId: direct, apiKey: process.env.OPENAI_API_KEY!.trim() } };
   }
@@ -285,7 +304,16 @@ export function askConfigProblem(): AskConfigProblem | null {
 // close over config — there is no connection to reuse — and a cached instance
 // would outlive a key change within a single process.
 export function askLanguageModel(opts: { fetch?: typeof globalThis.fetch } = {}): LanguageModel {
-  const resolved = resolveAskTarget();
+  return languageModelFor(askModel(), opts);
+}
+
+/** The offline passes' model — see enrichModel() for why it differs. */
+export function enrichLanguageModel(opts: { fetch?: typeof globalThis.fetch } = {}): LanguageModel {
+  return languageModelFor(enrichModel(), opts);
+}
+
+function languageModelFor(slug: string, opts: { fetch?: typeof globalThis.fetch }): LanguageModel {
+  const resolved = resolveAskTarget(slug);
   if (!resolved.ok) throw new AskConfigError(resolved.problem);
   const { target } = resolved;
 

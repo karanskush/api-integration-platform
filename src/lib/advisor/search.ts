@@ -151,6 +151,7 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
 
   const params = paramsOf(action);
   const drift = ctx.insights.driftObservations.find((o) => o.actionId === action.id);
+  const rateLimits = ctx.insights.rateLimits.filter((r) => r.actionId === action.id);
   const map = fieldMapFor(action);
   const sendable = map.request.filter((f) => !f.readOnly && !f.container);
   const serverAssigned = map.request.filter((f) => f.readOnly).map((f) => f.path);
@@ -201,6 +202,23 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
     errorSchema: capSchema(action.errorSchema ?? null, 'error'),
     examples: action.examples.slice(0, 3),
     retry: describeIdempotency(action, ctx),
+    ...(rateLimits.length
+      ? {
+          rateLimit: {
+            policies: rateLimits.map((r) => ({
+              ...(r.name ? { name: asData(r.name, 64) } : {}),
+              limit: r.limit,
+              // Stated plainly rather than defaulted: the legacy X-RateLimit
+              // family declares a quota and no window, and inventing one would
+              // be a guess about the provider's infrastructure.
+              windowSeconds: r.windowSeconds,
+              ...(r.windowSeconds === null ? { note: 'The provider states the quota but not the window.' } : {}),
+            })),
+            basis: 'declared by the provider in response headers on a live call — not derived from the spec',
+            observedAt: rateLimits[0].observedAt,
+          },
+        }
+      : {}),
     ...(drift
       ? {
           observedDrift: {

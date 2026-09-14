@@ -45,7 +45,44 @@ export type PersistInput = {
   // pipeline. See schema.ts's analysisStatus comment for why the default
   // isn't 'queued'.
   analysisStatus?: 'queued' | 'complete';
+  // Explicit override. Omitted by every caller today; without it the value is
+  // derived below, which is deliberate — see the comment on the apis insert.
+  visibility?: 'public' | 'private';
 };
+
+// A pathological spec could declare a redaction on every parameter of every
+// operation. The receipts are diagnostic, not load-bearing, so cap them the way
+// lineageEvidence.ts caps its own materialization rather than letting one
+// import write an unbounded number of rows.
+const MAX_REDACTION_FACTS = 200;
+
+// Redaction receipts, shared by the first-import and re-import paths.
+//
+// The payload records a location, a reason, a masked hint and a length — and
+// has no slot that could hold the value, so recording the redaction never
+// becomes a second copy of the secret. The row carries
+// redaction_status: 'redacted', which finally gives that column (present and
+// unread since Phase 1) something to mean.
+function buildRedactionStatements(
+  db: Db,
+  args: { apiId: string; specVersionId: string; record: ImportRecord },
+): BatchItem<'pg'>[] {
+  const redactions = (args.record.redactions ?? []).slice(0, MAX_REDACTION_FACTS);
+  if (!redactions.length) return [];
+  return [
+    db.insert(evidenceFacts).values(
+      redactions.map((r) => ({
+        apiId: args.apiId,
+        specVersionId: args.specVersionId,
+        kind: 'parser.redacted_example',
+        source: 'parser',
+        environment: 'static',
+        redactionStatus: 'redacted',
+        payload: { at: r.at, reason: r.reason, hint: r.hint, length: r.length },
+      })),
+    ),
+  ];
+}
 
 export type PersistResult = { apiId: string; slug: string; specVersionId: string };
 
@@ -61,6 +98,25 @@ export type PersistStatements = PersistResult & { statements: BatchItem<'pg'>[] 
 // conflict today — onConflictDoNothing is defensive, ahead of that feature.
 export async function buildPersistStatements(db: Db, input: PersistInput): Promise<PersistStatements> {
   const { orgId, createdBy, record, rawText, claimStatus, analysisStatus } = input;
+  // An import that carried a credential is, by definition, a working
+  // authenticated request. Even with secretScan.ts stripping the values, the
+  // request SHAPE is the owner's to publish deliberately rather than by
+  // default, and detection is heuristic — so this is the defence-in-depth half.
+  //
+  // Scoped to imports that actually had something redacted rather than to all
+  // imports: a clean spec keeps today's funnel, and the Team-plan privateApis
+  // feature is not wholesale undercut. Derived here rather than required from
+  // the caller so a future creation path cannot silently reintroduce the public
+  // default (no caller sets visibility today, which is exactly how every API
+  // ended up public).
+  //
+  // Not scoped to cURL. It was, on the reasoning that a pasted cURL is the
+  // widest door — which is true of LIKELIHOOD and irrelevant to CONSEQUENCE. An
+  // OpenAPI or Postman import whose parameter examples held a live key is the
+  // same exposure, and the `source === 'curl'` conjunct meant the scanner could
+  // find a credential, record the receipt, and the API would still be published
+  // publicly. The condition that matters is whether anything was found.
+  const visibility = input.visibility ?? (record.redactions?.length ? 'private' : undefined);
   const contentHash = createHash('sha256').update(rawText).digest('hex');
 
   const slug = await allocateApiSlug(record.name, async (candidate) => {
@@ -85,6 +141,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
       authIn: record.authIn ?? null,
       ...(claimStatus !== undefined ? { claimStatus } : {}),
       ...(analysisStatus !== undefined ? { analysisStatus } : {}),
+      ...(visibility !== undefined ? { visibility } : {}),
     }),
     db
       .insert(specVersions)
@@ -96,6 +153,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
         contentHash,
         parseStatus: 'parsed',
         actionCount: record.actions.length,
+        webhooks: record.webhooks?.length ? record.webhooks : null,
       })
       .onConflictDoNothing({ target: [specVersions.apiId, specVersions.contentHash] }),
   ];
@@ -145,6 +203,7 @@ export async function buildPersistStatements(db: Db, input: PersistInput): Promi
       explanation: preview.checks.map((c, i) => ({ factId: factIds[i], message: c.message })),
     }),
     ...buildLineageEvidenceStatements(db, { apiId, specVersionId, record }),
+    ...buildRedactionStatements(db, { apiId, specVersionId, record }),
     // Only ever flips to a version whose rows were just written in this same
     // atomic batch — a mid-batch failure rolls the whole thing back on
     // Neon's side, so this never points at a half-written version.
@@ -340,6 +399,7 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
       contentHash,
       parseStatus: 'parsed',
       actionCount: record.actions.length,
+      webhooks: record.webhooks?.length ? record.webhooks : null,
     }),
   ];
 
@@ -400,6 +460,7 @@ export async function buildReimportStatements(db: Db, input: ReimportInput): Pro
     // change between spec versions (a field renamed, a new producer added), so
     // each version gets its own recomputed set rather than patching the last.
     ...buildLineageEvidenceStatements(db, { apiId, specVersionId, record }),
+    ...buildRedactionStatements(db, { apiId, specVersionId, record }),
     ...changeStatements(specVersionId, actionIdByKey),
     db
       .update(apis)

@@ -24,10 +24,17 @@ export type ScoreRunInput = {
     docDrift: number | null;
     idempotency: number;
   };
+  liveCalls: { attempted: number; succeeded: number; failed: number };
+  points: { observed: number; static: number; max: number };
   evidence: EvidenceFactInput[];
 };
 
-export type ScoreRunStatements = { statements: BatchItem<'pg'>[] };
+// `verified` is false when the run produced no publishable score. Evidence and
+// lifecycle rows are still written — an attempt that failed is itself a fact
+// worth keeping — but no `scores` row is created, so every reader falls through
+// to its existing unverified branch: the badge stays grey, the page shows the
+// static preview, and the advisor reports no verified score.
+export type ScoreRunStatements = { statements: BatchItem<'pg'>[]; verified: boolean };
 
 // The kinds that actually MOVED the number. A probe run now also records
 // lifecycle headers, which are provider announcements rather than measurements
@@ -81,7 +88,7 @@ async function resolveActionIds(db: Db, specVersionId: string): Promise<Map<stri
 }
 
 export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Promise<ScoreRunStatements> {
-  const { apiId, specVersionId, total, subscores, evidence } = input;
+  const { apiId, specVersionId, total, subscores, liveCalls, points, evidence } = input;
   const actionIdByKey = await resolveActionIds(db, specVersionId);
   const factIds = evidence.map(() => randomUUID());
 
@@ -129,6 +136,16 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     .map((e, i) => ({ factId: factIds[i], kind: e.kind, message: describeEvidence(e) }))
     .filter((e) => SCORING_KINDS.has(e.kind))
     .map(({ factId, message }) => ({ factId, message }));
+  // The gate. A score is a claim about how an API BEHAVES, so a run in which
+  // nothing answered has not earned one — and must not quietly overwrite a
+  // previous, genuinely-earned row with a number assembled from static
+  // heuristics. Returning early leaves any existing row untouched, which is the
+  // right outcome: the last real measurement stands, and its own version
+  // fencing already reports it as stale if the contract has moved since.
+  if (liveCalls.succeeded === 0) {
+    return { statements, verified: false };
+  }
+
   const scoreValues = {
     specVersionId,
     total,
@@ -136,6 +153,10 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     errorQuality: subscores.errorQuality,
     docDrift: subscores.docDrift,
     idempotency: subscores.idempotency,
+    liveCallsAttempted: liveCalls.attempted,
+    liveCallsSucceeded: liveCalls.succeeded,
+    observedPoints: points.observed,
+    staticPoints: points.static,
     explanation,
   };
 
@@ -146,10 +167,15 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
       .onConflictDoUpdate({ target: scores.apiId, set: { ...scoreValues, verifiedAt: new Date() } }),
   );
 
-  return { statements };
+  return { statements, verified: true };
 }
 
-export async function applyScoreRun(db: NeonDb, input: ScoreRunInput): Promise<void> {
-  const { statements } = await buildScoreRunStatements(db, input);
-  await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
+export async function applyScoreRun(db: NeonDb, input: ScoreRunInput): Promise<{ verified: boolean }> {
+  const { statements, verified } = await buildScoreRunStatements(db, input);
+  // A run with no successful call still has evidence and lifecycle rows to
+  // write, so this is not an early return — but it can legitimately be empty.
+  if (statements.length) {
+    await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
+  }
+  return { verified };
 }

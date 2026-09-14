@@ -103,6 +103,10 @@ export const specVersions = pgTable('spec_versions', {
   parseStatus: text('parse_status').notNull(), // pending|parsed|failed
   parseError: text('parse_error'),
   actionCount: integer('action_count').notNull().default(0),
+  // The events this version of the spec declares the API emits (ir.ts
+  // Webhook[]). Null when it declares none. Stored on the version rather than
+  // as rows because a webhook is read back only as part of the whole record.
+  webhooks: jsonb('webhooks'),
   // Populated by the deep-analysis pipeline's finalize stage (and regenerated
   // whenever a clarification answer changes the picture) — Blob pointers to
   // the portable Arazzo workflow file and the x-docentapi-* enriched OpenAPI.
@@ -209,6 +213,19 @@ export const scores = pgTable('scores', {
   docDrift: integer('doc_drift'), // null = insufficient data to probe, excluded from total
   idempotency: integer('idempotency').notNull(),
   explanation: jsonb('explanation').notNull(), // [{ factId, message }] — same convention as scorePreviews.explanation
+  // The sample size behind the number. A row only exists when
+  // live_calls_succeeded > 0 (scoreWrite.ts refuses to write otherwise), so
+  // these are not "extra detail" — they are what makes the row admissible.
+  // Before they existed, authClarity computed its subscore before any I/O and
+  // idempotency made no calls at all, so an entirely unreachable API could
+  // still publish a green badge.
+  liveCallsAttempted: integer('live_calls_attempted').notNull().default(0),
+  liveCallsSucceeded: integer('live_calls_succeeded').notNull().default(0),
+  // How much of `total` was measured against the running API versus derived
+  // from the spec. Published rather than blended away: the two are different
+  // epistemic classes and a consumer is entitled to weigh them differently.
+  observedPoints: integer('observed_points').notNull().default(0),
+  staticPoints: integer('static_points').notNull().default(0),
   verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('scores_api_id_idx').on(t.apiId)]);
 
@@ -261,7 +278,16 @@ export const credentialAudit = pgTable('credential_audit', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   credentialId: uuid('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
   orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
-  apiId: uuid('api_id').references(() => apis.id, { onDelete: 'cascade' }),
+  // SET NULL, not cascade (GAP_ANALYSIS_2026-08-04.md §0.4). Deleting an API
+  // used to destroy the forensic record of every credential decrypt performed
+  // for it — the audit trail is precisely what makes a vaulted credential
+  // defensible, and it has to outlive the entity it describes. A failed decrypt
+  // is as interesting as a successful one, and both are most interesting after
+  // somebody has removed the evidence.
+  //
+  // org_id stays NOT NULL and cascades: when the ORG goes, the tenant is gone
+  // and there is nobody left with a right to the record.
+  apiId: uuid('api_id').references(() => apis.id, { onDelete: 'set null' }),
   environment: text('environment'),
   // created|rotated|deleted|used|denied|decrypt_failed
   action: text('action').notNull(),
@@ -450,3 +476,77 @@ export const stripeEvents = pgTable('stripe_events', {
   type: text('type').notNull(),
   createdAt: createdAt(),
 });
+
+// Executed Lineage (plan §B). One row per RUN, so "we could not look" and "we
+// looked and found nothing" never collapse into the same silence — the canary's
+// own lesson, learned when its live run showed `inconclusive` being dropped.
+// Without aborted_reason a budget-exhausted run and a clean-but-empty run are
+// indistinguishable after the fact.
+//
+// Reusing score_runs was not an option: its `findings` column is
+// JSON.stringify(result) into open jsonb, which is the single widest leak
+// surface for a feature that handles live identifiers.
+export const lineageRuns = pgTable('lineage_runs', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull().default('production'),
+  status: text('status').notNull(), // succeeded|failed|aborted
+  chainsPlanned: integer('chains_planned').notNull().default(0),
+  chainsExecuted: integer('chains_executed').notNull().default(0),
+  requestsMade: integer('requests_made').notNull().default(0),
+  budgetLimit: integer('budget_limit').notNull().default(0),
+  // CLOSED vocabularies, never a message. ssrf.ts throws `Invalid URL: <url>`
+  // and for an executed chain that URL carries the extracted identifier, so the
+  // analysis_runs convention of storing err.message would compose into a leak.
+  abortedReason: text('aborted_reason'), // rate_limited|budget_exhausted|deadline_exceeded|spec_version_moved
+  errorCode: text('error_code'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [index('lineage_runs_api_id_started_at_idx').on(t.apiId, t.startedAt)]);
+
+// One row per edge per run. Append-only, newest-wins on read — the same shape
+// operation_observations uses, and what makes lineageVerdict's cross-run
+// agreement rule computable.
+//
+// ZERO jsonb columns, deliberately, and strictly stronger than
+// operation_observations: jsonb *could* hold a value and is kept safe only by a
+// disciplined writer, whereas an integer cannot hold one at all. The price is
+// losing the full status histogram; predominant_status is enough to debug with.
+export const lineageExecutions = pgTable('lineage_executions', {
+  id: id(),
+  apiId: uuid('api_id').notNull().references(() => apis.id, { onDelete: 'cascade' }),
+  // NOT NULL on purpose: a claim about a contract that does not name the
+  // version it describes is worthless, and the Living Twin work established
+  // version fencing everywhere else.
+  specVersionId: uuid('spec_version_id').notNull().references(() => specVersions.id, { onDelete: 'cascade' }),
+  runId: uuid('run_id').notNull().references(() => lineageRuns.id, { onDelete: 'cascade' }),
+  environment: text('environment').notNull().default('production'),
+
+  producerActionKey: text('producer_action_key').notNull(),
+  producerTool: text('producer_tool').notNull(),
+  producerField: text('producer_field').notNull(), // 'response.data[].id'
+  consumerActionKey: text('consumer_action_key').notNull(),
+  consumerTool: text('consumer_tool').notNull(),
+  consumerField: text('consumer_field').notNull(), // 'path.customerId'
+
+  inferredConfidence: text('inferred_confidence').notNull(), // high|medium|low at run time
+  outcome: text('outcome').notNull(), // confirmed|contradicted|inconclusive
+  reason: text('reason').notNull(), // lineageVerdict.ts ChainReason
+
+  attempts: integer('attempts').notNull().default(0),
+  successes: integer('successes').notNull().default(0),
+  candidateCount: integer('candidate_count').notNull().default(0),
+  predominantStatus: integer('predominant_status'),
+  // The negative control. Without it a confirmation is only a correlation, so
+  // these two columns are what make an `observed` verdict admissible.
+  controlAttempted: boolean('control_attempted').notNull().default(false),
+  controlStatus: integer('control_status'),
+  latencyP50Ms: integer('latency_p50_ms'),
+
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+}, (t) => [
+  index('lineage_executions_edge_idx').on(t.apiId, t.specVersionId, t.consumerTool, t.consumerField, t.observedAt),
+  index('lineage_executions_run_id_idx').on(t.runId),
+]);

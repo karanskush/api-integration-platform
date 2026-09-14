@@ -70,33 +70,50 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
 
   const evidence: EvidenceFactInput[] = [];
   let sumRatio = 0;
+  let graded = 0;
   for (const action of candidates) {
-    let matched = 0;
-    let declared = declaredFieldCount(action);
-    let mismatches: string[] = Object.keys((action.responseSchema!.properties ?? {}) as Record<string, unknown>).map(
-      (k) => `missing_field:${k}`,
-    );
     try {
       const res = await invoke(action, action.examples[0].params, target, ctx.upstreamKey);
       // Recorded before parsing: a body that fails to parse still carried
       // headers worth keeping.
       evidence.push(...lifecycleEvidence(action, res.headers));
+
+      // Only a SUCCESSFUL response can say whether the documentation matches
+      // the body. A 401, a 429 or a 500 says nothing about documentation
+      // quality, and the previous behaviour — falling through to a full
+      // mismatch — attributed our own failure to reach the API, or the
+      // provider's outage, to their docs. Same rule the canary already applies:
+      // an outage is not a contract change.
+      if (res.status < 200 || res.status >= 300) continue;
+
       const body = JSON.parse(res.bodyText);
       const cmp = compareShallow(action.responseSchema!, body);
-      matched = cmp.matched;
-      declared = cmp.declared;
-      mismatches = cmp.mismatches;
+      sumRatio += cmp.declared > 0 ? cmp.matched / cmp.declared : 0;
+      graded++;
+      evidence.push({
+        kind: 'probe.doc_drift',
+        source: 'probe',
+        actionId: action.id,
+        payload: {
+          actionId: action.id,
+          matchedFields: cmp.matched,
+          declaredFields: cmp.declared,
+          mismatches: cmp.mismatches,
+        },
+      });
     } catch {
-      // no parseable response to compare — grade as a full mismatch below
+      // Unreachable, blocked, or an unparseable body. Excluded rather than
+      // graded — and deliberately NOT recorded as a doc_drift fact, because a
+      // fact saying "0 of 5 fields matched" would describe an HTTP exchange
+      // that never happened.
+      continue;
     }
-    sumRatio += declared > 0 ? matched / declared : 0;
-    evidence.push({
-      kind: 'probe.doc_drift',
-      source: 'probe',
-      actionId: action.id,
-      payload: { actionId: action.id, matchedFields: matched, declaredFields: declared, mismatches },
-    });
   }
 
-  return { subscore: Math.round((sumRatio / candidates.length) * FULL), evidence };
+  // Every candidate failed to produce a gradeable response. That is an absence
+  // of evidence, not a bad score: run.ts drops this subscore from the total
+  // rather than counting a zero we did not earn the right to assert.
+  if (graded === 0) return { subscore: 0, evidence, insufficientData: true };
+
+  return { subscore: Math.round((sumRatio / graded) * FULL), evidence };
 }

@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
-import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety } from './ir';
+import type { Action, AuthPlacement, AuthScheme, Example, JSONSchema, Safety, Webhook } from './ir';
 import { MAX_ACTIONS } from './ir';
+import {
+  dedupeFindings,
+  scrubSchemaExamples,
+  scrubValue,
+  type SecretFinding,
+} from './secretScan';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options'] as const;
 
@@ -17,6 +23,13 @@ export type NormalizedSpec = {
   // deep-analysis pipeline's docs crawler (docsCrawler.ts). Not yet
   // SSRF-validated, same caveat as rawBaseUrls.
   externalDocsUrl?: string;
+  // Example values withheld because they looked like credentials (secretScan.ts).
+  // Carries the location and a masked hint, never the value — the point is that
+  // an owner can see WHAT was dropped without the drop itself becoming a second
+  // copy of the secret. `at` is prefixed with the tool name by the caller below.
+  redactions: SecretFinding[];
+  // Events the API emits: OpenAPI 3.1 `webhooks` and 3.0 operation `callbacks`.
+  webhooks: Webhook[];
 };
 
 type OASOperation = Record<string, unknown>;
@@ -34,6 +47,7 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
 
   const actions: Action[] = [];
   const usedNames = new Set<string>();
+  const redactions: SecretFinding[] = [];
   let truncated = false;
 
   const paths = (doc.paths ?? {}) as Record<string, unknown>;
@@ -54,10 +68,16 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
       const opParams = Array.isArray(op.parameters) ? op.parameters : [];
       const allParams = dedupeParams([...pathParams, ...opParams]);
 
-      const { paramsSchema, examples } = buildParamsSchema(allParams, op, authIn);
+      const { paramsSchema, examples, redactions: actionRedactions } = buildParamsSchema(allParams, op, authIn);
       const { responseSchema, errorSchema } = extractResponseSchemas(op);
 
       const actionName = uniqueName(toolName(op, method, path), usedNames);
+      // Qualify each location with the tool it belongs to, so an owner-facing
+      // record reads "create_charge: body.client_secret" rather than a bare
+      // field name repeated across a dozen operations.
+      for (const finding of actionRedactions) {
+        redactions.push({ ...finding, at: `${actionName}: ${finding.at}` });
+      }
       actions.push({
         id: createHash('sha1').update(`${method} ${path}`).digest('hex').slice(0, 8),
         name: actionName,
@@ -78,7 +98,117 @@ export function normalizeOpenApi(doc: Record<string, unknown>, sourceUrl?: strin
   }
 
   const { auth, authIn } = dominantAuth(actions);
-  return { name: String(name), rawBaseUrls, auth, authIn, actions, truncated, ...extractExternalDocs(doc) };
+  return {
+    name: String(name),
+    rawBaseUrls,
+    auth,
+    authIn,
+    actions,
+    truncated,
+    redactions,
+    webhooks: extractWebhooks(doc, actions, redactions),
+    ...extractExternalDocs(doc),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks and callbacks: the events the API emits.
+//
+// Neither was parsed before. A provider's own developers know which events
+// arrive and what they carry; an integrator learned it from prose, and an
+// agent could not learn it at all. Both spellings are read: the OpenAPI 3.1
+// top-level `webhooks` map (name -> path item), and the 3.0 operation-level
+// `callbacks` map (name -> runtime expression -> path item), which a client
+// registers per subscription.
+
+const MAX_WEBHOOKS = 50;
+const MAX_WEBHOOK_DESCRIPTION = 300;
+
+function webhookDescription(op: OASOperation, fallback: string): string {
+  const raw =
+    typeof op.summary === 'string' && op.summary.trim()
+      ? op.summary
+      : typeof op.description === 'string' && op.description.trim()
+        ? op.description
+        : fallback;
+  return raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_WEBHOOK_DESCRIPTION);
+}
+
+// The delivered payload is the webhook's request body. Sanitized and scrubbed
+// like any other schema: a provider's example payload is exactly where a
+// live signing secret or token ends up pasted.
+function webhookPayloadSchema(op: OASOperation, at: string, redactions: SecretFinding[]): JSONSchema | undefined {
+  const body = op.requestBody as Record<string, unknown> | undefined;
+  const content = body?.content as Record<string, { schema?: unknown } | undefined> | undefined;
+  if (!content || typeof content !== 'object') return undefined;
+  const first = Object.values(content).find((c) => c && typeof c === 'object' && c.schema !== undefined);
+  if (!first?.schema) return undefined;
+  const schema = sanitizeSchema(first.schema);
+  scrubSchemaExamples(schema, at, redactions);
+  return schema;
+}
+
+function webhooksFromPathItem(
+  name: string,
+  rawItem: unknown,
+  source: Webhook['source'],
+  callbackOf: string | undefined,
+  redactions: SecretFinding[],
+): Webhook[] {
+  if (typeof rawItem !== 'object' || rawItem === null) return [];
+  const item = rawItem as Record<string, unknown>;
+  const out: Webhook[] = [];
+  for (const method of HTTP_METHODS) {
+    const op = item[method] as OASOperation | undefined;
+    if (!op || typeof op !== 'object') continue;
+    const upper = method.toUpperCase();
+    const payloadSchema = webhookPayloadSchema(op, `webhook ${name}: body`, redactions);
+    out.push({
+      name,
+      method: upper,
+      description: webhookDescription(op, `${upper} ${name}`),
+      ...(payloadSchema ? { payloadSchema } : {}),
+      source,
+      ...(callbackOf ? { callbackOf } : {}),
+    });
+  }
+  return out;
+}
+
+function extractWebhooks(doc: Record<string, unknown>, actions: Action[], redactions: SecretFinding[]): Webhook[] {
+  const out: Webhook[] = [];
+  const push = (w: Webhook) => {
+    if (out.length < MAX_WEBHOOKS) out.push(w);
+  };
+
+  const top = doc.webhooks as Record<string, unknown> | undefined;
+  if (top && typeof top === 'object') {
+    for (const [name, item] of Object.entries(top)) {
+      for (const w of webhooksFromPathItem(name, item, 'webhooks', undefined, redactions)) push(w);
+    }
+  }
+
+  const paths = (doc.paths ?? {}) as Record<string, unknown>;
+  for (const [path, rawItem] of Object.entries(paths)) {
+    if (typeof rawItem !== 'object' || rawItem === null) continue;
+    const pathItem = rawItem as Record<string, unknown>;
+    for (const method of HTTP_METHODS) {
+      const op = pathItem[method] as OASOperation | undefined;
+      const callbacks = op?.callbacks as Record<string, unknown> | undefined;
+      if (!callbacks || typeof callbacks !== 'object') continue;
+      // Actions carry the operation's own method and path, so the registering
+      // tool is a direct lookup — after collision resolution, which is why the
+      // name is read back off the action rather than recomputed.
+      const owner = actions.find((a) => a.method === method.toUpperCase() && a.path === path)?.name;
+      for (const [cbName, expressions] of Object.entries(callbacks)) {
+        if (typeof expressions !== 'object' || expressions === null) continue;
+        for (const item of Object.values(expressions as Record<string, unknown>)) {
+          for (const w of webhooksFromPathItem(cbName, item, 'callback', owner, redactions)) push(w);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 // Operation-level lifecycle: `deprecated: true` (OpenAPI) and `x-sunset`
@@ -303,10 +433,11 @@ function buildParamsSchema(
   params: OASParameter[],
   op: OASOperation,
   authIn?: AuthPlacement,
-): { paramsSchema: JSONSchema; examples: Example[] } {
+): { paramsSchema: JSONSchema; examples: Example[]; redactions: SecretFinding[] } {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   const exampleParams: Record<string, unknown> = {};
+  const redactions: SecretFinding[] = [];
 
   for (const p of params) {
     if (p.in !== 'path' && p.in !== 'query' && p.in !== 'header') continue;
@@ -315,13 +446,36 @@ function buildParamsSchema(
     if (p.in === 'header' && /^(authorization|cookie)$/i.test(p.name!)) continue;
 
     const schema = sanitizeSchema(p.schema ?? (p.type ? { type: p.type } : {}));
+    // The two exclusions above are name-based and auth-scheme-driven: they know
+    // about the DECLARED credential parameter and nothing else. A cURL import
+    // carries every other query param and non-standard auth header through with
+    // its live value attached as an example, so scan the value itself here.
+    scrubSchemaExamples(schema, p.name!, redactions);
     if (p.description && !schema.description) schema.description = p.description.slice(0, 300);
     schema['x-docentapi-in'] = p.in;
     properties[p.name!] = schema;
     if (p.in === 'path' || p.required) required.push(p.name!);
 
+    // scrubValue, not classifyValue: an example is not always a scalar. An
+    // array- or object-valued parameter example
+    // (`example: ["sk_live_…"]`) made classifyValue return null on the type
+    // guard, which this caller read as "clean" and published verbatim.
+    //
+    // It was worse for the p.schema.example branch. scrubSchemaExamples above
+    // DOES walk that value and does flag the secret — but sanitizeSchema copies
+    // `example` by reference, so it rewrites the sanitized copy while the line
+    // below re-reads the untouched original. The owner-facing receipt said the
+    // value had been withheld at the same moment it was published into
+    // actions.examples, which reaches the anonymous MCP surface via
+    // advisor/search.ts and the public product page.
+    //
+    // The body path a few lines down had this right from the start; these two
+    // now walk example values the same way.
     const ex = p.example ?? (p.schema as Record<string, unknown> | undefined)?.example;
-    if (ex !== undefined) exampleParams[p.name!] = ex;
+    if (ex !== undefined) {
+      const scrubbed = scrubValue(p.name!, ex, redactions);
+      if (scrubbed.value !== undefined) exampleParams[p.name!] = scrubbed.value;
+    }
   }
 
   const requestBody = op.requestBody as Record<string, unknown> | undefined;
@@ -332,6 +486,10 @@ function buildParamsSchema(
     const media = mediaType ? content[mediaType] : undefined;
     if (media && mediaType) {
       const bodySchema = sanitizeSchema((media.schema as Record<string, unknown>) ?? {});
+      // A cURL `-d '{"client_secret":"…"}'` reaches here as per-property
+      // examples (importer/curl.ts's inferSchema attaches one to every property
+      // at depth < 2), so the body schema needs the same scan as a parameter.
+      scrubSchemaExamples(bodySchema, 'body', redactions);
       bodySchema['x-docentapi-in'] = 'body';
       // Same vendor-annotation convention as x-docentapi-in above, and carried
       // on the schema rather than promoted to Action so ir.ts, the actions table
@@ -351,7 +509,13 @@ function buildParamsSchema(
           ? (Object.values(media.examples)[0] as Record<string, unknown> | undefined)?.value
           : undefined) ??
         (media.schema as Record<string, unknown> | undefined)?.example;
-      if (bodyExample !== undefined) exampleParams.body = bodyExample;
+      if (bodyExample !== undefined) {
+        // Walked rather than dropped whole: a body example is usually a mix of
+        // perfectly good fields and one credential, and discarding all of it
+        // would throw away what makes the endpoint legible.
+        const scrubbed = scrubValue('body', bodyExample, redactions);
+        if (scrubbed.value !== undefined) exampleParams.body = scrubbed.value;
+      }
     }
   }
 
@@ -362,7 +526,7 @@ function buildParamsSchema(
     additionalProperties: false,
   };
   const examples: Example[] = Object.keys(exampleParams).length ? [{ params: exampleParams }] : [];
-  return { paramsSchema, examples };
+  return { paramsSchema, examples, redactions: dedupeFindings(redactions) };
 }
 
 // Best-effort — the spec doc is already fully dereferenced upstream (see

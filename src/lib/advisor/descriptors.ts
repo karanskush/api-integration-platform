@@ -66,7 +66,7 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
   descriptor(
     'describe_fields',
     'Describe fields',
-    'Every field an operation accepts or returns, flattened to addressable paths with their types, allowed values, constraints, and — for inputs — where each value is supposed to come from. Use this to answer "what data can I actually send here", especially for a nested request body.',
+    'Every field an operation accepts or returns, flattened to addressable paths with their types, allowed values, constraints, and — for inputs — where each value is supposed to come from. Where this API has been analysed against its own documentation, a field also carries what it MEANS and any business rule governing it, with the source of that reading. Where the API\'s owner answered a question about a field, it is marked owner-confirmed and their answer overrides our inference — check originSource before trusting an origin. Where a probe has sent each declared value to the live API, the field also reports which ones were actually accepted - a value under allowedObserved.rejected is declared by the spec but not honoured. Use this to answer "what data can I actually send here", especially for a nested request body.',
     {
       tool: TOOL_NAME_ARG,
       direction: {
@@ -111,7 +111,7 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
   descriptor(
     'get_call_sequence',
     'Get call sequence',
-    'The ordered prerequisites for calling an operation: which identifiers it needs, which other operations produce them, and what has to be authenticated first. Call this before invoking any operation whose path contains an identifier, instead of guessing one.',
+    'The ordered prerequisites for calling an operation: which identifiers it needs, which other operations produce them, and what has to be authenticated first. Where a link has been confirmed by actually running it against the live API, the producer carries a receipt saying so - check derivedFrom and the verified field on each producer to tell a proven link from an inferred one. Call this before invoking any operation whose path contains an identifier, instead of guessing one.',
     { tool: TOOL_NAME_ARG },
     ['tool'],
   ),
@@ -151,6 +151,24 @@ export const ADVISOR_TOOLS: ToolDescriptor[] = [
       },
     },
     ['tool'],
+  ),
+  descriptor(
+    'get_workflows',
+    'Get workflows',
+    'The multi-step flows this API supports: for each operation that has prerequisites, the ordered set of calls that reaches it, which values a previous step supplies automatically, and which ones you still have to choose. Emitted as Arazzo 1.0.1 steps. Call this before planning a multi-call task, instead of inferring an order from endpoint names.',
+    {
+      workflow: {
+        type: 'string',
+        description: 'A workflowId from a previous call, to get its full steps. Omit to list all workflows.',
+      },
+      limit: { type: 'integer', description: 'Maximum workflows to list (1-50, default 25).' },
+    },
+  ),
+  descriptor(
+    'get_webhooks',
+    'Get webhooks',
+    'The events this API EMITS, as the spec declares them: OpenAPI 3.1 webhooks and 3.0 callbacks, with delivery method, description and the top-level payload fields. Call this before building anything that waits for the API to tell you something happened, instead of polling. Pass a name for the full payload schema. Declared, not observed — no delivery has been received.',
+    { name: { type: 'string', description: 'A webhook or callback name from the list, for its full payload schema. Omit to list all.' } },
   ),
   descriptor(
     'check_freshness',

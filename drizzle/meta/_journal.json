@@ -78,6 +78,34 @@
       "when": 1788086400000,
       "tag": "0010_operation_observations",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788950000000,
+      "tag": "0011_score_live_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788960000000,
+      "tag": "0012_lineage_executions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788970000000,
+      "tag": "0013_audit_outlives_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788970060000,
+      "tag": "0014_spec_version_webhooks",
+      "breakpoints": true
     }
   ]
 }

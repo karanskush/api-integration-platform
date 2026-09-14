@@ -23,6 +23,8 @@ describe('advisor registry', () => {
       'docentapi_explain_error',
       'docentapi_get_score_explanation',
       'docentapi_generate_contract_test',
+      'docentapi_get_workflows',
+      'docentapi_get_webhooks',
       'docentapi_check_freshness',
       'docentapi_get_changes_since',
     ]);

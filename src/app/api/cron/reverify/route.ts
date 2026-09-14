@@ -2,6 +2,7 @@ import { dbReady, getDb } from '@/lib/db';
 import { verifyCronRequest } from '@/lib/cronAuth';
 import { purgeApiSurfaces } from '@/lib/purge';
 import { batchSize, findCandidates, reverifyOne, verifyIntervalHours } from '@/lib/reverify';
+import { reapAbandonedScoreRuns } from '@/lib/scoreRunReaper';
 
 // Probes make real upstream requests against several APIs per run, so this
 // needs the long end of the function budget rather than the default.
@@ -24,6 +25,12 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const started = Date.now();
+
+  // Before anything else: close out runs whose function died mid-flight. This
+  // is the only job that runs on a schedule across every API, so it is the
+  // only place that can see them.
+  const abandoned = await reapAbandonedScoreRuns(db);
+
   const candidates = await findCandidates(db);
 
   const results = [];
@@ -43,6 +50,7 @@ export async function POST(req: Request) {
     intervalHours: verifyIntervalHours(),
     batchSize: batchSize(),
     considered: candidates.length,
+    abandonedRunsClosed: abandoned,
     verified: results.filter((r) => r.scored).length,
     specsUpdated: results.filter((r) => r.specStatus === 'updated').length,
     behaviourChanges: results.reduce((sum, r) => sum + (r.canary?.changes ?? 0), 0),

@@ -20,6 +20,8 @@ export const ADVISOR_TOOL_NAMES = [
   'docentapi_explain_error',
   'docentapi_get_score_explanation',
   'docentapi_generate_contract_test',
+  'docentapi_get_workflows',
+  'docentapi_get_webhooks',
   'docentapi_check_freshness',
   'docentapi_get_changes_since',
 ] as const;
@@ -89,6 +91,12 @@ export function isProbeBacked(tool: AdvisorToolName, output: unknown): boolean {
     case 'docentapi_trace_field':
     case 'docentapi_generate_contract_test':
     case 'docentapi_check_freshness':
+    // get_workflows derives its step order from the lineage graph, which is
+    // spec structure. A workflow here is a plan, never a receipt.
+    case 'docentapi_get_workflows':
+    // get_webhooks reads the spec's own webhooks/callbacks declarations; no
+    // delivery has been observed, and its payload says so.
+    case 'docentapi_get_webhooks':
       return false;
   }
 }
@@ -293,6 +301,38 @@ export function describeToolCall(
         count: stale ? 'score is stale' : (str(o?.lastCheckedAt) ? 'spec checked recently' : null),
         // A stale score is exactly the kind of caveat the drift tone exists for.
         tone: stale ? 'drift' : 'neutral',
+      };
+    }
+
+    case 'docentapi_get_webhooks': {
+      const name = quoted(i.name);
+      const count = num(o?.count);
+      if (name) {
+        return { ...base, running: `reading webhook ${name}…`, done: `read webhook ${name}` };
+      }
+      return {
+        ...base,
+        running: 'listing webhooks…',
+        done: 'listed webhooks',
+        count: count === 0 ? 'none declared' : count !== null ? `${count} declared` : null,
+      };
+    }
+
+    case 'docentapi_get_workflows': {
+      const single = str(o?.workflowId);
+      const total = num(o?.total);
+      const returned = num(o?.returned);
+      return {
+        ...base,
+        running: single ? 'reading that workflow…' : 'looking up multi-step workflows…',
+        done: single ? 'read the workflow' : 'looked up workflows',
+        count: single
+          ? `${num(o?.steps ? (o.steps as unknown[]).length : null) ?? '?'} steps`
+          : total === 0
+            ? 'no multi-step workflows'
+            : returned !== null
+              ? `${returned}${total !== null && total > returned ? ` of ${total}` : ''} workflows`
+              : null,
       };
     }
 

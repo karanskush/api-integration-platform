@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { callActionTool, invokeAction, resolveNameCollisions, type ToolCallTarget } from '../mcpTools';
+import { buildUpstreamRequest } from '../upstream';
 import { SsrfError } from '../ssrf';
 import type { Action } from '../ir';
 
@@ -145,5 +146,37 @@ describe('resolveNameCollisions', () => {
 
   it('handles an empty action list', () => {
     expect(resolveNameCollisions([])).toEqual([]);
+  });
+});
+
+// Probe traffic identifying itself. Every outbound call the platform makes used
+// to carry 'docentapi-playground/0.1', including probe and canary traffic — so
+// a provider reading their access log saw automated verification labelled as
+// somebody clicking around a playground. The design doc requires probe traffic
+// to be identifiable and contactable.
+describe('outbound user-agent', () => {
+  // Local name so it does not shadow this file's `action()` factory.
+  const uaAction: Action = {
+    id: 'a1',
+    name: 'get_thing',
+    description: 'Get',
+    method: 'GET',
+    path: '/things',
+    paramsSchema: { type: 'object', properties: {} },
+    auth: 'none',
+    safety: 'read',
+    examples: [],
+  };
+
+  it('defaults to the playground agent, so nothing existing changes', () => {
+    const req = buildUpstreamRequest(uaAction, {}, {}, 'https://api.example.com');
+    expect(req.headers['user-agent']).toBe('docentapi-playground/0.1');
+  });
+
+  it('lets a caller say what the traffic actually is', () => {
+    const req = buildUpstreamRequest(uaAction, {}, {}, 'https://api.example.com', undefined, {
+      userAgent: 'docentapi-probe/1.0 (+https://www.docentapi.xyz/probes)',
+    });
+    expect(req.headers['user-agent']).toContain('docentapi-probe');
   });
 });
