@@ -85,3 +85,63 @@ export function withBudget(inner: typeof invokeAction, budget: OutboundBudget): 
     return inner(...args);
   }) as typeof invokeAction;
 }
+
+// ---------------------------------------------------------------------------
+// Two more decorators on the same seam. They compose with withBudget exactly
+// the way countingInvoke does — each is (typeof invokeAction) → (typeof
+// invokeAction) — so an orchestrator stacks them once and no probe has to
+// remember they exist.
+
+export class WriteFenceError extends Error {
+  constructor() {
+    super('fenced');
+    this.name = 'WriteFenceError';
+  }
+}
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+export type WriteFenceOptions = {
+  environment?: 'production' | 'sandbox';
+  /** Tool names a sandbox write runner has been authorised to mutate. */
+  allow?: ReadonlySet<string>;
+};
+
+/**
+ * Refuses any mutating request the caller was not explicitly authorised to
+ * make. The read engine wraps every probe with an empty allow-set, so a probe
+ * that classified an operation wrongly, or a future probe written carelessly,
+ * cannot mutate anything — the fence is structural, not a convention. Writes
+ * pass only on a sandbox environment AND for a tool the policy approved.
+ */
+export function withWriteFence(inner: typeof invokeAction, opts: WriteFenceOptions = {}): typeof invokeAction {
+  return (async (...args: Parameters<typeof invokeAction>) => {
+    const [action] = args;
+    const method = action.method.toUpperCase();
+    const allowed = READ_METHODS.has(method) || (opts.environment === 'sandbox' && opts.allow?.has(action.name) === true);
+    if (!allowed) throw new WriteFenceError();
+    return inner(...args);
+  }) as typeof invokeAction;
+}
+
+/**
+ * Keeps sequential calls at least `minIntervalMs` apart. Providers on tight
+ * per-minute limits (Dub's free plan allows 60) see a run as a steady trickle
+ * rather than a burst, and the run stays well clear of the 429 that would
+ * abort it.
+ */
+export function withPacing(
+  inner: typeof invokeAction,
+  minIntervalMs: number,
+  deps: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+): typeof invokeAction {
+  const now = deps.now ?? Date.now;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastStartedAt = -Infinity;
+  return (async (...args: Parameters<typeof invokeAction>) => {
+    const wait = lastStartedAt + minIntervalMs - now();
+    if (wait > 0) await sleep(wait);
+    lastStartedAt = now();
+    return inner(...args);
+  }) as typeof invokeAction;
+}

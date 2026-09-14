@@ -111,15 +111,44 @@ describe('runErrorQuality', () => {
     expect(result.subscore).toBe(0);
   });
 
-  it('drops a required param from example params to corrupt the call', async () => {
+  it('omits a required query parameter and sends the request with validation off', async () => {
+    const a = action({
+      path: '/things',
+      paramsSchema: {
+        type: 'object',
+        properties: { q: { type: 'string', 'x-docentapi-in': 'query' } },
+        required: ['q'],
+      },
+      examples: [{ params: { q: 'shoes' } }],
+    });
     let seenArgs: Record<string, unknown> | undefined;
-    const invoke: typeof invokeAction = async (_action, args) => {
+    let seenOpts: { validate?: boolean } | undefined;
+    const invoke: typeof invokeAction = async (_action, args, _target, _key, opts) => {
       seenArgs = args;
-      return { status: 400, latencyMs: 5, bodyText: JSON.stringify({ message: 'id is required in the path.' }) };
+      seenOpts = opts;
+      return { status: 400, latencyMs: 5, bodyText: JSON.stringify({ message: 'q is required for this search.' }) };
+    };
+    const ctx: ProbeContext = { record: record({ actions: [a] }), invoke };
+    await runErrorQuality(ctx);
+    // The spec forbids this request; Ajv would have refused it client-side and
+    // the probe would never have reached the wire — which is exactly what
+    // happened in production before the validate option existed.
+    expect(seenArgs).toEqual({});
+    expect(seenOpts?.validate).toBe(false);
+  });
+
+  it('never omits a path parameter — a URL with a hole cannot be sent — and poisons it instead', async () => {
+    let seenArgs: Record<string, unknown> | undefined;
+    let seenOpts: { validate?: boolean } | undefined;
+    const invoke: typeof invokeAction = async (_action, args, _target, _key, opts) => {
+      seenArgs = args;
+      seenOpts = opts;
+      return { status: 404, latencyMs: 5, bodyText: JSON.stringify({ message: 'No thing found for that id.' }) };
     };
     const ctx: ProbeContext = { record: record(), invoke };
     await runErrorQuality(ctx);
-    expect(seenArgs).toEqual({});
+    expect(seenArgs?.id).toBe('__docentapi_invalid__');
+    expect(seenOpts?.validate).not.toBe(false);
   });
 
   it('falls back to mutating a path-placed param when there is no required array', async () => {
@@ -220,5 +249,14 @@ describe('runErrorQuality lifecycle headers', () => {
     expect(signals[0].payload).toMatchObject({ kind: 'deprecated', url: 'https://docs.example/d' });
     // Grading is untouched: a readable message still earns full marks.
     expect(result.subscore).toBe(25);
+  });
+});
+
+describe('an auth failure is not a validation error', () => {
+  it('does not grade a 401 or 403 body as error quality', async () => {
+    const invoke = fakeInvoke(() => ({ status: 401, bodyText: JSON.stringify({ message: 'Missing Authorization header, please sign in.' }) }));
+    const result = await runErrorQuality({ record: record(), invoke });
+    expect(result.insufficientData).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toEqual([]);
   });
 });

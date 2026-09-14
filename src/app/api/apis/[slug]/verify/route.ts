@@ -12,7 +12,8 @@ import { invokeAction } from '@/lib/mcpTools';
 import { runScoreEngine } from '@/lib/probes/run';
 import { purgeApiSurfaces } from '@/lib/purge';
 import { getLimiter, tooMany } from '@/lib/ratelimit';
-import { applyScoreRun } from '@/lib/scoreWrite';
+import { probePaceMs } from '@/lib/reverify';
+import { applyEvidenceFacts, applyScoreRun } from '@/lib/scoreWrite';
 
 export const maxDuration = 60;
 
@@ -77,12 +78,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
 
   const [run] = await db.insert(scoreRuns).values({ apiId: api.id, status: 'running' }).returning();
 
+  // A pasted key is treated as production until the caller can say otherwise
+  // (slice 2 adds the environment choice to the request).
+  const environment = 'production' as const;
+
   try {
-    const result = await runScoreEngine(record, { upstreamKey, invoke: budgetedInvoke });
+    const result = await runScoreEngine(record, {
+      upstreamKey,
+      invoke: budgetedInvoke,
+      budget,
+      environment,
+      runId: run.id,
+      paceMs: probePaceMs(),
+    });
 
     await applyScoreRun(db, {
       apiId: api.id,
       specVersionId: api.currentSpecVersionId!,
+      environment,
       total: result.total,
       subscores: result.subscores,
       liveCalls: result.liveCalls,
@@ -92,7 +105,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
 
     await db
       .update(scoreRuns)
-      .set({ status: 'succeeded', findings: result, completedAt: new Date() })
+      .set({
+        status: 'succeeded',
+        findings: result,
+        probesRun: { version: 1, environment, stages: result.stages },
+        completedAt: new Date(),
+      })
       .where(eq(scoreRuns.id, run.id));
 
     // Executed Lineage on the manual path too.
@@ -112,12 +130,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       try {
         const executionPlan = buildExecutionPlan(record);
         const chainResult = await runLineageChains(
-          { record, upstreamKey, invoke: budgetedInvoke, budget },
+          { record, upstreamKey, invoke: budgetedInvoke, budget, environment },
           executionPlan,
         );
+        if (chainResult.evidence?.length) {
+          await applyEvidenceFacts(db, {
+            apiId: api.id,
+            specVersionId: api.currentSpecVersionId!,
+            environment,
+            evidence: chainResult.evidence,
+          });
+        }
         const applied = await applyLineageRun(db, {
           apiId: api.id,
           specVersionId: api.currentSpecVersionId!,
+          environment,
           chainsPlanned: executionPlan.chains.length,
           budgetLimit,
           result: chainResult,

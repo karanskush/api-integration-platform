@@ -5,7 +5,7 @@ import { createTestDb, type TestDb } from '../db/__tests__/testDb';
 import type { EvidenceFactInput } from '../evidence';
 import type { Action, ImportRecord } from '../ir';
 import { buildPersistStatements } from '../persist';
-import { buildScoreRunStatements, type ScoreRunInput } from '../scoreWrite';
+import { buildEvidenceStatements, buildScoreRunStatements, type ScoreRunInput } from '../scoreWrite';
 
 let db: TestDb;
 
@@ -370,5 +370,83 @@ describe('a run that reached the API records its sample size', () => {
     expect(row.liveCallsSucceeded).toBe(4);
     expect(row.observedPoints).toBe(35);
     expect(row.staticPoints).toBe(45);
+  });
+});
+
+
+// Which environment a fact came from is a property of the credential that
+// produced it, and it must be recorded — a sandbox observation filed as
+// production truth is the confusion the column exists to prevent.
+describe('environment stamping', () => {
+  it('stamps live facts with the run environment and structural facts static', async () => {
+    const persisted = await makeApi('env-1');
+    const evidence: EvidenceFactInput[] = [
+      { kind: 'probe.doc_drift', source: 'probe', actionId: 'a1', payload: { actionId: 'a1', matchedFields: 1, declaredFields: 1, mismatches: [] } },
+      { kind: 'probe.idempotency_signal', source: 'probe', actionId: 'a1', payload: { actionId: 'a1', hasIdempotencySignal: false } },
+    ];
+    const input: ScoreRunInput = {
+      apiId: persisted.apiId,
+      specVersionId: persisted.specVersionId,
+      environment: 'sandbox',
+      total: 50,
+      subscores: { authClarity: 25, errorQuality: null, docDrift: 25, idempotency: 0 },
+      liveCalls: { attempted: 1, succeeded: 1, failed: 0 },
+      points: { observed: 25, static: 25, max: 75 },
+      evidence,
+    };
+    await runSequentially((await buildScoreRunStatements(db, input)).statements);
+
+    const rows = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, persisted.apiId));
+    const byKind = Object.fromEntries(rows.map((r) => [r.kind, r.environment]));
+    expect(byKind['probe.doc_drift']).toBe('sandbox');
+    expect(byKind['probe.idempotency_signal']).toBe('static');
+  });
+
+  it('honours an environment a fact already carries', async () => {
+    const persisted = await makeApi('env-2');
+    const statements = await buildEvidenceStatements(db, {
+      apiId: persisted.apiId,
+      specVersionId: persisted.specVersionId,
+      environment: 'production',
+      evidence: [{ kind: 'probe.doc_drift', source: 'probe', environment: 'sandbox', payload: { actionId: 'a1', matchedFields: 1, declaredFields: 1, mismatches: [] } }],
+    });
+    await runSequentially(statements);
+    const rows = await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, persisted.apiId));
+    const row = rows.find((r) => r.kind === 'probe.doc_drift');
+    expect(row?.environment).toBe('sandbox');
+  });
+});
+
+// The canary and the chain runner see headers too. Until buildEvidenceStatements
+// existed their evidence had no way into the database without a score.
+describe('buildEvidenceStatements', () => {
+  it('writes facts and the lifecycle ledger row without touching scores', async () => {
+    const persisted = await makeApi('ev-1');
+    const statements = await buildEvidenceStatements(db, {
+      apiId: persisted.apiId,
+      specVersionId: persisted.specVersionId,
+      evidence: [
+        { kind: 'probe.rate_limit', source: 'probe', actionId: 'a1', payload: { actionId: 'a1', tool: 'get_thing', method: 'GET', path: '/things/{id}', limit: 60, windowSeconds: null, header: 'x-ratelimit-limit', raw: '60' } },
+        { kind: 'probe.lifecycle_signal', source: 'probe', actionId: 'a1', payload: { actionId: 'a1', tool: 'get_thing', method: 'GET', path: '/things/{id}', kind: 'sunset', header: 'sunset', raw: 'Wed, 30 Jun 2027 23:59:59 GMT', at: '2027-06-30T23:59:59.000Z' } },
+      ],
+    });
+    await runSequentially(statements);
+
+    // makeApi persists the record's own parser facts too; only the probe facts are this test's.
+    const facts = (await db.select().from(schema.evidenceFacts).where(eq(schema.evidenceFacts.apiId, persisted.apiId))).filter((f) =>
+      f.kind.startsWith('probe.'),
+    );
+    expect(facts.map((f) => f.kind).sort()).toEqual(['probe.lifecycle_signal', 'probe.rate_limit']);
+    expect(facts.every((f) => f.environment === 'production')).toBe(true);
+    const scoreRows = await db.select().from(schema.scores).where(eq(schema.scores.apiId, persisted.apiId));
+    expect(scoreRows).toHaveLength(0);
+    const changes = await db.select().from(schema.apiChanges).where(eq(schema.apiChanges.apiId, persisted.apiId));
+    expect(changes.length).toBeGreaterThan(0);
+  });
+
+  it('is a no-op for an empty batch', async () => {
+    const persisted = await makeApi('ev-2');
+    const statements = await buildEvidenceStatements(db, { apiId: persisted.apiId, specVersionId: persisted.specVersionId, evidence: [] });
+    expect(statements).toEqual([]);
   });
 });

@@ -234,3 +234,11 @@ describe('a hostile spec cannot park a payload in the enum', () => {
     expect(JSON.stringify(result)).not.toContain('yyyy');
   });
 });
+
+describe('an auth failure is not a rejected value', () => {
+  it('records nothing on a 401', async () => {
+    const invoke = (async () => ({ status: 401, latencyMs: 5, bodyText: '{"error":"unauthorized"}' })) as typeof invokeAction;
+    const evidence = await runValueDomain({ record: record([withStatusEnum()]), invoke });
+    expect(evidence.filter((e) => e.kind === 'probe.value_domain')).toEqual([]);
+  });
+});

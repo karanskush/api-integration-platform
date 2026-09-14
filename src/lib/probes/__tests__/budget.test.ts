@@ -6,7 +6,7 @@
 // every probe already calls through so no probe has to remember it.
 
 import { describe, expect, it, vi } from 'vitest';
-import { BudgetExhaustedError, createBudget, withBudget } from '../budget';
+import { BudgetExhaustedError, WriteFenceError, createBudget, withBudget, withPacing, withWriteFence } from '../budget';
 import type { invokeAction } from '../../mcpTools';
 
 const ok = (async () => ({ status: 200, latencyMs: 1, bodyText: '{}' })) as typeof invokeAction;
@@ -110,5 +110,63 @@ describe('withBudget', () => {
     await expect(probeB(...callArgs)).rejects.toBeInstanceOf(BudgetExhaustedError);
 
     expect(inner).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('withWriteFence', () => {
+  const okInvoke = (async () => ({ status: 200, latencyMs: 1, bodyText: '{}' })) as typeof invokeAction;
+  const act = (method: string, name = 'op') =>
+    ({ id: 'x', name, description: '', method, path: '/x', paramsSchema: { type: 'object', properties: {} }, auth: 'none', safety: 'read', examples: [] }) as Parameters<typeof invokeAction>[0];
+  const target = { baseUrls: ['https://api.example.com'] };
+
+  it('passes reads through', async () => {
+    const fenced = withWriteFence(okInvoke, {});
+    await expect(fenced(act('GET'), {}, target, undefined)).resolves.toMatchObject({ status: 200 });
+    await expect(fenced(act('HEAD'), {}, target, undefined)).resolves.toMatchObject({ status: 200 });
+  });
+
+  it('refuses every mutating method when nothing is authorised', async () => {
+    const inner = vi.fn(okInvoke);
+    const fenced = withWriteFence(inner as typeof invokeAction, {});
+    for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      await expect(fenced(act(m), {}, target, undefined)).rejects.toBeInstanceOf(WriteFenceError);
+    }
+    expect(inner).not.toHaveBeenCalled();
+  });
+
+  it('refuses a write on production even when the tool is on the allow-list', async () => {
+    const fenced = withWriteFence(okInvoke, { environment: 'production', allow: new Set(['create_thing']) });
+    await expect(fenced(act('POST', 'create_thing'), {}, target, undefined)).rejects.toBeInstanceOf(WriteFenceError);
+  });
+
+  it('allows exactly the authorised tools on a sandbox', async () => {
+    const fenced = withWriteFence(okInvoke, { environment: 'sandbox', allow: new Set(['create_thing']) });
+    await expect(fenced(act('POST', 'create_thing'), {}, target, undefined)).resolves.toMatchObject({ status: 200 });
+    await expect(fenced(act('POST', 'create_other'), {}, target, undefined)).rejects.toBeInstanceOf(WriteFenceError);
+  });
+
+  it('carries no request detail in the error', () => {
+    expect(new WriteFenceError().message).toBe('fenced');
+  });
+});
+
+describe('withPacing', () => {
+  it('spaces sequential calls by at least the interval, using the injected clock', async () => {
+    let clock = 1_000;
+    const slept: number[] = [];
+    const inner = (async () => ({ status: 200, latencyMs: 1, bodyText: '{}' })) as typeof invokeAction;
+    const paced = withPacing(inner, 250, {
+      now: () => clock,
+      sleep: async (ms) => {
+        slept.push(ms);
+        clock += ms;
+      },
+    });
+    const a = { id: 'x', name: 'op', description: '', method: 'GET', path: '/x', paramsSchema: { type: 'object', properties: {} }, auth: 'none', safety: 'read', examples: [] } as Parameters<typeof invokeAction>[0];
+    const target = { baseUrls: ['https://api.example.com'] };
+    await paced(a, {}, target, undefined); // first call: no wait
+    clock += 100; // the call took 100ms
+    await paced(a, {}, target, undefined); // 150ms still owed
+    expect(slept).toEqual([150]);
   });
 });

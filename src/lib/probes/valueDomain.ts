@@ -19,7 +19,9 @@
 
 import type { EvidenceFactInput } from '../evidence';
 import type { Action } from '../ir';
-import { invokeAction } from '../mcpTools';
+import { specOnlyFiller, type ParamFiller } from '../paramFill';
+import { callProbe } from './context';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
 // Deliberately small. This is a spot check that catches an obviously-wrong
@@ -34,19 +36,11 @@ const MAX_ENUM_VALUES = 3;
 // parameter, so refusing it costs nothing and keeps a hostile spec from parking
 // a payload in either place.
 const MAX_ENUM_VALUE_CHARS = 120;
-const STEP_TIMEOUT_MS = 8_000;
-const PROBE_USER_AGENT = 'docentapi-probe/1.0 (+https://www.docentapi.xyz)';
-
 type ParamSchema = Record<string, unknown>;
 
 function paramsOf(action: Action): Array<{ name: string; schema: ParamSchema }> {
   const props = (action.paramsSchema.properties ?? {}) as Record<string, ParamSchema>;
   return Object.entries(props).map(([name, schema]) => ({ name, schema }));
-}
-
-function requiredNames(action: Action): string[] {
-  const required = action.paramsSchema.required;
-  return Array.isArray(required) ? required.filter((r): r is string => typeof r === 'string') : [];
 }
 
 function isSuccess(status: number): boolean {
@@ -76,21 +70,15 @@ function enumCandidates(action: Action): Array<{ name: string; values: string[] 
 
 // Every required param except the one under test must be fillable, or a
 // rejection tells us about the missing OTHER parameter rather than about this
-// one — which would be a false finding rather than a missing one.
-function baseParamsFor(action: Action, exclude: string): Record<string, unknown> | null {
-  const example = action.examples[0]?.params ?? {};
-  const out: Record<string, unknown> = {};
-  for (const name of requiredNames(action)) {
-    if (name === exclude) continue;
-    if (!(name in example)) return null;
-    out[name] = example[name];
-  }
-  return out;
+// one — which would be a false finding rather than a missing one. The shared
+// filler decides what "fillable" means, exactly as it does for every probe.
+function baseParamsFor(action: Action, exclude: string, fill: ParamFiller, runId?: string): Record<string, unknown> | null {
+  const outcome = fill(action, { exclude, runId });
+  return outcome.ok ? outcome.params : null;
 }
 
 export async function runValueDomain(ctx: ProbeContext): Promise<EvidenceFactInput[]> {
-  const invoke = ctx.invoke ?? invokeAction;
-  const target = { baseUrls: ctx.record.baseUrls, authIn: ctx.record.authIn };
+  const fill = ctx.fill ?? specOnlyFiller;
   const evidence: EvidenceFactInput[] = [];
 
   const candidates = ctx.record.actions
@@ -100,19 +88,23 @@ export async function runValueDomain(ctx: ProbeContext): Promise<EvidenceFactInp
 
   for (const action of candidates) {
     for (const { name, values } of enumCandidates(action)) {
-      const base = baseParamsFor(action, name);
+      const base = baseParamsFor(action, name, fill, ctx.runId);
       if (base === null) continue;
 
       for (const value of values) {
         try {
-          const res = await invoke(action, { ...base, [name]: value }, target, ctx.upstreamKey, {
-            timeoutMs: STEP_TIMEOUT_MS,
-            userAgent: PROBE_USER_AGENT,
-          });
+          const res = await callProbe(ctx, action, { ...base, [name]: value });
+          // Rate-limit and lifecycle headers ride along on every response; this
+          // probe used to be one of three that dropped them.
+          evidence.push(...lifecycleEvidence(action, res.headers));
           // A 5xx says the API broke, not that it rejected the value — the same
           // rule docDrift and the canary now apply. Recording it as a rejection
           // would tell an agent to stop sending a value that is perfectly good.
           if (res.status >= 500) continue;
+          // Nor does a 401/403: the API rejected the caller before it looked at
+          // the value. Recording that as "rejected 'sold'" would tell an agent
+          // a perfectly good enum member is refused.
+          if (res.status === 401 || res.status === 403) continue;
           evidence.push({
             kind: 'probe.value_domain',
             source: 'probe',

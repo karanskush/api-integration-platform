@@ -34,7 +34,7 @@ import { runLineageChains } from './probes/lineageChain';
 import { applyLineageRun } from './lineageRun';
 import { invokeAction } from './mcpTools';
 import { runScoreEngine } from './probes/run';
-import { applyScoreRun } from './scoreWrite';
+import { applyEvidenceFacts, applyScoreRun } from './scoreWrite';
 import { resolveCredential } from './vaultStore';
 
 // How stale a verified score may get before it is re-run. Env-overridable
@@ -56,6 +56,15 @@ export function batchSize(): number {
 
 // Plans whose scheduledVerification flag is set — derived from plans.ts rather
 // than hardcoded, so a pricing change doesn't need a change here too.
+// Minimum gap between a run's outbound calls. A provider on a per-minute limit
+// sees a steady trickle rather than a burst, and the run stays clear of the 429
+// that would abort it. Env-overridable like every other knob here.
+export function probePaceMs(): number {
+  const raw = process.env.PROBE_PACE_MS;
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 250;
+}
+
 export function scheduledPlans(): string[] {
   return (Object.keys(PLAN_LIMITS) as Plan[]).filter((p) => PLAN_LIMITS[p].scheduledVerification);
 }
@@ -216,8 +225,19 @@ export async function reverifyOne(
 
   const [run] = await db.insert(scoreRuns).values({ apiId: candidate.apiId, status: 'running' }).returning();
 
+  // Until sandbox credentials resolve here (slice 2), every scheduled run is a
+  // production run — stated explicitly rather than assumed by a default.
+  const environment = 'production' as const;
+
   try {
-    const result = await scoreEngine(record, { upstreamKey, invoke: budgetedInvoke });
+    const result = await scoreEngine(record, {
+      upstreamKey,
+      invoke: budgetedInvoke,
+      budget,
+      environment,
+      runId: run.id,
+      paceMs: probePaceMs(),
+    });
 
     // Re-read the current version: step 1 may have moved it, and writing a
     // score against the pre-import version would mis-attribute the evidence.
@@ -232,6 +252,7 @@ export async function reverifyOne(
     await applyScoreRun(db, {
       apiId: candidate.apiId,
       specVersionId,
+      environment,
       total: result.total,
       subscores: result.subscores,
       liveCalls: result.liveCalls,
@@ -241,7 +262,12 @@ export async function reverifyOne(
 
     await db
       .update(scoreRuns)
-      .set({ status: 'succeeded', findings: result, completedAt: new Date() })
+      .set({
+        status: 'succeeded',
+        findings: result,
+        probesRun: { version: 1, environment, stages: result.stages },
+        completedAt: new Date(),
+      })
       .where(eq(scoreRuns.id, run.id));
 
     // The canary rides the same run: the credential is already resolved, the
@@ -250,11 +276,15 @@ export async function reverifyOne(
     // not undo a good score — the score is written above and stays written.
     let canaryOutcome: ReverifyOutcome['canary'];
     try {
-      const { snapshots, inconclusive } = await canary({ record, upstreamKey, invoke: budgetedInvoke });
+      const { snapshots, inconclusive, evidence } = await canary({ record, upstreamKey, invoke: budgetedInvoke, environment });
+      // The canary sees rate-limit and lifecycle headers on every sample; this
+      // used to be destructured away and never reached the database.
+      await applyEvidenceFacts(db, { apiId: candidate.apiId, specVersionId, environment, evidence });
       const applied = snapshots.length
         ? await applyCanaryRun(db, {
             apiId: candidate.apiId,
             specVersionId,
+            environment,
             snapshots,
             actionsByKey: new Map(record.actions.map((a) => [a.id, a])),
           })
@@ -281,10 +311,14 @@ export async function reverifyOne(
     if (planLimits.chainVerification) {
       try {
         const plan = buildExecutionPlan(record);
-        const chainResult = await chains({ record, upstreamKey, invoke: budgetedInvoke, budget }, plan);
+        const chainResult = await chains({ record, upstreamKey, invoke: budgetedInvoke, budget, environment }, plan);
+        if (chainResult.evidence?.length) {
+          await applyEvidenceFacts(db, { apiId: candidate.apiId, specVersionId, environment, evidence: chainResult.evidence });
+        }
         const applied = await applyLineageRun(db, {
           apiId: candidate.apiId,
           specVersionId,
+          environment,
           chainsPlanned: plan.chains.length,
           budgetLimit,
           result: chainResult,

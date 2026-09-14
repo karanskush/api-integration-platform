@@ -85,6 +85,14 @@ export type InvokeActionOptions = {
   // a provider reading their access log can tell automated verification traffic
   // from a person using the playground, and can find us.
   userAgent?: string;
+  // Whether to validate `args` against the action's schema before sending.
+  // Defaults to true, and callActionTool never turns it off — the MCP surface
+  // must not forward a malformed request. The error-quality probe sets it
+  // false on purpose: its whole job is to send a request the spec forbids
+  // (a required parameter omitted) and grade how the API says no. Before this
+  // option existed Ajv rejected that request client-side, so the probe never
+  // reached the wire in production and graded nothing.
+  validate?: boolean;
 };
 
 // Pure validate → auth-check → upstream-call → decode-body core, shared by
@@ -113,8 +121,10 @@ export async function invokeAction(
   const baseUrl = target.baseUrls[0];
   if (!baseUrl) throw new NoBaseUrlError();
 
-  const invalid = validateParams(action, args);
-  if (invalid) throw new InvalidArgsError(invalid);
+  if (opts.validate ?? true) {
+    const invalid = validateParams(action, args);
+    if (invalid) throw new InvalidArgsError(invalid);
+  }
 
   const requireAuth = opts.requireAuth ?? true;
   if (requireAuth && action.auth !== 'none' && !upstreamKey) throw new AuthRequiredError(action.auth);

@@ -8,9 +8,14 @@
 // does anything else, and it takes several samples of each — which is exactly
 // why a write operation could never be included: repeating a write is not a
 // sample, it is N side effects. Bodies are inferred into shapes and dropped.
+//
+// DETERMINISTIC PARAMETERS. The canary compares a shape against the one it saw
+// last run, so the request has to be the same request: it fills from the spec
+// only — documented example, then declared default/enum — and never from the
+// harvested pool, whose ids differ from run to run and would turn a different
+// record's shape into "drift".
 
 import type { Action } from '../ir';
-import { invokeAction } from '../mcpTools';
 import {
   MIN_SAMPLES,
   inferShape,
@@ -19,6 +24,8 @@ import {
   type ObservedShape,
   type OperationSnapshot,
 } from '../changes/observation';
+import { fillParams } from '../paramFill';
+import { callProbe } from './context';
 import { lifecycleEvidence } from './lifecycle';
 import type { EvidenceFactInput } from '../evidence';
 import type { ProbeContext } from './types';
@@ -66,35 +73,33 @@ export type CanaryResult = {
   inconclusive: InconclusiveOperation[];
 };
 
-// Can a request for this operation actually be built? Either it demands
-// nothing, or the spec gave an example for everything it demands. Guessing a
-// required identifier would produce a 404 and a shape describing an error.
-function canConstruct(action: Action): boolean {
-  const required = Array.isArray(action.paramsSchema.required)
-    ? action.paramsSchema.required.filter((k): k is string => typeof k === 'string')
-    : [];
-  if (required.length === 0) return true;
-  const example = action.examples[0]?.params ?? {};
-  return required.every((key) => key in example);
+// Can a request for this operation actually be built from the spec alone?
+// Guessing a required identifier would produce a 404 and a shape describing an
+// error, so an id-shaped parameter with nothing declared keeps the operation out.
+function constructible(action: Action): Record<string, unknown> | null {
+  const outcome = fillParams(action, { deterministic: true });
+  return outcome.ok ? outcome.params : null;
 }
 
-function eligible(actions: Action[], limit: number): Action[] {
-  return actions
-    .filter((a) => a.safety === 'read')
-    .filter(canConstruct)
-    .slice(0, limit);
+function eligible(actions: Action[], limit: number): Array<{ action: Action; params: Record<string, unknown> }> {
+  const out: Array<{ action: Action; params: Record<string, unknown> }> = [];
+  for (const action of actions) {
+    if (out.length >= limit) break;
+    if (action.safety !== 'read') continue;
+    const params = constructible(action);
+    if (params) out.push({ action, params });
+  }
+  return out;
 }
 
 export async function runCanary(ctx: ProbeContext, opts: CanaryOptions = {}): Promise<CanaryResult> {
-  const invoke = ctx.invoke ?? invokeAction;
   const samples = Math.max(1, opts.samples ?? DEFAULT_SAMPLES);
-  const target = { baseUrls: ctx.record.baseUrls, authIn: ctx.record.authIn };
 
   const snapshots: OperationSnapshot[] = [];
   const evidence: EvidenceFactInput[] = [];
   const inconclusive: InconclusiveOperation[] = [];
 
-  for (const action of eligible(ctx.record.actions, opts.maxOperations ?? MAX_OPERATIONS)) {
+  for (const { action, params } of eligible(ctx.record.actions, opts.maxOperations ?? MAX_OPERATIONS)) {
     const shapes: ObservedShape[] = [];
     const statusCounts: Record<string, number> = {};
     const latencies: number[] = [];
@@ -102,7 +107,7 @@ export async function runCanary(ctx: ProbeContext, opts: CanaryOptions = {}): Pr
 
     for (let i = 0; i < samples; i++) {
       try {
-        const res = await invoke(action, action.examples[0]?.params ?? {}, target, ctx.upstreamKey);
+        const res = await callProbe(ctx, action, params);
         statusCounts[String(res.status)] = (statusCounts[String(res.status)] ?? 0) + 1;
         latencies.push(res.latencyMs);
 

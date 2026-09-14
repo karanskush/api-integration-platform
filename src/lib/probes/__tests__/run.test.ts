@@ -212,3 +212,143 @@ describe('runScoreEngine live-call accounting', () => {
     expect(result.points.static).toBeGreaterThan(0);
   });
 });
+
+// The engine is now a sequence of stages that each report what became of them,
+// stamps every fact with the run's environment, and refuses to mutate.
+describe('runScoreEngine stages', () => {
+  const withResponseSchema = () => action({ responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+
+  it('reports every stage with a closed-vocabulary outcome', async () => {
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema()] });
+    const result = await runScoreEngine(rec, { invoke: realisticInvoke });
+    const byStage = Object.fromEntries(result.stages.map((s) => [s.stage, s.outcome]));
+    expect(Object.keys(byStage).sort()).toEqual(
+      ['auth_clarity', 'doc_drift', 'error_quality', 'harvest', 'idempotency', 'state_vocabulary', 'value_domain'].sort(),
+    );
+    expect(byStage.doc_drift).toBe('ran');
+    expect(byStage.error_quality).toBe('ran');
+    expect(byStage.harvest).toBe('no_candidates'); // the example already fills every read
+    expect(byStage.value_domain).toBe('no_candidates');
+  });
+
+  it('makes its calls strictly one at a time', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const serialised: typeof invokeAction = async (a, p, t, k, o) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+      return realisticInvoke(a, p, t, k, o);
+    };
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema()] });
+    const result = await runScoreEngine(rec, { invoke: serialised });
+    expect(result.liveCalls.attempted).toBeGreaterThan(1);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('stamps every live fact with the run environment and keeps structural facts static', async () => {
+    const write = action({
+      id: 'w1',
+      name: 'create_thing',
+      method: 'POST',
+      path: '/things',
+      safety: 'write',
+      paramsSchema: { type: 'object', properties: { amount: { type: 'number' } } },
+      examples: [],
+    });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema(), write] });
+    const result = await runScoreEngine(rec, { invoke: realisticInvoke, environment: 'sandbox' });
+    expect(result.environment).toBe('sandbox');
+    for (const fact of result.evidence) {
+      expect(fact.environment).toBe(fact.kind === 'probe.idempotency_signal' ? 'static' : 'sandbox');
+    }
+    expect(result.evidence.some((e) => e.environment === 'sandbox')).toBe(true);
+  });
+
+  it('defaults to production', async () => {
+    const result = await runScoreEngine(record({ auth: 'bearer' }), { invoke: realisticInvoke });
+    expect(result.environment).toBe('production');
+  });
+
+  it('never sends a mutating request, whatever a probe asks for', async () => {
+    const methods: string[] = [];
+    const recording: typeof invokeAction = async (a, p, t, k, o) => {
+      methods.push(a.method);
+      return realisticInvoke(a, p, t, k, o);
+    };
+    const write = action({ id: 'w1', name: 'create_thing', method: 'POST', path: '/things', safety: 'write', examples: [] });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema(), write] });
+    await runScoreEngine(rec, { invoke: recording });
+    expect(methods.every((m) => m === 'GET')).toBe(true);
+  });
+
+  it('skips network stages once the budget is spent, and says so', async () => {
+    const { createBudget, withBudget } = await import('../budget');
+    const budget = createBudget({ maxRequests: 1, deadlineMs: 60_000 });
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema()] });
+    const result = await runScoreEngine(rec, { invoke: withBudget(realisticInvoke, budget), budget });
+    expect(result.stages.find((s) => s.stage === 'auth_clarity')?.requests).toBe(1);
+    expect(result.stages.filter((s) => s.outcome === 'skipped_over_budget').length).toBeGreaterThan(0);
+    expect(result.stages.find((s) => s.stage === 'idempotency')?.outcome).toBe('ran'); // no network needed
+  });
+
+  it('never mutates the record it was given — schemas and examples are what the spec declared', async () => {
+    const rec = record({ auth: 'bearer', actions: [withResponseSchema()] });
+    const before = JSON.stringify(rec);
+    await runScoreEngine(rec, { invoke: realisticInvoke });
+    expect(JSON.stringify(rec)).toBe(before);
+  });
+});
+
+describe('runScoreEngine with a detail read that needs a real id', () => {
+  const list = action({
+    id: 'l1',
+    name: 'list_things',
+    path: '/things',
+    paramsSchema: { type: 'object', properties: {} },
+    examples: [],
+    responseSchema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } } } } } },
+  });
+  const detail = action({
+    id: 'd1',
+    name: 'get_thing',
+    path: '/things/{id}',
+    examples: [],
+    responseSchema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
+  });
+
+  it('harvests the id from the list and grades the detail read with it', async () => {
+    const seen: Array<{ path: string; params: Record<string, unknown> }> = [];
+    const api: typeof invokeAction = async (a, params) => {
+      seen.push({ path: a.path, params: params as Record<string, unknown> });
+      if (a.path === '/things') return { status: 200, latencyMs: 5, bodyText: JSON.stringify({ data: [{ id: 'thing_real' }] }) };
+      const id = (params as Record<string, unknown>).id;
+      if (id === 'thing_real') return { status: 200, latencyMs: 5, bodyText: JSON.stringify({ id, name: 'A thing' }) };
+      return { status: 404, latencyMs: 5, bodyText: JSON.stringify({ message: 'No such thing exists here.' }) };
+    };
+    const rec = record({ auth: 'none', actions: [list, detail] });
+    const result = await runScoreEngine(rec, { invoke: api });
+
+    expect(result.stages.find((s) => s.stage === 'harvest')?.outcome).toBe('ran');
+    const detailCalls = seen.filter((c) => c.path === '/things/{id}');
+    expect(detailCalls.some((c) => c.params.id === 'thing_real')).toBe(true);
+    expect(result.evidence.filter((e) => e.kind === 'probe.doc_drift').length).toBeGreaterThanOrEqual(2);
+    // The pool never outlives the run, and the value never reaches the result.
+    expect(JSON.stringify(result)).not.toContain('thing_real');
+  });
+});
+
+describe('runScoreEngine without a key', () => {
+  it('still sends every read, unauthenticated, rather than refusing before the wire', async () => {
+    const seen: Array<boolean | undefined> = [];
+    const invoke: typeof invokeAction = async (a, p, t, k, o) => {
+      seen.push(o?.requireAuth);
+      return realisticInvoke(a, p, t, k, o);
+    };
+    const secured = action({ auth: 'bearer', responseSchema: { type: 'object', properties: { id: { type: 'string' } } } });
+    const result = await runScoreEngine(record({ auth: 'bearer', actions: [secured] }), { invoke });
+    expect(result.liveCalls.attempted).toBeGreaterThan(1);
+    expect(seen.every((v) => v === false)).toBe(true);
+  });
+});

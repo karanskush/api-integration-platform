@@ -30,18 +30,14 @@ import {
   type ChainReason,
 } from '../lineageVerdict';
 import { MAX_CANDIDATES_PER_CHAIN, type ExecutionPlan, type PlannedChain } from '../lineagePlan';
-import { invokeAction } from '../mcpTools';
-import { fabricateLike, resolveParams, type ValueRef } from '../transient';
+import type { EvidenceFactInput } from '../evidence';
+import type { InvokeResult } from '../mcpTools';
+import { fabricateLike, type ValueRef } from '../transient';
+import { callProbe } from './context';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
-// Tighter than invokeAction's 30s default: a chain is several sequential calls
-// inside a function with a 60s ceiling, and one slow endpoint must not consume
-// the whole run.
-const STEP_TIMEOUT_MS = 8_000;
-
-// Identifiable and contactable, so a provider reading their access log can tell
-// automated verification from someone using the playground.
-const PROBE_USER_AGENT = 'docentapi-probe/1.0 (+https://www.docentapi.xyz)';
+// Timeout and User-Agent come from context.ts, shared with every probe.
 
 const MAX_CANDIDATE_VALUES = MAX_CANDIDATES_PER_CHAIN;
 
@@ -74,6 +70,10 @@ export type ChainResult = {
   observations: ChainObservation[];
   requestsMade: number;
   aborted: AbortReason | null;
+  // Rate-limit and lifecycle headers seen on the way. The chain runner makes
+  // more requests than any other probe and used to discard every header it
+  // saw. Optional so test fixtures that build a ChainResult by hand still type.
+  evidence?: EvidenceFactInput[];
 };
 
 function percentile(values: number[], p: number): number | null {
@@ -90,9 +90,8 @@ function predominant(statuses: number[]): number | null {
 }
 
 export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): Promise<ChainResult> {
-  const invoke = ctx.invoke ?? invokeAction;
-  const target = { baseUrls: ctx.record.baseUrls, authIn: ctx.record.authIn };
   const observations: ChainObservation[] = [];
+  const evidence: EvidenceFactInput[] = [];
   let requestsMade = 0;
   let aborted: AbortReason | null = null;
 
@@ -119,15 +118,14 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
   const call = async (
     action: PlannedChain['producer'],
     params: Record<string, unknown>,
-  ): Promise<{ status: number; latencyMs: number; bodyText: string } | null> => {
+  ): Promise<InvokeResult | null> => {
     requestsMade++;
     try {
       // The one place a live value exists outside a ValueRef, and it is handed
       // straight to the request without being retained.
-      return await invoke(action, resolveParams(params), target, ctx.upstreamKey, {
-        timeoutMs: STEP_TIMEOUT_MS,
-        userAgent: PROBE_USER_AGENT,
-      });
+      const res = await callProbe(ctx, action, params);
+      evidence.push(...lifecycleEvidence(action, res.headers));
+      return res;
     } catch (err) {
       // Never inspect or persist the message: ssrf.ts throws
       // `Invalid URL: ${rawUrl}`, and for an executed chain that URL contains
@@ -252,5 +250,5 @@ export async function runLineageChains(ctx: ProbeContext, plan: ExecutionPlan): 
     produced.clear();
   }
 
-  return { observations, requestsMade, aborted };
+  return { observations, requestsMade, aborted, evidence };
 }

@@ -17,6 +17,10 @@ import type { EvidenceFactInput, EvidencePayload } from './evidence';
 export type ScoreRunInput = {
   apiId: string;
   specVersionId: string;
+  // Which environment the credential that produced these facts belonged to.
+  // Stamped on every non-static fact; a sandbox observation filed as
+  // production truth is the single confusion this column exists to prevent.
+  environment?: 'production' | 'sandbox';
   total: number;
   subscores: {
     authClarity: number;
@@ -87,11 +91,32 @@ async function resolveActionIds(db: Db, specVersionId: string): Promise<Map<stri
   return new Map(rows.map((r) => [r.actionKey, r.id]));
 }
 
-export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Promise<ScoreRunStatements> {
-  const { apiId, specVersionId, total, subscores, liveCalls, points, evidence } = input;
-  const actionIdByKey = await resolveActionIds(db, specVersionId);
-  const factIds = evidence.map(() => randomUUID());
+export type EvidenceWriteInput = {
+  apiId: string;
+  specVersionId: string;
+  environment?: 'production' | 'sandbox';
+  evidence: EvidenceFactInput[];
+};
 
+// Kinds that describe the spec, not a live exchange, and so are 'static'
+// whatever environment the run used.
+const STATIC_KINDS = new Set<EvidenceFactInput['kind']>(['probe.idempotency_signal']);
+
+/**
+ * The evidence rows and the lifecycle change-ledger rows for a batch of facts,
+ * without a score. The canary and the chain runner see rate-limit and
+ * lifecycle headers too, and until this existed their evidence had no way into
+ * the database — reverify.ts destructured it out and dropped it.
+ */
+export async function buildEvidenceStatements(
+  db: Db,
+  input: EvidenceWriteInput,
+  precomputed?: { actionIdByKey: Map<string, string>; factIds: string[] },
+): Promise<BatchItem<'pg'>[]> {
+  const { apiId, specVersionId, evidence } = input;
+  const environment = input.environment ?? 'production';
+  const actionIdByKey = precomputed?.actionIdByKey ?? (await resolveActionIds(db, specVersionId));
+  const factIds = precomputed?.factIds ?? evidence.map(() => randomUUID());
   const statements: BatchItem<'pg'>[] = [];
 
   if (evidence.length) {
@@ -104,7 +129,7 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
           actionId: e.actionId ? (actionIdByKey.get(e.actionId) ?? null) : null,
           kind: e.kind,
           source: e.source || 'probe',
-          environment: e.environment ?? (e.kind === 'probe.idempotency_signal' ? 'static' : 'production'),
+          environment: e.environment ?? (STATIC_KINDS.has(e.kind) ? 'static' : environment),
           confidence: e.confidence ?? 1,
           payload: e.payload,
         })),
@@ -112,10 +137,6 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
     );
   }
 
-  // Lifecycle observations become ledger rows so the changelog shows "the
-  // provider announced a sunset on this endpoint" alongside spec diffs. The
-  // partial unique index makes the repeat-observation case a no-op, so this is
-  // safe to run on every score run without a read-before-write.
   const lifecycleFacts: LifecycleFactInput[] = [];
   for (const e of evidence) {
     if (e.kind !== 'probe.lifecycle_signal') continue;
@@ -128,9 +149,28 @@ export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Pro
       signal: { kind: p.kind, header: p.header, raw: p.raw, ...(p.at ? { at: p.at } : {}), ...(p.url ? { url: p.url } : {}) },
     });
   }
-  statements.push(
-    ...buildLifecycleChangeStatements(db, { apiId, specVersionId, facts: lifecycleFacts, actionIdByKey }),
-  );
+  statements.push(...buildLifecycleChangeStatements(db, { apiId, specVersionId, facts: lifecycleFacts, actionIdByKey }));
+  return statements;
+}
+
+export async function applyEvidenceFacts(db: NeonDb, input: EvidenceWriteInput): Promise<{ written: number }> {
+  if (!input.evidence.length) return { written: 0 };
+  const statements = await buildEvidenceStatements(db, input);
+  if (statements.length) await db.batch(statements as [BatchItem<'pg'>, ...BatchItem<'pg'>[]]);
+  return { written: input.evidence.length };
+}
+
+export async function buildScoreRunStatements(db: Db, input: ScoreRunInput): Promise<ScoreRunStatements> {
+  const { apiId, specVersionId, total, subscores, liveCalls, points, evidence } = input;
+  const actionIdByKey = await resolveActionIds(db, specVersionId);
+  const factIds = evidence.map(() => randomUUID());
+
+  const statements: BatchItem<'pg'>[] = await buildEvidenceStatements(db, input, { actionIdByKey, factIds });
+
+  // Lifecycle observations become ledger rows so the changelog shows "the
+  // provider announced a sunset on this endpoint" alongside spec diffs. The
+  // partial unique index makes the repeat-observation case a no-op, so this is
+  // safe to run on every score run without a read-before-write.
 
   const explanation = evidence
     .map((e, i) => ({ factId: factIds[i], kind: e.kind, message: describeEvidence(e) }))

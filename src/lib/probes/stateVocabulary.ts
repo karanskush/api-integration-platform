@@ -22,12 +22,16 @@
 
 import type { EvidenceFactInput } from '../evidence';
 import type { Action } from '../ir';
-import { invokeAction } from '../mcpTools';
+import { specOnlyFiller, type ParamFiller } from '../paramFill';
+import { callProbe } from './context';
+import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext } from './types';
 
 const MAX_OPERATIONS = 2;
-const STEP_TIMEOUT_MS = 8_000;
-const PROBE_USER_AGENT = 'docentapi-probe/1.0 (+https://www.docentapi.xyz)';
+// A vocabulary needs repetition to be visible, so ask for a real page rather
+// than the single row every other probe requests. The filler clamps this to
+// whatever the spec allows.
+const PAGE_SIZE = 25;
 
 // Fields that name a state outright. Deliberately short: `category` or `label`
 // might hold a controlled vocabulary too, but they might equally hold free text,
@@ -119,31 +123,30 @@ function stateFieldsIn(records: Array<Record<string, Json>>): string[] {
 
 // A list endpoint: a GET returning many records is the only place a vocabulary
 // is visible, and a single-record GET can never satisfy MIN_RECORDS anyway.
-function listCandidates(record: ProbeContext['record']): Action[] {
-  return record.actions
-    .filter((a) => a.method.toUpperCase() === 'GET' && a.safety === 'read')
-    .filter((a) => !a.path.includes('{'))
-    .filter((a) => {
-      const required = a.paramsSchema.required;
-      const names = Array.isArray(required) ? required.filter((r): r is string => typeof r === 'string') : [];
-      const example = a.examples[0]?.params ?? {};
-      return names.every((n) => n in example);
-    })
-    .slice(0, MAX_OPERATIONS);
+function listCandidates(
+  record: ProbeContext['record'],
+  fill: ParamFiller,
+  runId?: string,
+): Array<{ action: Action; params: Record<string, unknown> }> {
+  const out: Array<{ action: Action; params: Record<string, unknown> }> = [];
+  for (const action of record.actions) {
+    if (out.length >= MAX_OPERATIONS) break;
+    if (action.method.toUpperCase() !== 'GET' || action.safety !== 'read' || action.path.includes('{')) continue;
+    const filled = fill(action, { pageSize: PAGE_SIZE, runId });
+    if (filled.ok) out.push({ action, params: filled.params });
+  }
+  return out;
 }
 
 export async function runStateVocabulary(ctx: ProbeContext): Promise<EvidenceFactInput[]> {
-  const invoke = ctx.invoke ?? invokeAction;
-  const target = { baseUrls: ctx.record.baseUrls, authIn: ctx.record.authIn };
+  const fill = ctx.fill ?? specOnlyFiller;
   const evidence: EvidenceFactInput[] = [];
 
-  for (const action of listCandidates(ctx.record)) {
+  for (const { action, params } of listCandidates(ctx.record, fill, ctx.runId)) {
     let body: Json;
     try {
-      const res = await invoke(action, action.examples[0]?.params ?? {}, target, ctx.upstreamKey, {
-        timeoutMs: STEP_TIMEOUT_MS,
-        userAgent: PROBE_USER_AGENT,
-      });
+      const res = await callProbe(ctx, action, params);
+      evidence.push(...lifecycleEvidence(action, res.headers));
       // Only a successful response describes the entity. An error body has its
       // own shape and its own `status` field, which would otherwise be recorded
       // as the entity's state vocabulary — a genuinely misleading claim.

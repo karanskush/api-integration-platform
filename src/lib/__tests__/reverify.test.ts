@@ -84,6 +84,8 @@ const SCORE: ScoreEngineResult = {
   liveCalls: { attempted: 4, succeeded: 3, failed: 1 },
   points: { observed: 22, static: 45, max: 75 },
   evidence: [{ kind: 'probe.auth_reject', source: 'probe', payload: { statusObserved: 401, expectedAuth: 'bearer' } }],
+  environment: 'production',
+  stages: [],
 };
 
 let seq = 0;
@@ -551,5 +553,52 @@ describe('reverifyOne chain verification', () => {
 
     expect(outcome.chains?.aborted).toBe('rate_limited');
     expect(outcome.chains?.executed).toBe(0);
+  });
+});
+
+// The canary sees rate-limit and lifecycle headers on every sample. reverify
+// used to destructure `evidence` out of its result and drop it on the floor —
+// this is the regression test for that line.
+describe('canary evidence reaches the database', () => {
+  it('persists a rate-limit fact the canary observed, stamped production', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+
+    await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => SCORE,
+      canary: async () => ({
+        snapshots: [],
+        inconclusive: [],
+        evidence: [
+          {
+            kind: 'probe.rate_limit',
+            source: 'probe',
+            actionId: 'a1',
+            payload: { actionId: 'a1', tool: 'get_thing', method: 'GET', path: '/things', limit: 60, windowSeconds: null, header: 'x-ratelimit-limit', raw: '60' },
+          },
+        ],
+      }),
+      chains: async () => ({ observations: [], requestsMade: 0, aborted: null }),
+    });
+
+    const rows = await db
+      .select()
+      .from(schema.evidenceFacts)
+      .where(eq(schema.evidenceFacts.apiId, seeded.apiId));
+    const rateLimit = rows.find((r) => r.kind === 'probe.rate_limit');
+    expect(rateLimit).toBeDefined();
+    expect(rateLimit?.environment).toBe('production');
+  });
+
+  it('records the stage report on the run row', async () => {
+    const seeded = await seedApi({ plan: 'business' });
+    await reverifyOne(neonDb, candidateFor(seeded), {
+      loadRecord: async () => record(),
+      scoreEngine: async () => ({ ...SCORE, stages: [{ stage: 'doc_drift', requests: 2, outcome: 'ran' }] }),
+      canary: async () => ({ snapshots: [], evidence: [], inconclusive: [] }),
+      chains: async () => ({ observations: [], requestsMade: 0, aborted: null }),
+    });
+    const [run] = await db.select().from(schema.scoreRuns).where(eq(schema.scoreRuns.apiId, seeded.apiId));
+    expect(run.probesRun).toMatchObject({ version: 1, environment: 'production', stages: [{ stage: 'doc_drift', requests: 2, outcome: 'ran' }] });
   });
 });

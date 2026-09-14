@@ -145,6 +145,11 @@ export async function loadEdgeVerdicts(
   db: Db,
   apiId: string,
   currentSpecVersionId: string,
+  // Fenced on environment for the same reason canaryRun.loadPreviousSnapshots
+  // is: a chain executed against a sandbox says nothing about production's
+  // contract, and letting the two compete for "newest" would publish the
+  // difference between environments as a verdict about the API.
+  environment: string = 'production',
 ): Promise<Map<string, EdgeVerdict>> {
   const rows = await db
     .select({
@@ -159,7 +164,7 @@ export async function loadEdgeVerdicts(
       successes: lineageExecutions.successes,
     })
     .from(lineageExecutions)
-    .where(and(eq(lineageExecutions.apiId, apiId)))
+    .where(and(eq(lineageExecutions.apiId, apiId), eq(lineageExecutions.environment, environment)))
     .orderBy(desc(lineageExecutions.observedAt))
     .limit(MAX_EXECUTION_ROWS);
 

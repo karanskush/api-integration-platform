@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { ImportRecord } from '../ir';
-import { invokeAction } from '../mcpTools';
+import { specOnlyFiller } from '../paramFill';
+import { callProbe } from './context';
 import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
 
@@ -25,20 +26,21 @@ function heuristicSubscore(record: ImportRecord): number {
 
 export async function runAuthClarity(ctx: ProbeContext): Promise<ProbeOutcome> {
   const { record } = ctx;
-  const invoke = ctx.invoke ?? invokeAction;
+  const fill = ctx.fill ?? specOnlyFiller;
   const evidence: EvidenceFactInput[] = [];
   const subscore = heuristicSubscore(record);
 
-  const target = record.actions.find((a) => a.safety === 'read');
+  // The first read we can actually build a request for. A read that cannot be
+  // filled would fail client-side, and the control needs to reach the API.
+  const target = record.actions.find((a) => a.safety === 'read' && fill(a, { runId: ctx.runId }).ok);
   if (record.auth !== 'none' && target && record.baseUrls.length) {
     try {
-      const result = await invoke(
-        target,
-        target.examples[0]?.params ?? {},
-        { baseUrls: record.baseUrls, authIn: record.authIn },
-        undefined,
-        { requireAuth: false },
-      );
+      const filled = fill(target, { runId: ctx.runId });
+      const params = filled.ok ? filled.params : {};
+      // Deliberately unauthenticated: the point is to observe whether the live
+      // API rejects a request without credentials, rather than trusting the
+      // documented scheme.
+      const result = await callProbe(ctx, target, params, { upstreamKey: null, requireAuth: false });
       if (result.status === 401 || result.status === 403) {
         evidence.push({
           kind: 'probe.auth_reject',
@@ -50,9 +52,9 @@ export async function runAuthClarity(ctx: ProbeContext): Promise<ProbeOutcome> {
       // A 401 carries lifecycle headers as readily as a 200 does.
       evidence.push(...lifecycleEvidence(target, result.headers));
     } catch {
-      // Live call couldn't be made (no key path reachable, SSRF-blocked, spec
-      // has no resolvable example, ...) — this is a bonus confirmation on
-      // top of the heuristic subscore, so skip it rather than fail the probe.
+      // Live call couldn't be made (SSRF-blocked, unreachable, budget spent)
+      // — this is a bonus confirmation on top of the heuristic subscore, so
+      // skip it rather than fail the probe.
     }
   }
 

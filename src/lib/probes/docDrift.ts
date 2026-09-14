@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { Action, JSONSchema } from '../ir';
-import { invokeAction } from '../mcpTools';
+import { specOnlyFiller } from '../paramFill';
+import { callProbe } from './context';
 import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
 
@@ -52,28 +53,53 @@ function compareShallow(responseSchema: JSONSchema, body: unknown) {
   return { matched, declared: keys.length, mismatches };
 }
 
+// A list endpoint documents its record shape one level down, on `items`. Most
+// of what an integrator reads comes back as a list, and grading only object
+// responses left every list endpoint ungraded.
+function recordSchema(action: Action): JSONSchema | null {
+  const schema = action.responseSchema;
+  if (!schema) return null;
+  if (schema.properties) return schema;
+  const items = schema.items as JSONSchema | undefined;
+  if (schema.type === 'array' && items && typeof items === 'object' && items.properties) return items;
+  return null;
+}
+
 function declaredFieldCount(action: Action): number {
-  return Object.keys((action.responseSchema?.properties ?? {}) as Record<string, unknown>).length;
+  return Object.keys((recordSchema(action)?.properties ?? {}) as Record<string, unknown>).length;
+}
+
+// The record to compare: the body itself, or a list's first element. An empty
+// list documents nothing about the record shape and is not graded.
+function recordToCompare(action: Action, body: unknown): unknown | undefined {
+  if (action.responseSchema?.properties) return body;
+  if (!Array.isArray(body)) return undefined;
+  return body.length ? body[0] : undefined;
 }
 
 export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
-  const invoke = ctx.invoke ?? invokeAction;
-  const target = { baseUrls: ctx.record.baseUrls, authIn: ctx.record.authIn };
+  const fill = ctx.fill ?? specOnlyFiller;
 
-  const candidates = ctx.record.actions
-    .filter((a) => a.safety === 'read')
-    .filter((a) => a.responseSchema && Object.keys(a.examples[0]?.params ?? {}).length > 0)
-    .filter((a) => declaredFieldCount(a) > 0)
-    .slice(0, SAMPLE_LIMIT);
+  // Any read whose request we can build — from the documented example, the
+  // spec's own defaults, or a harvested id — and whose documented response has
+  // fields to compare against. A list endpoint with no parameters qualifies;
+  // before the shared filler it was excluded for the accident of taking none.
+  const candidates: Array<{ action: Action; params: Record<string, unknown> }> = [];
+  for (const action of ctx.record.actions) {
+    if (candidates.length >= SAMPLE_LIMIT) break;
+    if (action.safety !== 'read' || !recordSchema(action) || declaredFieldCount(action) === 0) continue;
+    const filled = fill(action, { runId: ctx.runId });
+    if (filled.ok) candidates.push({ action, params: filled.params });
+  }
 
   if (candidates.length === 0) return { subscore: 0, evidence: [], insufficientData: true };
 
   const evidence: EvidenceFactInput[] = [];
   let sumRatio = 0;
   let graded = 0;
-  for (const action of candidates) {
+  for (const { action, params } of candidates) {
     try {
-      const res = await invoke(action, action.examples[0].params, target, ctx.upstreamKey);
+      const res = await callProbe(ctx, action, params);
       // Recorded before parsing: a body that fails to parse still carried
       // headers worth keeping.
       evidence.push(...lifecycleEvidence(action, res.headers));
@@ -86,8 +112,9 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
       // an outage is not a contract change.
       if (res.status < 200 || res.status >= 300) continue;
 
-      const body = JSON.parse(res.bodyText);
-      const cmp = compareShallow(action.responseSchema!, body);
+      const body = recordToCompare(action, JSON.parse(res.bodyText));
+      if (body === undefined) continue;
+      const cmp = compareShallow(recordSchema(action)!, body);
       sumRatio += cmp.declared > 0 ? cmp.matched / cmp.declared : 0;
       graded++;
       evidence.push({

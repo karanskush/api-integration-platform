@@ -263,3 +263,25 @@ describe('the sweep itself is honest', () => {
     expect(declaredTables().length).toBeGreaterThan(15);
   });
 });
+
+// A chain executed against a sandbox says nothing about production's contract.
+// canaryRun learned this the hard way when a sandbox shape became the
+// production baseline; the verdict reader now fences the same way.
+describe('verdicts are fenced on environment', () => {
+  it('does not let a sandbox execution feed a production verdict', async () => {
+    const { apiId, v1 } = await seed();
+    const result: ChainResult = { observations: [observation()], requestsMade: 4, aborted: null };
+    const statements = await buildLineageRunStatements(db, {
+      apiId,
+      specVersionId: v1,
+      environment: 'sandbox',
+      chainsPlanned: 1,
+      budgetLimit: 40,
+      result,
+    });
+    for (const stmt of statements.statements) await stmt;
+
+    expect((await loadEdgeVerdicts(db, apiId, v1)).size).toBe(0);
+    expect((await loadEdgeVerdicts(db, apiId, v1, 'sandbox')).size).toBe(1);
+  });
+});

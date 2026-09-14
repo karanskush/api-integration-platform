@@ -192,3 +192,29 @@ describe('runDocDrift lifecycle headers', () => {
     expect(result.evidence.filter((e) => e.kind === 'probe.lifecycle_signal')).toHaveLength(1);
   });
 });
+
+describe('list responses', () => {
+  const list = action({
+    id: 'l1',
+    name: 'list_things',
+    path: '/things',
+    paramsSchema: { type: 'object', properties: {} },
+    examples: [],
+    responseSchema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } } },
+  });
+
+  it('grades a top-level array response against its items schema', async () => {
+    const invoke = (async () => ({ status: 200, latencyMs: 5, bodyText: JSON.stringify([{ id: 'a', name: 'x' }, { id: 'b' }]) })) as typeof invokeAction;
+    const result = await runDocDrift({ record: record({ actions: [list] }), invoke });
+    expect(result.insufficientData).toBeUndefined();
+    expect(result.subscore).toBe(25);
+    const fact = result.evidence.find((e) => e.kind === 'probe.doc_drift');
+    expect(fact?.payload).toMatchObject({ matchedFields: 2, declaredFields: 2 });
+  });
+
+  it('does not grade an empty list — it documents nothing about the record shape', async () => {
+    const invoke = (async () => ({ status: 200, latencyMs: 5, bodyText: '[]' })) as typeof invokeAction;
+    const result = await runDocDrift({ record: record({ actions: [list] }), invoke });
+    expect(result.insufficientData).toBe(true);
+  });
+});
