@@ -5,6 +5,7 @@
 // operation it needs. Search returns one compact line per hit; the schema tool
 // then returns full detail for exactly one action.
 
+import { basisFor } from './provenance';
 import { fieldMapFor } from '../fieldMap';
 import type { Action, ImportRecord } from '../ir';
 import { paginationFor } from '../pagination';
@@ -152,6 +153,11 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
   const params = paramsOf(action);
   const drift = ctx.insights.driftObservations.find((o) => o.actionId === action.id);
   const rateLimits = ctx.insights.rateLimits.filter((r) => r.actionId === action.id);
+  const conformance = ctx.insights.conformance.find((c) => c.actionId === action.id);
+  const notFound = ctx.insights.notFoundIdentity.find((n) => n.actionId === action.id);
+  const partitions = ctx.insights.negativePartitions.filter((n) => n.actionId === action.id);
+  const methods = ctx.insights.methodSupport.find((m) => m.actionId === action.id);
+  const paginationObserved = ctx.insights.paginationBehavior.find((b) => b.actionId === action.id);
   const map = fieldMapFor(action);
   const sendable = map.request.filter((f) => !f.readOnly && !f.container);
   const serverAssigned = map.request.filter((f) => f.readOnly).map((f) => f.path);
@@ -226,6 +232,75 @@ export function getEndpointSchema(ctx: AdvisorContext, args: EndpointSchemaArgs)
             declaredFields: drift.declaredFields,
             mismatches: drift.mismatches.slice(0, 20),
             note: 'Fields listed in mismatches were documented but absent (or differently typed) in a real response.',
+          },
+        }
+      : {}),
+    // What a verification run OBSERVED about this operation, beyond the shallow
+    // drift check: the documented schema applied to a real response, what a
+    // made-up id gets, which requests the spec forbids were still accepted, the
+    // methods the path admits to, and whether pagination behaves. Every block
+    // names its environment; a sandbox finding is indicative, not proof.
+    ...(conformance
+      ? {
+          observedConformance: {
+            status: conformance.status,
+            contentTypeMatchesDeclared: conformance.contentTypeMatches,
+            responseMatchesSchema: conformance.schemaValid,
+            schemaViolations: conformance.schemaErrorPaths.slice(0, 20),
+            ...(conformance.discriminating !== null ? { fabricatedIdRefused: conformance.discriminating } : {}),
+            basis: basisFor({ environment: conformance.environment, observedAt: conformance.observedAt }),
+          },
+        }
+      : {}),
+    ...(notFound
+      ? {
+          unknownIdBehaviour: {
+            status: notFound.status,
+            identity: notFound.identity,
+            readableMessage: notFound.hasReadableMessage,
+            note:
+              notFound.identity === 'soft_404_2xx'
+                ? 'A fabricated identifier was ACCEPTED with a 2xx. Do not treat a success status from this operation as proof the record exists.'
+                : notFound.identity === 'not_found_404'
+                  ? 'A fabricated identifier was refused with 404, so a 2xx from this operation means the record exists.'
+                  : 'A fabricated identifier was refused, though not with a 404.',
+            basis: basisFor({ environment: notFound.environment }),
+          },
+        }
+      : {}),
+    ...(partitions.length
+      ? {
+          observedValidation: partitions.map((p) => ({
+            sent: p.partition,
+            field: p.field,
+            status: p.status,
+            rejected: p.rejected,
+            readableMessage: p.hasReadableMessage,
+            ...(p.matchesErrorSchema !== null ? { matchesDocumentedErrorSchema: p.matchesErrorSchema } : {}),
+            basis: basisFor({ environment: p.environment }),
+          })),
+        }
+      : {}),
+    ...(methods
+      ? {
+          methodsAdmitted: {
+            optionsStatus: methods.status,
+            allowHeaderPresent: methods.allowHeaderPresent,
+            agreementWithSpec: methods.allowDeclaredAgreement,
+            undeclaredMethods: methods.undeclaredMethods,
+            basis: basisFor({ environment: methods.environment }),
+          },
+        }
+      : {}),
+    ...(paginationObserved
+      ? {
+          paginationObserved: {
+            model: paginationObserved.model,
+            firstPage: paginationObserved.start,
+            ...(paginationObserved.continue ? { secondPage: paginationObserved.continue } : {}),
+            ...(paginationObserved.cursorReuse ? { cursorReuse: paginationObserved.cursorReuse } : {}),
+            ...(paginationObserved.skipped ? { notTested: paginationObserved.skipped } : {}),
+            basis: basisFor({ environment: paginationObserved.environment }),
           },
         }
       : {}),

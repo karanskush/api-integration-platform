@@ -56,12 +56,15 @@ const readableInvoke = (async () => ({
 // example and needs a 2xx for its comparison to mean anything. A stub that
 // answered 200 to everything used to satisfy both, which is exactly the
 // blending this change removes.
-const realisticInvoke: typeof invokeAction = async (_action, params) => {
+// One record exists, with id "abc". A request without the id is a 400, a
+// request for any other id is a 404 (the negative partitions fabricate one),
+// and the real id answers 200 — which is what the probes now need to grade.
+const realisticInvoke: typeof invokeAction = async (action, params) => {
   const p = (params ?? {}) as Record<string, unknown>;
-  const corrupted = p.id === undefined || p.id === '__docentapi_invalid__';
-  return corrupted
-    ? { status: 400, latencyMs: 5, bodyText: JSON.stringify({ message: 'id is required' }) }
-    : { status: 200, latencyMs: 5, bodyText: JSON.stringify({ id: 'abc' }) };
+  if (action.method === 'OPTIONS') return { status: 204, latencyMs: 5, bodyText: '', headers: { allow: 'GET, OPTIONS' } };
+  if (p.id === undefined) return { status: 400, latencyMs: 5, bodyText: JSON.stringify({ message: 'id is required' }) };
+  if (p.id !== 'abc') return { status: 404, latencyMs: 5, bodyText: JSON.stringify({ message: 'No thing found for that id.' }) };
+  return { status: 200, latencyMs: 5, bodyText: JSON.stringify({ id: 'abc' }) };
 };
 
 describe('runScoreEngine', () => {
@@ -223,7 +226,7 @@ describe('runScoreEngine stages', () => {
     const result = await runScoreEngine(rec, { invoke: realisticInvoke });
     const byStage = Object.fromEntries(result.stages.map((s) => [s.stage, s.outcome]));
     expect(Object.keys(byStage).sort()).toEqual(
-      ['auth_clarity', 'doc_drift', 'error_quality', 'harvest', 'idempotency', 'state_vocabulary', 'value_domain'].sort(),
+      ['auth_clarity', 'conformance', 'doc_drift', 'error_quality', 'harvest', 'idempotency', 'state_vocabulary', 'value_domain'].sort(),
     );
     expect(byStage.doc_drift).toBe('ran');
     expect(byStage.error_quality).toBe('ran');
@@ -280,7 +283,7 @@ describe('runScoreEngine stages', () => {
     const write = action({ id: 'w1', name: 'create_thing', method: 'POST', path: '/things', safety: 'write', examples: [] });
     const rec = record({ auth: 'bearer', actions: [withResponseSchema(), write] });
     await runScoreEngine(rec, { invoke: recording });
-    expect(methods.every((m) => m === 'GET')).toBe(true);
+    expect(methods.every((m) => m === 'GET' || m === 'OPTIONS')).toBe(true);
   });
 
   it('skips network stages once the budget is spent, and says so', async () => {

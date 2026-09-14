@@ -15,7 +15,8 @@ describe('pickCapturedHeaders', () => {
       Authorization: 'Bearer nope',
     });
     const picked = pickCapturedHeaders(headers);
-    expect(Object.keys(picked).sort()).toEqual(['deprecation', 'sunset']);
+    // content-type is allowlisted now (the conformance probe reads it); cookies and auth never are.
+    expect(Object.keys(picked).sort()).toEqual(['content-type', 'deprecation', 'sunset']);
     expect(picked.deprecation).toBe('@1688169599');
   });
 

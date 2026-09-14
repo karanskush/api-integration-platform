@@ -100,6 +100,60 @@ export type AdvisorInsights = {
     header: string;
     observedAt: string;
   }>;
+  // Read-side conformance (probes/conformance.ts, partitions.ts, docDrift.ts).
+  // Every row carries the environment it was observed in; a sandbox finding
+  // must never read as production truth.
+  conformance: Array<{
+    actionId: string;
+    status: number;
+    contentTypeMatches: boolean | null;
+    schemaValid: boolean | null;
+    schemaErrorCount: number;
+    schemaErrorPaths: string[];
+    discriminating: boolean | null;
+    observedAt: string;
+    environment: string;
+  }>;
+  // How the API answered requests the spec forbids — the partitions an
+  // integrator hits on day one.
+  negativePartitions: Array<{
+    actionId: string;
+    partition: string;
+    field: string;
+    status: number;
+    rejected: boolean;
+    matchesErrorSchema: boolean | null;
+    hasReadableMessage: boolean;
+    environment: string;
+  }>;
+  // What a fabricated identifier gets. A soft 404 (2xx) is the finding that
+  // matters most: it means positive reads of that operation prove less.
+  notFoundIdentity: Array<{
+    actionId: string;
+    status: number;
+    identity: string;
+    controlBasis: string;
+    hasReadableMessage: boolean;
+    environment: string;
+  }>;
+  methodSupport: Array<{
+    actionId: string;
+    path: string;
+    status: number;
+    allowHeaderPresent: boolean;
+    allowDeclaredAgreement: string | null;
+    undeclaredMethods: string[];
+    environment: string;
+  }>;
+  paginationBehavior: Array<{
+    actionId: string;
+    model: string;
+    start: { status: number; items: number };
+    continue: { status: number; advanced: boolean | null } | null;
+    cursorReuse: { status: number; samePage: boolean | null } | null;
+    skipped?: string;
+    environment: string;
+  }>;
   // What the deep-analysis pass concluded a field MEANS, read back out of
   // llm.field_semantics. This is the most expensive knowledge the system
   // produces — a docs crawl plus an LLM pass over the provider's own
@@ -163,6 +217,11 @@ export function emptyInsights(): AdvisorInsights {
     stateVocabularies: [],
     observedShapes: [],
     rateLimits: [],
+    conformance: [],
+    negativePartitions: [],
+    notFoundIdentity: [],
+    methodSupport: [],
+    paginationBehavior: [],
     fieldSemantics: [],
     ownerAnswers: [],
     lineageVerdicts: [],

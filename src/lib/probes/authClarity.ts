@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { EvidenceFactInput } from '../evidence';
 import type { ImportRecord } from '../ir';
 import { specOnlyFiller } from '../paramFill';
@@ -42,11 +43,29 @@ export async function runAuthClarity(ctx: ProbeContext): Promise<ProbeOutcome> {
       // documented scheme.
       const result = await callProbe(ctx, target, params, { upstreamKey: null, requireAuth: false });
       if (result.status === 401 || result.status === 403) {
+        // The second control: a key that is well-formed but wrong. An API that
+        // rejects a missing key but accepts any string is not enforcing auth,
+        // and WWW-Authenticate says whether it tells the caller how to fix it.
+        let badKeyStatus: number | undefined;
+        try {
+          const bad = await callProbe(ctx, target, params, {
+            upstreamKey: `docentapi-invalid-${randomBytes(6).toString('hex')}`,
+            requireAuth: false,
+          });
+          badKeyStatus = bad.status;
+        } catch {
+          // Budget or transport; the first observation stands on its own.
+        }
         evidence.push({
           kind: 'probe.auth_reject',
           source: 'probe',
           actionId: target.id,
-          payload: { statusObserved: result.status, expectedAuth: record.auth },
+          payload: {
+            statusObserved: result.status,
+            expectedAuth: record.auth,
+            ...(badKeyStatus !== undefined ? { badKeyStatus } : {}),
+            wwwAuthenticate: Boolean(result.headers?.['www-authenticate']),
+          },
         });
       }
       // A 401 carries lifecycle headers as readily as a 200 does.

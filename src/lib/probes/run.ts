@@ -3,6 +3,7 @@ import type { ImportRecord } from '../ir';
 import { invokeAction } from '../mcpTools';
 import { pooledFiller, specOnlyFiller } from '../paramFill';
 import { runAuthClarity } from './authClarity';
+import { runReadConformance } from './conformance';
 import { withPacing, withWriteFence, type OutboundBudget } from './budget';
 import { runDocDrift } from './docDrift';
 import { runErrorQuality } from './errorQuality';
@@ -30,7 +31,8 @@ export type StageName =
   | 'error_quality'
   | 'idempotency'
   | 'value_domain'
-  | 'state_vocabulary';
+  | 'state_vocabulary'
+  | 'conformance';
 
 /**
  * What became of a stage. "Did not run" and "ran and found nothing" are
@@ -255,6 +257,23 @@ export async function runScoreEngine(record: ImportRecord, opts: ScoreEngineOpti
       async () => {
         const facts = await runStateVocabulary(ctx);
         return { value: undefined, outcome: facts.length ? 'ran' : 'no_candidates', evidence: facts };
+      },
+      undefined,
+    );
+
+    // Read-side conformance last, so the scored probes are never starved by it:
+    // a fabricated id, one OPTIONS per path, and three pagination requests.
+    await stage(
+      'conformance',
+      true,
+      async () => {
+        const report = await runReadConformance(ctx);
+        const outcome: StageOutcome = report.substages.some((s) => s.outcome === 'aborted')
+          ? 'aborted'
+          : report.evidence.length
+            ? 'ran'
+            : 'no_candidates';
+        return { value: undefined, outcome, evidence: report.evidence };
       },
       undefined,
     );

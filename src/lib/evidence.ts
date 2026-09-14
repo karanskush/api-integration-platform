@@ -70,7 +70,13 @@ export type EvidenceKind =
   // many requests per what window. Provider-asserted, never scored. Only the
   // policy is durable — remaining/reset describe one response's position in
   // the window and are noise a minute later, so they are never carried.
-  | 'probe.rate_limit';
+  | 'probe.rate_limit'
+  // Read-side conformance (probes/conformance.ts, partitions.ts, docDrift.ts).
+  | 'probe.response_conformance'
+  | 'probe.negative_partition'
+  | 'probe.not_found_identity'
+  | 'probe.method_support'
+  | 'probe.pagination_behavior';
 
 const parserCheckPayload = z.object({
   points: z.number(),
@@ -111,6 +117,10 @@ const stateVocabularyPayload = z.object({
 const authRejectPayload = z.object({
   statusObserved: z.number(),
   expectedAuth: z.string(),
+  // The second control: what the API says to a key that is well-formed but
+  // wrong. Absent on rows written before the control existed.
+  badKeyStatus: z.number().optional(),
+  wwwAuthenticate: z.boolean().optional(),
 });
 
 const errorQualityPayload = z.object({
@@ -227,6 +237,60 @@ const rateLimitPayload = z.object({
 
 // `satisfies` (rather than a plain annotation) keeps this exhaustive against
 // EvidenceKind — adding a kind without adding a schema here is a type error.
+const fillSourceEnum = z.enum(['example', 'schema_example', 'default', 'const', 'enum', 'harvested', 'created', 'derived']);
+
+// Every read-side conformance payload is numbers, booleans, enums and schema
+// PATHS. No response value has a slot to land in — the same structural rule
+// lineage_executions applies with its zero-jsonb table.
+const responseConformancePayload = z.object({
+  actionId: z.string(),
+  status: z.number(),
+  contentTypeObserved: z.string().max(120).nullable(),
+  contentTypeMatches: z.boolean().nullable(),
+  schemaValid: z.boolean().nullable(),
+  schemaErrorCount: z.number(),
+  schemaErrorPaths: z.array(z.string().max(120)).max(20),
+  // Whether a fabricated identifier for this operation was refused. null until
+  // the negative control has run; a 2xx to a made-up id means the positive
+  // sample proves less than it looks.
+  discriminating: z.boolean().nullable(),
+  paramSources: z.array(fillSourceEnum).max(24),
+});
+const negativePartitionPayload = z.object({
+  actionId: z.string(),
+  partition: z.enum(['omitted_required', 'unknown_id', 'wrong_type', 'enum_violation', 'malformed_format', 'missing_required_header']),
+  field: z.string().max(120),
+  status: z.number(),
+  rejected: z.boolean(),
+  matchesErrorSchema: z.boolean().nullable(),
+  hasReadableMessage: z.boolean(),
+});
+const notFoundIdentityPayload = z.object({
+  actionId: z.string(),
+  status: z.number(),
+  identity: z.enum(['not_found_404', 'gone_410', 'rejected_other_4xx', 'soft_404_2xx', 'server_error']),
+  controlBasis: z.enum(['fabricated_like_real', 'derived_placeholder']),
+  matchesErrorSchema: z.boolean().nullable(),
+  hasReadableMessage: z.boolean(),
+});
+const methodSupportPayload = z.object({
+  actionId: z.string(),
+  path: z.string().max(200),
+  method: z.enum(['OPTIONS', 'HEAD']),
+  status: z.number(),
+  allowHeaderPresent: z.boolean(),
+  allowDeclaredAgreement: z.enum(['agrees', 'allow_superset', 'allow_subset', 'disagrees']).nullable(),
+  undeclaredMethods: z.array(z.string().max(7)).max(8),
+});
+const paginationBehaviorPayload = z.object({
+  actionId: z.string(),
+  model: z.enum(['cursor', 'page', 'offset']),
+  start: z.object({ status: z.number(), items: z.number() }),
+  continue: z.object({ status: z.number(), advanced: z.boolean().nullable() }).nullable(),
+  cursorReuse: z.object({ status: z.number(), samePage: z.boolean().nullable() }).nullable(),
+  skipped: z.enum(['next_is_url', 'no_next', 'no_size_param', 'start_failed']).optional(),
+});
+
 const evidenceSchemas = {
   'parser.auth_discoverability': parserCheckPayload,
   'parser.base_url_validity': parserCheckPayload,
@@ -247,6 +311,11 @@ const evidenceSchemas = {
   'diff.spec_change': specChangePayload,
   'probe.lifecycle_signal': lifecycleSignalPayload,
   'probe.rate_limit': rateLimitPayload,
+  'probe.response_conformance': responseConformancePayload,
+  'probe.negative_partition': negativePartitionPayload,
+  'probe.not_found_identity': notFoundIdentityPayload,
+  'probe.method_support': methodSupportPayload,
+  'probe.pagination_behavior': paginationBehaviorPayload,
 } as const satisfies Record<EvidenceKind, z.ZodTypeAny>;
 
 export type EvidencePayload = {

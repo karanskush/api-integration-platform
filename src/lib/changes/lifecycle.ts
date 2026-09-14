@@ -42,6 +42,12 @@ export const CAPTURED_HEADERS = [
   'ratelimit-reset',
   'ratelimit-policy',
   'retry-after',
+  // Conformance signals (probes/conformance.ts, docDrift.ts): what the API says
+  // it sent, which methods it admits to on OPTIONS, and how it asks for auth.
+  // Never `location` — that carries a value.
+  'content-type',
+  'allow',
+  'www-authenticate',
 ] as const;
 
 const CAPTURED = new Set<string>(CAPTURED_HEADERS);

@@ -138,3 +138,30 @@ describe('explainError', () => {
     expect(explainError(context, { status: 404, tool: 'nope' }).error).toContain('No operation named');
   });
 });
+
+// The partitions an integrator hits on day one, observed on this API, and what
+// a made-up identifier actually gets.
+describe('explainError observed triggers', () => {
+  it('names which forbidden request drew this status and how a fabricated id was answered', () => {
+    const observed = ctx(petstoreActions(), {
+      negativePartitions: [
+        { actionId: 'id_get_pet', partition: 'unknown_id', field: 'petId', status: 404, rejected: true, matchesErrorSchema: null, hasReadableMessage: true, environment: 'production' },
+      ],
+      notFoundIdentity: [{ actionId: 'id_get_pet', status: 404, identity: 'not_found_404', controlBasis: 'fabricated_like_real', hasReadableMessage: true, environment: 'production' }],
+    });
+    const res = explainError(observed, { status: 404, tool: 'get_pet' });
+    expect(res.observedTriggers).toMatchObject([{ sent: 'unknown_id', field: 'petId', readableMessage: true }]);
+    expect(res.unknownIdBehaviour?.identity).toBe('not_found_404');
+    expect(res.unknownIdBehaviour?.note).toMatch(/does not exist/);
+    expect(res.evidenceBasis).toBe('observed');
+  });
+
+  it('warns when a 404 is not what a fabricated id gets on this API', () => {
+    const observed = ctx(petstoreActions(), {
+      notFoundIdentity: [{ actionId: 'id_get_pet', status: 200, identity: 'soft_404_2xx', controlBasis: 'derived_placeholder', hasReadableMessage: false, environment: 'sandbox' }],
+    });
+    const res = explainError(observed, { status: 404, tool: 'get_pet' });
+    expect(res.unknownIdBehaviour?.note).toMatch(/may mean something else/);
+    expect(res.unknownIdBehaviour?.basis).toContain('sandbox');
+  });
+});

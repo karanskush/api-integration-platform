@@ -24,6 +24,11 @@ const PROBE_KINDS: EvidenceKind[] = [
   'probe.value_domain',
   'probe.state_vocabulary',
   'probe.rate_limit',
+  'probe.response_conformance',
+  'probe.negative_partition',
+  'probe.not_found_identity',
+  'probe.method_support',
+  'probe.pagination_behavior',
 ];
 
 // Enough to explain a score without unbounded reads on the MCP hot path.
@@ -79,7 +84,12 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
     listChanges(db, api.id, { limit: MAX_CHANGES, since: changeSince }),
     changeSummary(db, api.id),
     db
-      .select({ kind: evidenceFacts.kind, payload: evidenceFacts.payload, observedAt: evidenceFacts.observedAt })
+      .select({
+        kind: evidenceFacts.kind,
+        payload: evidenceFacts.payload,
+        observedAt: evidenceFacts.observedAt,
+        environment: evidenceFacts.environment,
+      })
       .from(evidenceFacts)
       .where(and(eq(evidenceFacts.apiId, api.id), inArray(evidenceFacts.kind, PROBE_KINDS)))
       .orderBy(desc(evidenceFacts.observedAt))
@@ -264,6 +274,84 @@ export async function loadAdvisorInsights(slug: string, injected?: Db): Promise<
             windowSeconds: p.windowSeconds,
             header: p.header,
             observedAt: fact.observedAt.toISOString(),
+          });
+        }
+        break;
+      }
+      case 'probe.response_conformance': {
+        const p = parseEvidencePayload('probe.response_conformance', fact.payload);
+        // Newest per operation is the knowledge; older rows describe an earlier run.
+        if (p && !insights.conformance.some((c) => c.actionId === p.actionId)) {
+          insights.conformance.push({
+            actionId: p.actionId,
+            status: p.status,
+            contentTypeMatches: p.contentTypeMatches,
+            schemaValid: p.schemaValid,
+            schemaErrorCount: p.schemaErrorCount,
+            schemaErrorPaths: p.schemaErrorPaths,
+            discriminating: p.discriminating,
+            observedAt: fact.observedAt.toISOString(),
+            environment: fact.environment,
+          });
+        }
+        break;
+      }
+      case 'probe.negative_partition': {
+        const p = parseEvidencePayload('probe.negative_partition', fact.payload);
+        if (p && !insights.negativePartitions.some((n) => n.actionId === p.actionId && n.partition === p.partition)) {
+          insights.negativePartitions.push({
+            actionId: p.actionId,
+            partition: p.partition,
+            field: p.field,
+            status: p.status,
+            rejected: p.rejected,
+            matchesErrorSchema: p.matchesErrorSchema,
+            hasReadableMessage: p.hasReadableMessage,
+            environment: fact.environment,
+          });
+        }
+        break;
+      }
+      case 'probe.not_found_identity': {
+        const p = parseEvidencePayload('probe.not_found_identity', fact.payload);
+        if (p && !insights.notFoundIdentity.some((n) => n.actionId === p.actionId)) {
+          insights.notFoundIdentity.push({
+            actionId: p.actionId,
+            status: p.status,
+            identity: p.identity,
+            controlBasis: p.controlBasis,
+            hasReadableMessage: p.hasReadableMessage,
+            environment: fact.environment,
+          });
+        }
+        break;
+      }
+      case 'probe.method_support': {
+        const p = parseEvidencePayload('probe.method_support', fact.payload);
+        if (p && !insights.methodSupport.some((m) => m.actionId === p.actionId)) {
+          insights.methodSupport.push({
+            actionId: p.actionId,
+            path: p.path,
+            status: p.status,
+            allowHeaderPresent: p.allowHeaderPresent,
+            allowDeclaredAgreement: p.allowDeclaredAgreement,
+            undeclaredMethods: p.undeclaredMethods,
+            environment: fact.environment,
+          });
+        }
+        break;
+      }
+      case 'probe.pagination_behavior': {
+        const p = parseEvidencePayload('probe.pagination_behavior', fact.payload);
+        if (p && !insights.paginationBehavior.some((b) => b.actionId === p.actionId)) {
+          insights.paginationBehavior.push({
+            actionId: p.actionId,
+            model: p.model,
+            start: p.start,
+            continue: p.continue,
+            cursorReuse: p.cursorReuse,
+            ...(p.skipped ? { skipped: p.skipped } : {}),
+            environment: fact.environment,
           });
         }
         break;

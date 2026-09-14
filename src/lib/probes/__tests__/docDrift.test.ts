@@ -137,7 +137,7 @@ describe('runDocDrift', () => {
     };
     const ctx: ProbeContext = { record: record({ actions: [a1, a2] }), invoke };
     const result = await runDocDrift(ctx);
-    expect(result.evidence).toHaveLength(2);
+    expect(result.evidence.filter((e) => e.kind === 'probe.doc_drift')).toHaveLength(2);
     // (3/3 + 1/3) / 2 * 25
     expect(result.subscore).toBe(Math.round(((3 / 3 + 1 / 3) / 2) * 25));
   });
@@ -152,7 +152,7 @@ describe('runDocDrift', () => {
     const invoke = fakeInvoke(JSON.stringify({ id: 'x', name: 'y', count: 1 }));
     const ctx: ProbeContext = { record: record({ actions }), invoke };
     const result = await runDocDrift(ctx);
-    expect(result.evidence).toHaveLength(3);
+    expect(result.evidence.filter((e) => e.kind === 'probe.doc_drift')).toHaveLength(3);
   });
 });
 

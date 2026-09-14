@@ -1,55 +1,19 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { Action } from '../ir';
-import { specOnlyFiller, type ParamFiller } from '../paramFill';
+import { specOnlyFiller } from '../paramFill';
+import { validateResponse } from '../responseValidate';
 import { callProbe } from './context';
 import { lifecycleEvidence } from './lifecycle';
+import { buildNegativePartitions, type Partition } from './partitions';
 import type { ProbeContext, ProbeOutcome } from './types';
 
 const FULL = 25;
 const SAMPLE_LIMIT = 2;
-const BAD_VALUE = '__docentapi_invalid__';
+const MAX_PARTITIONS = 4;
 const MESSAGE_KEY = /^(message|error|detail)$/i;
 
-type Corrupted = { params: Record<string, unknown>; validate: boolean };
-
-// Starts from a request we could legitimately send, then breaks it in the way
-// most likely to draw a 4xx without ever attempting a write:
-//
-//   1. drop a required query/header/body parameter. A path parameter cannot be
-//      omitted — the URL would have a hole in it — so it is never the one
-//      dropped. The request is sent with client-side validation OFF: the whole
-//      point is to send what the spec forbids and see how the API says no, and
-//      Ajv used to reject it before it reached the wire.
-//   2. otherwise poison a path-placed parameter with a value no record has.
-//
-// Returns null when neither is possible — the action just doesn't qualify.
-function corrupt(action: Action, fill: ParamFiller, runId?: string): Corrupted | null {
-  const filled = fill(action, { runId });
-  if (!filled.ok || Object.keys(filled.params).length === 0) return null;
-  const params = { ...filled.params };
-
-  const props = (action.paramsSchema.properties ?? {}) as Record<string, Record<string, unknown>>;
-  const required = (action.paramsSchema as { required?: unknown }).required;
-  if (Array.isArray(required)) {
-    const key = required.find(
-      (k): k is string => typeof k === 'string' && k in params && props[k]?.['x-docentapi-in'] !== 'path',
-    );
-    if (key) {
-      delete params[key];
-      return { params, validate: false };
-    }
-  }
-
-  const pathKey = Object.keys(props).find((k) => props[k]?.['x-docentapi-in'] === 'path' && k in params);
-  if (pathKey) {
-    params[pathKey] = BAD_VALUE;
-    return { params, validate: true };
-  }
-
-  return null;
-}
-
-function hasReadableMessage(bodyText: string): boolean {
+/** True when a JSON error body carries a message a person could act on. Exported for the conformance probe. */
+export function hasReadableMessage(bodyText: string): boolean {
   let parsed: unknown;
   try {
     parsed = JSON.parse(bodyText);
@@ -68,16 +32,39 @@ function findMessage(value: unknown, depth: number): boolean {
   return false;
 }
 
+/** Whether an error body matches the spec's documented error schema; null when none is documented or it will not parse. */
+export function matchesErrorSchema(action: Action, bodyText: string): boolean | null {
+  if (!action.errorSchema) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return false;
+  }
+  return validateResponse(action.errorSchema, parsed).valid;
+}
+
+// Grades how the API says no. Each sampled read gets the negative partitions
+// partitions.ts can build for it — a required parameter omitted, an id no
+// record has, a typed parameter sent as prose — sent with client-side
+// validation OFF where the request deliberately breaks the schema. Every
+// response is recorded as a partition fact; the score counts only the ones
+// that were actually errors.
 export async function runErrorQuality(ctx: ProbeContext): Promise<ProbeOutcome> {
   const fill = ctx.fill ?? specOnlyFiller;
 
-  const samples: Array<{ action: Action; corrupted: Corrupted }> = [];
+  const samples: Array<{ action: Action; partition: Partition }> = [];
+  let sampledOps = 0;
   for (const action of ctx.record.actions) {
-    if (samples.length >= SAMPLE_LIMIT) break;
+    if (sampledOps >= SAMPLE_LIMIT || samples.length >= MAX_PARTITIONS) break;
     if (action.safety !== 'read') continue;
-    const corrupted = corrupt(action, fill, ctx.runId);
-    if (!corrupted) continue;
-    samples.push({ action, corrupted });
+    const partitions = buildNegativePartitions(action, fill(action, { runId: ctx.runId }), { runId: ctx.runId });
+    if (!partitions.length) continue;
+    sampledOps++;
+    for (const partition of partitions) {
+      if (samples.length >= MAX_PARTITIONS) break;
+      samples.push({ action, partition });
+    }
   }
 
   if (samples.length === 0) return { subscore: 0, evidence: [], insufficientData: true };
@@ -85,25 +72,46 @@ export async function runErrorQuality(ctx: ProbeContext): Promise<ProbeOutcome> 
   const evidence: EvidenceFactInput[] = [];
   let passCount = 0;
   let graded = 0;
-  for (const { action, corrupted } of samples) {
+  for (const { action, partition } of samples) {
     try {
-      const res = await callProbe(ctx, action, corrupted.params, { validate: corrupted.validate });
+      const res = await callProbe(ctx, action, partition.params, { validate: partition.validate });
       // Recorded, never scored — see probes/lifecycle.ts.
       evidence.push(...lifecycleEvidence(action, res.headers));
 
-      // This probe grades ERROR bodies, so it needs an error. A 2xx means the
-      // corrupted request was accepted anyway and there is nothing to grade —
-      // previously a 200 carrying a `message` field scored a point, which
-      // rewarded an API for the opposite of what is being measured.
-      if (res.status < 400) continue;
       // A 401/403 means the request never reached validation: the API rejected
       // the caller, not the payload. authClarity records that; grading its body
       // here would score how an API says "who are you" as how it says "that
       // field is missing".
       if (res.status === 401 || res.status === 403) continue;
 
-      graded++;
       const readable = hasReadableMessage(res.bodyText);
+      const partitionFact: EvidenceFactInput = {
+        kind: 'probe.negative_partition',
+        source: 'probe',
+        actionId: action.id,
+        payload: {
+          actionId: action.id,
+          partition: partition.kind,
+          field: partition.field,
+          status: res.status,
+          rejected: res.status >= 400,
+          matchesErrorSchema: res.status >= 400 ? matchesErrorSchema(action, res.bodyText) : null,
+          hasReadableMessage: readable,
+        },
+      };
+
+      // This probe grades ERROR bodies, so it needs an error. A 2xx means the
+      // corrupted request was accepted anyway and there is nothing to grade —
+      // previously a 200 carrying a `message` field scored a point, which
+      // rewarded an API for the opposite of what is being measured. The
+      // partition itself is still recorded: "accepted a request the spec
+      // forbids" is a finding about the API.
+      if (res.status < 400) {
+        evidence.push(partitionFact);
+        continue;
+      }
+
+      graded++;
       if (readable) passCount++;
       evidence.push({
         kind: 'probe.error_quality',
@@ -111,6 +119,7 @@ export async function runErrorQuality(ctx: ProbeContext): Promise<ProbeOutcome> 
         actionId: action.id,
         payload: { actionId: action.id, sampleStatus: res.status, hasReadableMessage: readable },
       });
+      evidence.push(partitionFact);
     } catch {
       // Unreachable or refused before the wire, so no response existed to
       // grade. Excluded rather than counted as a miss — and no fact written,

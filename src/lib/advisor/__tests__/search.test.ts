@@ -262,3 +262,33 @@ describe('getEndpointSchema', () => {
     });
   });
 });
+
+// Read-side conformance, observed. Every block names where it was observed.
+describe('getEndpointSchema observed conformance', () => {
+  it('reports the schema judgement, the unknown-id behaviour, validation partitions, methods and pagination', () => {
+    const observed = ctx(petstoreActions(), {
+      conformance: [
+        { actionId: 'id_get_pet', status: 200, contentTypeMatches: true, schemaValid: false, schemaErrorCount: 1, schemaErrorPaths: ['/name'], discriminating: true, observedAt: '2026-09-14T00:00:00Z', environment: 'sandbox' },
+      ],
+      notFoundIdentity: [{ actionId: 'id_get_pet', status: 200, identity: 'soft_404_2xx', controlBasis: 'fabricated_like_real', hasReadableMessage: false, environment: 'sandbox' }],
+      negativePartitions: [{ actionId: 'id_get_pet', partition: 'unknown_id', field: 'petId', status: 200, rejected: false, matchesErrorSchema: null, hasReadableMessage: false, environment: 'sandbox' }],
+      methodSupport: [{ actionId: 'id_get_pet', path: '/pet/{petId}', status: 204, allowHeaderPresent: true, allowDeclaredAgreement: 'allow_superset', undeclaredMethods: ['PATCH'], environment: 'sandbox' }],
+      paginationBehavior: [{ actionId: 'id_get_pet', model: 'cursor', start: { status: 200, items: 1 }, continue: { status: 200, advanced: true }, cursorReuse: null, environment: 'sandbox' }],
+    });
+    const res = getEndpointSchema(observed, { tool: 'get_pet' });
+    expect(res.observedConformance).toMatchObject({ responseMatchesSchema: false, schemaViolations: ['/name'], fabricatedIdRefused: true });
+    expect(res.observedConformance?.basis).toContain('sandbox');
+    expect(res.unknownIdBehaviour).toMatchObject({ identity: 'soft_404_2xx' });
+    expect(res.unknownIdBehaviour?.note).toMatch(/ACCEPTED/);
+    expect(res.observedValidation).toMatchObject([{ sent: 'unknown_id', rejected: false }]);
+    expect(res.methodsAdmitted).toMatchObject({ agreementWithSpec: 'allow_superset', undeclaredMethods: ['PATCH'] });
+    expect(res.paginationObserved).toMatchObject({ model: 'cursor', secondPage: { advanced: true } });
+  });
+
+  it('says nothing about conformance when nothing was observed', () => {
+    const res = getEndpointSchema(ctx(petstoreActions()), { tool: 'get_pet' });
+    expect(res.observedConformance).toBeUndefined();
+    expect(res.unknownIdBehaviour).toBeUndefined();
+    expect(res.observedValidation).toBeUndefined();
+  });
+});

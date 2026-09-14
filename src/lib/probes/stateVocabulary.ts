@@ -62,7 +62,7 @@ function isRecordObject(value: Json): value is Record<string, Json> {
 
 // The records in a list response, whether the body is a bare array or wraps one
 // in the usual envelope key.
-function recordsIn(body: Json): Array<Record<string, Json>> {
+export function recordsIn(body: Json): Array<Record<string, Json>> {
   if (Array.isArray(body)) return body.filter(isRecordObject);
   if (!isRecordObject(body)) return [];
   for (const key of ['data', 'items', 'results', 'records']) {

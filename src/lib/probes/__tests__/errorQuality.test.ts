@@ -75,8 +75,8 @@ describe('runErrorQuality', () => {
     const ctx: ProbeContext = { record: record(), invoke };
     const result = await runErrorQuality(ctx);
     expect(result.subscore).toBe(25);
-    expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0].payload).toMatchObject({ hasReadableMessage: true, sampleStatus: 400 });
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toHaveLength(1);
+    expect(result.evidence.find((e) => e.kind === 'probe.error_quality')?.payload).toMatchObject({ hasReadableMessage: true, sampleStatus: 400 });
   });
 
   it('finds a readable message nested one level deep', async () => {
@@ -94,7 +94,7 @@ describe('runErrorQuality', () => {
     const ctx: ProbeContext = { record: record(), invoke };
     const result = await runErrorQuality(ctx);
     expect(result.subscore).toBe(0);
-    expect(result.evidence[0].payload).toMatchObject({ hasReadableMessage: false });
+    expect(result.evidence.find((e) => e.kind === 'probe.error_quality')?.payload).toMatchObject({ hasReadableMessage: false });
   });
 
   it('grades an unparseable body as a fail', async () => {
@@ -147,7 +147,9 @@ describe('runErrorQuality', () => {
     };
     const ctx: ProbeContext = { record: record(), invoke };
     await runErrorQuality(ctx);
-    expect(seenArgs?.id).toBe('__docentapi_invalid__');
+    // A fabricated id shaped like the example, never the example itself — and
+    // a request that still satisfies the schema, so Ajv lets it through.
+    expect(seenArgs?.id).not.toBe('abc');
     expect(seenOpts?.validate).not.toBe(false);
   });
 
@@ -187,7 +189,7 @@ describe('runErrorQuality', () => {
     };
     const ctx: ProbeContext = { record: record({ actions: [a1, a2] }), invoke };
     const result = await runErrorQuality(ctx);
-    expect(result.evidence).toHaveLength(2);
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toHaveLength(2);
     expect(result.subscore).toBe(13); // 1 of 2 pass: round(0.5 * 25)
   });
 
@@ -200,7 +202,7 @@ describe('runErrorQuality', () => {
     const invoke = fakeInvoke(() => ({ status: 400, bodyText: JSON.stringify({ message: 'A readable message.' }) }));
     const ctx: ProbeContext = { record: record({ actions }), invoke };
     const result = await runErrorQuality(ctx);
-    expect(result.evidence).toHaveLength(2);
+    expect(result.evidence.filter((e) => e.kind === 'probe.error_quality')).toHaveLength(2);
   });
 
   // Previously counted as a miss AND recorded a fact with sampleStatus: 0,

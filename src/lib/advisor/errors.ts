@@ -10,6 +10,7 @@
 // semantics rather than guessed from prose: retrying a 409 or a 422 just burns
 // quota, while a 429 or 503 wants backoff.
 
+import { basisFor } from './provenance';
 import type { Action } from '../ir';
 import { asData, type AdvisorContext } from './types';
 
@@ -228,6 +229,13 @@ export function explainError(ctx: AdvisorContext, args: ExplainErrorArgs) {
 
   const authObserved = status === 401 || status === 403 ? ctx.insights.authObservations[0] : undefined;
 
+  // Which forbidden requests drew this status, and what a made-up id got —
+  // the partitions an integrator hits on day one, observed on this API.
+  const partitions = action
+    ? ctx.insights.negativePartitions.filter((p) => p.actionId === action.id && p.status === status)
+    : ctx.insights.negativePartitions.filter((p) => p.status === status);
+  const unknownId = action && status === 404 ? ctx.insights.notFoundIdentity.find((n) => n.actionId === action.id) : undefined;
+
   return {
     status,
     ...(action ? { tool: action.name, call: `${action.method} ${action.path}` } : {}),
@@ -272,6 +280,28 @@ export function explainError(ctx: AdvisorContext, args: ExplainErrorArgs) {
     ...(authObserved
       ? { observedAuthBehaviour: `Unauthenticated requests to this API were observed being rejected with HTTP ${authObserved.statusObserved}.` }
       : {}),
-    evidenceBasis: observed.length || authObserved ? 'observed' : 'http_semantics_and_spec',
+    ...(partitions.length
+      ? {
+          observedTriggers: partitions.map((p) => ({
+            sent: p.partition,
+            field: p.field,
+            readableMessage: p.hasReadableMessage,
+            basis: basisFor({ environment: p.environment }),
+          })),
+        }
+      : {}),
+    ...(unknownId
+      ? {
+          unknownIdBehaviour: {
+            identity: unknownId.identity,
+            note:
+              unknownId.identity === 'not_found_404'
+                ? 'A fabricated identifier was observed to draw exactly this 404 — the id you sent most likely does not exist.'
+                : `A fabricated identifier was observed to draw ${unknownId.status}, not 404 — this 404 may mean something else on this API.`,
+            basis: basisFor({ environment: unknownId.environment }),
+          },
+        }
+      : {}),
+    evidenceBasis: observed.length || authObserved || partitions.length || unknownId ? 'observed' : 'http_semantics_and_spec',
   };
 }

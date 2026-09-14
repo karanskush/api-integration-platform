@@ -1,6 +1,7 @@
 import type { EvidenceFactInput } from '../evidence';
 import type { Action, JSONSchema } from '../ir';
-import { specOnlyFiller } from '../paramFill';
+import { specOnlyFiller, type FillSource } from '../paramFill';
+import { validateResponse } from '../responseValidate';
 import { callProbe } from './context';
 import { lifecycleEvidence } from './lifecycle';
 import type { ProbeContext, ProbeOutcome } from './types';
@@ -84,12 +85,12 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
   // spec's own defaults, or a harvested id — and whose documented response has
   // fields to compare against. A list endpoint with no parameters qualifies;
   // before the shared filler it was excluded for the accident of taking none.
-  const candidates: Array<{ action: Action; params: Record<string, unknown> }> = [];
+  const candidates: Array<{ action: Action; params: Record<string, unknown>; sources: FillSource[] }> = [];
   for (const action of ctx.record.actions) {
     if (candidates.length >= SAMPLE_LIMIT) break;
     if (action.safety !== 'read' || !recordSchema(action) || declaredFieldCount(action) === 0) continue;
     const filled = fill(action, { runId: ctx.runId });
-    if (filled.ok) candidates.push({ action, params: filled.params });
+    if (filled.ok) candidates.push({ action, params: filled.params, sources: Object.values(filled.sources) });
   }
 
   if (candidates.length === 0) return { subscore: 0, evidence: [], insufficientData: true };
@@ -97,7 +98,7 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
   const evidence: EvidenceFactInput[] = [];
   let sumRatio = 0;
   let graded = 0;
-  for (const { action, params } of candidates) {
+  for (const { action, params, sources } of candidates) {
     try {
       const res = await callProbe(ctx, action, params);
       // Recorded before parsing: a body that fails to parse still carried
@@ -112,9 +113,11 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
       // an outage is not a contract change.
       if (res.status < 200 || res.status >= 300) continue;
 
-      const body = recordToCompare(action, JSON.parse(res.bodyText));
+      const parsed = JSON.parse(res.bodyText);
+      const body = recordToCompare(action, parsed);
       if (body === undefined) continue;
       const cmp = compareShallow(recordSchema(action)!, body);
+
       sumRatio += cmp.declared > 0 ? cmp.matched / cmp.declared : 0;
       graded++;
       evidence.push({
@@ -126,6 +129,29 @@ export async function runDocDrift(ctx: ProbeContext): Promise<ProbeOutcome> {
           matchedFields: cmp.matched,
           declaredFields: cmp.declared,
           mismatches: cmp.mismatches,
+        },
+      });
+
+      // The full conformance judgement on the same response: the documented
+      // schema applied with Ajv rather than a shallow key check, plus what the
+      // API said it sent. Zero extra requests. `discriminating` stays null here;
+      // the conformance probe's negative control fills it in.
+      const validation = validateResponse(action.responseSchema!, parsed);
+      const contentType = res.headers?.['content-type'] ?? null;
+      evidence.push({
+        kind: 'probe.response_conformance',
+        source: 'probe',
+        actionId: action.id,
+        payload: {
+          actionId: action.id,
+          status: res.status,
+          contentTypeObserved: contentType ? contentType.slice(0, 120) : null,
+          contentTypeMatches: contentType ? /json/i.test(contentType) : null,
+          schemaValid: validation.valid,
+          schemaErrorCount: validation.errors.length,
+          schemaErrorPaths: validation.errors.map((e) => e.path),
+          discriminating: null,
+          paramSources: sources.slice(0, 24),
         },
       });
     } catch {
