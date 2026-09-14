@@ -25,10 +25,12 @@ const USAGE = {
   outputTokens: { total: 10, text: 10, reasoning: undefined },
 };
 
+// Strict-mode providers emit every schema key (null when unused); so does the mock.
 function mappings(...list: unknown[]) {
+  const complete = list.map((m) => ({ evidenceSource: null, evidenceQuote: null, ...(m as object) }));
   return new MockLanguageModelV4({
     doGenerate: {
-      content: [{ type: 'text' as const, text: JSON.stringify({ mappings: list }) }],
+      content: [{ type: 'text' as const, text: JSON.stringify({ mappings: complete }) }],
       finishReason: { unified: 'stop' as const, raw: undefined },
       usage: USAGE,
       warnings: [],

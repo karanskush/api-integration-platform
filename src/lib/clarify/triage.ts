@@ -73,16 +73,18 @@ export function retirementCap(batchSize: number): number {
   return Math.min(MAX_RETIRED_ABSOLUTE, Math.ceil(batchSize * MAX_RETIRED_FRACTION));
 }
 
-const VerdictSchema = z.object({
+export const VerdictSchema = z.object({
   questionId: z.string(),
   verdict: z.enum(['keep', 'answered_by_evidence']),
-  // Required together for answered_by_evidence; ignored for keep.
-  evidenceSource: z.string().optional(),
-  evidenceQuote: z.string().optional(),
-  assumedAnswer: z.string().optional(),
+  // Required together for answered_by_evidence; null for keep. .nullable() and
+  // not .optional() because strict json_schema needs every key in `required` —
+  // see deepEnrich.ts's ChunkOutputSchema and __tests__/strictStructuredOutputs.
+  evidenceSource: z.string().nullable(),
+  evidenceQuote: z.string().nullable(),
+  assumedAnswer: z.string().nullable(),
 });
 
-const TriageOutputSchema = z.object({ verdicts: z.array(VerdictSchema) });
+export const TriageOutputSchema = z.object({ verdicts: z.array(VerdictSchema) });
 
 function systemInstructions(): string {
   return [
@@ -191,7 +193,7 @@ export async function triageQuestions(input: TriageInput): Promise<TriageResult>
       continue;
     }
 
-    const quote = verifyQuote(v.evidenceQuote, v.evidenceSource, candidate.envelopes);
+    const quote = verifyQuote(v.evidenceQuote ?? undefined, v.evidenceSource ?? undefined, candidate.envelopes);
     if (!quote.ok) {
       rejections.push({ id: v.questionId, reason: quote.reason });
       continue;

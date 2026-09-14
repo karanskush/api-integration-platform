@@ -77,9 +77,26 @@ const USAGE = {
   outputTokens: { total: 10, text: 10, reasoning: undefined },
 };
 
+// A strict-mode provider emits EVERY schema key, null where it has nothing to
+// say. The mock does the same, so a test can write only the keys it is about
+// without describing a response no real provider can produce.
+type LooseChunk = {
+  fields?: Array<Record<string, unknown>>;
+  openQuestions?: Array<Record<string, unknown>>;
+  lineageDisputes?: unknown;
+};
+function strictComplete(object: unknown) {
+  const o = object as LooseChunk;
+  return {
+    fields: (o.fields ?? []).map((f) => ({ businessConstraint: null, confidenceOverride: null, ...f })),
+    openQuestions: (o.openQuestions ?? []).map((q) => ({ fieldPath: null, options: null, ...q })),
+    lineageDisputes: o.lineageDisputes ?? null,
+  };
+}
+
 function objectResult(object: unknown) {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(object) }],
+    content: [{ type: 'text' as const, text: JSON.stringify(strictComplete(object)) }],
     finishReason: { unified: 'stop' as const, raw: undefined },
     usage: USAGE,
     warnings: [],
